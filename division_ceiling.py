@@ -132,12 +132,27 @@ def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
             {"dataset": name}
 
     pred_t = solved["t"].astype(int)
-    pred_phys = solved["zyx"]
+    # `relink` returns VOXEL coordinates -- `score_one` scales them itself, so
+    # the graph never carries micrometres. Forgetting this once already cost a
+    # run: gt_phys was in um, pred was in voxels, and the 7 um gate matched
+    # nothing, which printed as "0 of 12 parents detected" and looked like a
+    # finding rather than a bug.
+    pred_phys = solved["zyx"].astype(float) * scale
     gt_t = gt["t"].astype(int)
     gt_phys = np.stack([gt["z"], gt["y"], gt["x"]], axis=1) * scale
 
     matched = _match_nodes_per_frame(pred_t, pred_phys, gt_t, gt_phys)
     pred_of_gt = {g: p for p, g in matched.items()}
+
+    # Rule 1: a matcher that silently matches almost nothing produces a
+    # plausible-looking funnel of zeros. Sparse annotation puts the real rate
+    # near 6%, so anything under 1% means the coordinate systems disagree.
+    rate = len(matched) / max(1, len(pred_t))
+    if rate < 0.01:
+        warn_once("match_rate_collapsed",
+                  f"{name}: only {len(matched)} of {len(pred_t)} solved nodes "
+                  f"matched a GT node ({rate:.4f}). Expected ~0.06. The funnel "
+                  f"below is measuring a coordinate mismatch, not the data")
 
     # in-degree / out-degree ON THE SOLVED GRAPH -- the rule's actual domain
     n = len(pred_t)
