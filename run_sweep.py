@@ -133,39 +133,25 @@ print("link_replay", lr.SCRIPT_VERSION, flush=True)
 print("\n=== inventory ===", flush=True)
 lr.inventory(CACHE)
 
-# ---- 2. the anchor. This MUST land on the recorded 0.9269.
-print("\n=== anchor: the submitted configuration ===", flush=True)
-t0 = time.time()
-summary, rows = lr.score_config(
-    lr.load_cache(CACHE), COMP,
-    threshold=lr.BASE["threshold"],
-    appearance=lr.BASE["appearance"],
-    disappearance=lr.BASE["disappearance"],
-    division=lr.BASE["division"])
-dt = time.time() - t0
+# ---- 2. the sweep.
+#
+# The anchor run on 2026-08-20 reproduced the submitted configuration exactly
+# (TP/FP/FN 9863/318/450, adj_J 0.9269 against a recorded 0.9269) at 154 s per
+# pass, so the cache is faithful and a real sweep is worth its wall time.
+#
+# The loop is threshold-major and every row prints as it completes, so the
+# informative rows land first and a timeout still leaves a readable table.
+# The 0.50 / 1.5 row is the submitted configuration and is the anchor: if it
+# drifts from 0.9269, stop reading the rest.
+print("\n=== sweep ===", flush=True)
+res = lr.sweep(CACHE, root=COMP,
+               thresholds=(0.50, 0.35, 0.25, 0.15),
+               disappearances=(1.0, 1.5, 2.5),
+               appearance=0.0, division=1.0,
+               out="/kaggle/working/replay_sweep.csv")
 
-print(f"\ndatasets         {summary['n']}")
-print(f"edge TP/FP/FN    {summary['edge_tp']} / {summary['edge_fp']} / "
-      f"{summary['edge_fn']}")
-print(f"edge_jaccard     {summary['edge_jaccard']:.4f}")
-print(f"adj_edge_jaccard {summary['adj_edge_jaccard']:.4f}   "
-      f"<- recorded 0.9269")
-print(f"division_jaccard {summary['division_jaccard']:.4f}")
-print(f"score_full       {summary['score_full']:.4f}")
-print(f"detect_ceiling   {summary['detect_ceiling']:.4f}")
-print(f"link_rate        {summary['link_rate']:.4f}")
-print(f"\none full pass over 12 datasets: {dt:.0f}s "
-      f"({dt / 60:.1f} min) -- a 12-cell sweep would cost "
-      f"{12 * dt / 3600:.1f} h", flush=True)
-
-delta = summary["adj_edge_jaccard"] - 0.9269
-if abs(delta) > 0.01:
-    print(f"\n[degraded] the anchor is off by {delta:+.4f}. The cached "
-          f"candidates do NOT reproduce the submitted pipeline, so no sweep "
-          f"built on them can be trusted. Find this before sweeping.",
-          flush=True)
-else:
-    print(f"\nanchor reproduces to {delta:+.4f} -- the cache is faithful and "
-          f"a sweep is worth launching.", flush=True)
-
-print("ANCHOR DONE", flush=True)
+print(f"\nbest threshold      {res['best_threshold']}")
+print(f"best disappearance  {res['best_disappearance']}")
+print(f"best score_full     {res['best_score_full']:.4f}")
+print(f"delta vs submitted  {res['delta_vs_baseline']:+.4f}")
+print("SWEEP DONE", flush=True)
