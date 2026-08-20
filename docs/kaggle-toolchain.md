@@ -93,6 +93,35 @@ chunk files and a blind `rglob` appears to hang. `_find_npz_dir` in
 
 ---
 
+### 6. Waiting on a run: do not poll in a loop of tool calls
+
+A CPU sweep runs for one to two hours. Checking its status by calling the
+connector over and over burns the session for nothing and tells the user
+nothing they did not already know.
+
+Kaggle only releases a run's log after it finishes, so there is no partial
+progress to read either. Start one background waiter and let it notify:
+
+```bash
+while true; do
+  s=$(py -m kaggle kernels status faustine649/<slug> 2>&1)
+  if echo "$s" | grep -qiE "complete|error|cancel"; then echo "$s"; break; fi
+  sleep 60
+done
+```
+
+run in the background. The grep must cover **error and cancel as well as
+complete** -- a waiter that only matches success stays silent through a
+crash, and silence is indistinguishable from still-running.
+
+`Start-Sleep` in the foreground is blocked by the harness, deliberately.
+
+### 7. Every completed kernel run emails the account owner
+
+Batch experiments into one kernel where they share a mount and a wheel
+install, rather than pushing three that each spend 30 s installing the same
+54 wheels and each send mail.
+
 ## Measured costs
 
 | | value |
