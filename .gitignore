@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Synthetic smoke-test data (regenerate with `python make_fake_data.py`)
+fake_data/
+
+# Run artefacts. These are outputs, not sources -- regenerate them.
+submission.csv
+error_summary.txt
+error_edges.csv
+replay_sweep.csv
+*.geff/
+predictions/
+
+# Cached candidate sets. 2.8 MB for 12 datasets, but they are reproducible
+# from cache_candidates.py and they live in the Kaggle kernel output.
+cache/
+*.npz
+
+# Credentials -- never commit these.
+kaggle.json
+access_token
+.kaggle/

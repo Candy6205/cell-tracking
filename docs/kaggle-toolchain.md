@@ -1,0 +1,111 @@
+# Kaggle toolchain — how to actually run things
+
+*Written 2026-08-20, after working out what does and does not function.*
+
+Two separate channels, and each is only good at one half of the job.
+
+| | Kaggle MCP connector | official `kaggle` CLI |
+|---|---|---|
+| endpoint | `www.kaggle.com/mcp` | `www.kaggle.com/api/v1` |
+| auth | the `KGAT_…` bearer token in the Claude connector config | `kaggle auth login` (OAuth, cached locally) |
+| read competitions / leaderboard / forums / notebooks | **yes** | partly |
+| read a finished run's **stdout log** | **yes** | no |
+| list and fetch a run's **output files** | **yes**, with signed URLs | no |
+| push code | yes, but see below | **yes** |
+| **attach data sources** | **NO** | **yes** |
+
+**The working loop is: push with the CLI, read with the connector.**
+
+```powershell
+py -m kaggle kernels push -p "D:\programming\cell tracking"
+```
+
+then poll `get_notebook_session_status` and read
+`list_notebook_session_output`, which returns the whole stdout log inline plus
+a signed URL per output file. `curl` fetches those URLs directly.
+
+---
+
+## The traps, each one cost a run
+
+### 1. `save_notebook` over MCP wipes data sources
+
+Verified with four field combinations on 2026-08-20 —
+`datasetDataSources` alone, `datasetDataSourcesSetter` alone, both together,
+and neither. In every case `/kaggle/input` came up **empty**.
+
+Worse, pushing to an **existing** notebook that already had sources attached
+**removes them**, and converts `kernel_type` from `notebook` to `script`. That
+is how `cell-tracking-during-development` lost its inputs; v6 survived only in
+Kaggle's version history.
+
+**Never push a data-dependent kernel through the connector.** Use the CLI.
+
+### 2. The connector's token does not work for the REST API
+
+The `KGAT_…` token authenticates `www.kaggle.com/mcp` and returns **401
+Unauthenticated** on `www.kaggle.com/api/v1`. It is MCP-scoped. The CLI needs
+its own credential from `kaggle auth login`; neither `~/.kaggle/access_token`
+nor `KAGGLE_API_TOKEN` accepts the MCP token.
+
+### 3. Without `machine_shape` you may get a P100, and it fails outright
+
+The Kaggle image's torch is built for **sm_70 and up**. A Tesla P100 is
+**sm_60**, so every kernel launch dies with:
+
+```
+AcceleratorError: CUDA error: no kernel image is available for execution on the device
+```
+
+`kernel-metadata.json` must carry:
+
+```json
+"machine_shape": "NvidiaTeslaT4"
+```
+
+**This is a submission risk, not just a dev annoyance.** The 0.876 submission
+happened to run on a T4. Check the machine before trusting any timed run, and
+check it before the final submission.
+
+`cache_candidates.py` now asserts `torch.cuda.get_device_capability(0)[0] >= 7`
+and exits immediately rather than failing per dataset.
+
+### 4. `kaggle datasets version -r zip` flattens one directory level
+
+The code dataset used to serve its files under `cell-tracking/cell tracking/`.
+Re-uploading with `-r zip` extracted them to the dataset **root**, so
+
+```python
+sys.path.insert(0, "/kaggle/input/datasets/faustine649/cell-tracking/cell tracking")
+```
+
+no longer resolves. Any new code should probe both layouts — see
+`_first_existing` in `run_sweep.py`. Without `-r`, the CLI silently skips
+subdirectories entirely and the push 400s.
+
+### 5. A kernel-output mount path is not guessable
+
+`kernel_sources` attaches another kernel's output, but not at
+`/kaggle/input/<slug>/`. Search for it instead of hardcoding — and search
+**with pruning**: rule 9 applies, the competition mount holds millions of zarr
+chunk files and a blind `rglob` appears to hang. `_find_npz_dir` in
+`run_sweep.py` is the reference implementation.
+
+---
+
+## Measured costs
+
+| | value |
+|---|---|
+| inference, one dataset, T4, `predict_video` + candidate dump | **54–68 s** |
+| full 12-dataset candidate cache | **11.3 min**, 2.8 MB total |
+| cache size per dataset | 0.1–1.0 MB |
+| the whole 199-dataset train set, extrapolated | ~3.3 h GPU, ~30 MB |
+
+GPU quota is 30 h/week and does not accumulate, but across the remaining weeks
+that is well over 100 h. **A 12-dataset validation pass costs about 11 minutes.
+Quota is not the scarce resource; wall-clock attention is.**
+
+---
+
+*Last updated: 2026-08-20*
