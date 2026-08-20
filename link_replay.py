@@ -226,20 +226,91 @@ def relink(coords: np.ndarray, edges: list, appearance: float,
 
 # ---------------------------------------------------------------- scoring
 
+def velocity_adjust(coords: np.ndarray, edges: list, nodes: dict,
+                    pairs: np.ndarray, scale, weight: float = 0.5,
+                    radius_um: float = 5.0) -> list:
+    """
+    Fold a velocity-consistency penalty into the candidate probabilities.
+
+    Why this is the model's blind spot and not ours to retrain
+    ----------------------------------------------------------
+    `window_size = 2`: the edge model only ever sees the two frames it is
+    linking, so it **structurally cannot use velocity**. It cannot know that a
+    cell was already moving in a particular direction. That is a property of
+    the architecture, not of how long it trained -- the weights in use are at
+    `epoch 402, best_score 0.9835`, i.e. converged.
+
+    The public tier compensates in post-processing rather than by retraining;
+    pilkwang's constants carry a velocity weight of 0.5. We never have.
+
+    How
+    ---
+    Solve once. Every node that received an edge now has an incoming
+    displacement. For a candidate `s -> t`, `s + v(s)` is where `s` was headed;
+    the residual to `t` is how much that edge asks the cell to change course.
+    Penalise the probability by it, then solve again.
+
+    Nodes with no incoming edge have no velocity and are left untouched --
+    a track start is not evidence of anything.
+
+    This should compose with a lower `threshold`: opening the gate only helps
+    if something can discriminate among the extra candidates, and velocity is
+    exactly the discriminator the model lacks. The 2026-08-20 sweep found 0.25
+    and 0.15 worse than 0.35, which is what running out of discrimination looks
+    like.
+    """
+    orig = np.asarray(nodes["orig"], dtype=np.int64)
+    phys = coords[:, 1:].astype(float) * np.asarray(scale, dtype=float)
+
+    vel: dict[int, np.ndarray] = {}
+    for a, b in (pairs if len(pairs) else []):
+        oa, ob = int(orig[int(a)]), int(orig[int(b)])
+        vel[ob] = phys[ob] - phys[oa]
+
+    if not vel:
+        warn_once("velocity_no_pairs",
+                  "the first pass produced no edges, so no node has a "
+                  "velocity and the second pass is a no-op -- the row below is "
+                  "the first-pass result, not a velocity result")
+        return edges
+
+    out = []
+    for s, t, p, d in edges:
+        v = vel.get(int(s))
+        if v is None:
+            out.append((s, t, p, d))
+            continue
+        resid = float(np.linalg.norm(phys[int(t)] - (phys[int(s)] + v)))
+        pen = weight * min(resid / radius_um, 1.0)
+        out.append((s, t, max(0.0, float(p) - pen), d))
+    return out
+
+
 def score_config(cache: dict, root, threshold: float, appearance: float,
                  disappearance: float, division: float = 1.0,
                  topk: int | None = None, gate_um: float | None = None,
+                 velocity_weight: float = 0.0,
+                 velocity_radius_um: float = 5.0,
                  split: str = "train") -> tuple:
     """Score one configuration across every cached dataset. Returns (summary, rows)."""
     r = find_root(root)
     rows = []
     for name, c in sorted(cache.items()):
         edges = select(c, threshold, topk=topk, gate_um=gate_um)
+        scale = read_scale(zarr_path(r, split, name))
         nodes, pairs = relink(c["coords"], edges, appearance, disappearance,
                               division)
         if nodes is None:
             continue
-        scale = read_scale(zarr_path(r, split, name))
+        if velocity_weight:
+            # Second pass. The first solve exists only to supply velocities.
+            edges = velocity_adjust(c["coords"], edges, nodes, pairs, scale,
+                                    weight=velocity_weight,
+                                    radius_um=velocity_radius_um)
+            nodes, pairs = relink(c["coords"], edges, appearance,
+                                  disappearance, division)
+            if nodes is None:
+                continue
         gt = read_geff(geff_path(r, split, name))
         row = score_one(nodes, pairs, scale, gt)
         row["dataset"] = name
@@ -255,9 +326,11 @@ def score_config(cache: dict, root, threshold: float, appearance: float,
 
 
 def sweep(cache_dir, root=None, thresholds=(0.50, 0.35, 0.25, 0.15),
-          disappearances=(1.0, 1.5, 2.5), appearance: float = 0.0,
-          division: float = 1.0, topk: int | None = None,
-          gate_um: float | None = None, out: str = "replay_sweep.csv") -> dict:
+          disappearances=(1.0, 1.5, 2.5), velocities=(0.0,),
+          appearance: float = 0.0, division: float = 1.0,
+          topk: int | None = None, gate_um: float | None = None,
+          velocity_radius_um: float = 5.0,
+          out: str = "replay_sweep.csv") -> dict:
     """
     The 2-D sweep. Everything here is CPU; no GPU quota is consumed.
 
@@ -271,31 +344,41 @@ def sweep(cache_dir, root=None, thresholds=(0.50, 0.35, 0.25, 0.15),
     print(f"{len(cache)} dataset(s) cached", flush=True)
 
     results = []
-    print(f"\n{'thr':>6}{'disapp':>8}{'adj_J':>9}{'edge_J':>9}{'div_J':>8}"
-          f"{'score':>9}{'TP':>8}{'FP':>7}{'FN':>7}{'nodes':>9}{'s':>6}")
+    # Divisions are OFF: `division_weight 1.0` with `appearance 0.0` requires
+    # edge_prob > 1.0 for a fork, so none can form. The division term is not
+    # printed -- it is 0 by construction, its weight is 0.1, and on a
+    # 12-dataset holdout holding ~12 division events it could not be read
+    # anyway. Edges carry 90% of the score and 128,883 annotations against
+    # 151. It stays in the CSV; it does not get a column here.
+    print(f"\n{'thr':>6}{'disapp':>8}{'vel':>6}{'adj_J':>9}{'edge_J':>9}"
+          f"{'TP':>8}{'FP':>7}{'FN':>7}{'nodes':>9}{'s':>6}")
     for thr in thresholds:
         for da in disappearances:
-            t0 = time.time()
-            s, rows = score_config(cache, root, thr, appearance, da, division,
-                                   topk=topk, gate_um=gate_um)
-            n_nodes = sum(r_["num_pred_nodes"] for r_ in rows)
-            rec = dict(threshold=thr, disappearance=da, appearance=appearance,
-                       division=division, topk=topk or 0,
-                       gate_um=gate_um or 0.0, n_datasets=s["n"],
-                       adj_edge_jaccard=s["adj_edge_jaccard"],
-                       edge_jaccard=s["edge_jaccard"],
-                       division_jaccard=s["division_jaccard"],
-                       score_full=s["score_full"], edge_tp=s["edge_tp"],
-                       edge_fp=s["edge_fp"], edge_fn=s["edge_fn"],
-                       num_pred_nodes=n_nodes,
-                       detect_ceiling=s["detect_ceiling"],
-                       link_rate=s["link_rate"], seconds=time.time() - t0)
-            results.append(rec)
-            print(f"{thr:>6.2f}{da:>8.1f}{s['adj_edge_jaccard']:>9.4f}"
-                  f"{s['edge_jaccard']:>9.4f}{s['division_jaccard']:>8.4f}"
-                  f"{s['score_full']:>9.4f}{s['edge_tp']:>8}{s['edge_fp']:>7}"
-                  f"{s['edge_fn']:>7}{n_nodes:>9}{time.time() - t0:>6.0f}",
-                  flush=True)
+            for vw in velocities:
+                t0 = time.time()
+                s, rows = score_config(cache, root, thr, appearance, da,
+                                       division, topk=topk, gate_um=gate_um,
+                                       velocity_weight=vw,
+                                       velocity_radius_um=velocity_radius_um)
+                n_nodes = sum(r_["num_pred_nodes"] for r_ in rows)
+                rec = dict(threshold=thr, disappearance=da,
+                           appearance=appearance, velocity_weight=vw,
+                           velocity_radius_um=velocity_radius_um,
+                           division=division, topk=topk or 0,
+                           gate_um=gate_um or 0.0, n_datasets=s["n"],
+                           adj_edge_jaccard=s["adj_edge_jaccard"],
+                           edge_jaccard=s["edge_jaccard"],
+                           division_jaccard=s["division_jaccard"],
+                           score_full=s["score_full"], edge_tp=s["edge_tp"],
+                           edge_fp=s["edge_fp"], edge_fn=s["edge_fn"],
+                           num_pred_nodes=n_nodes,
+                           detect_ceiling=s["detect_ceiling"],
+                           link_rate=s["link_rate"], seconds=time.time() - t0)
+                results.append(rec)
+                print(f"{thr:>6.2f}{da:>8.1f}{vw:>6.2f}"
+                      f"{s['adj_edge_jaccard']:>9.4f}{s['edge_jaccard']:>9.4f}"
+                      f"{s['edge_tp']:>8}{s['edge_fp']:>7}{s['edge_fn']:>7}"
+                      f"{n_nodes:>9}{time.time() - t0:>6.0f}", flush=True)
 
     with open(out, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(results[0].keys()))
@@ -303,25 +386,30 @@ def sweep(cache_dir, root=None, thresholds=(0.50, 0.35, 0.25, 0.15),
         w.writerows(results)
     print(f"\nwrote {out} -- send this file, do not print it", flush=True)
 
-    best = max(results, key=lambda r_: r_["score_full"])
+    # Optimise adj_edge_jaccard, not score_full. With forks impossible the two
+    # are equal, but naming the edge term keeps the objective explicit.
+    key = "adj_edge_jaccard"
+    best = max(results, key=lambda r_: r_[key])
     base = next((r_ for r_ in results
                  if r_["threshold"] == BASE["threshold"]
-                 and r_["disappearance"] == BASE["disappearance"]), None)
+                 and r_["disappearance"] == BASE["disappearance"]
+                 and r_["velocity_weight"] == 0.0), None)
     if base is None:
         warn_once("no_baseline_row",
                   f"the sweep did not include threshold "
                   f"{BASE['threshold']} / disappearance "
-                  f"{BASE['disappearance']}, so there is no anchor to the "
-                  f"submitted configuration and the deltas below are "
-                  f"unanchored")
+                  f"{BASE['disappearance']} / velocity 0, so there is no "
+                  f"anchor to the submitted configuration and the delta below "
+                  f"is unanchored")
         delta = float("nan")
     else:
-        delta = best["score_full"] - base["score_full"]
-        print(f"baseline (thr {BASE['threshold']}, disapp "
-              f"{BASE['disappearance']}) score_full {base['score_full']:.4f}")
-    print(f"best     (thr {best['threshold']}, disapp "
-          f"{best['disappearance']}) score_full {best['score_full']:.4f}  "
-          f"delta {delta:+.4f}")
+        delta = best[key] - base[key]
+        print(f"\nbaseline  thr {BASE['threshold']}  disapp "
+              f"{BASE['disappearance']}  vel 0.00   adj_J {base[key]:.4f}"
+              f"   <- the submitted configuration, must read 0.9269")
+    print(f"best      thr {best['threshold']}  disapp "
+          f"{best['disappearance']}  vel {best['velocity_weight']:.2f}"
+          f"   adj_J {best[key]:.4f}   delta {delta:+.4f}")
     print("\nlocal absolute numbers are NOT leaderboard estimates; only the "
           "PAIRED delta above transfers.", flush=True)
     warning_summary()
@@ -329,5 +417,6 @@ def sweep(cache_dir, root=None, thresholds=(0.50, 0.35, 0.25, 0.15),
     return {"n_configs": len(results), "n_datasets": results[0]["n_datasets"],
             "best_threshold": best["threshold"],
             "best_disappearance": best["disappearance"],
-            "best_score_full": best["score_full"], "delta_vs_baseline": delta,
+            "best_velocity_weight": best["velocity_weight"],
+            "best_adj_edge_jaccard": best[key], "delta_vs_baseline": delta,
             "csv": os.path.abspath(out)}

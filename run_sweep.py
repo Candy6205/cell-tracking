@@ -144,14 +144,31 @@ lr.inventory(CACHE)
 # The 0.50 / 1.5 row is the submitted configuration and is the anchor: if it
 # drifts from 0.9269, stop reading the rest.
 print("\n=== sweep ===", flush=True)
+
+# Round 1 (2026-08-20) swept threshold x disappearance and found
+# 0.35 / 2.5 -> adj_J 0.9337, +0.0068 over the submitted 0.50 / 1.5. Its
+# optimum sat on the disappearance edge of the grid, and 0.25 and 0.15 were
+# WORSE than 0.35 -- what running out of discrimination looks like.
+#
+# Round 2 adds the velocity term. `window_size = 2` means the edge model
+# structurally cannot see that a cell was already moving; the public tier
+# compensates in post-processing with a velocity weight of 0.5 and we never
+# have. If that is the missing discriminator, the lower thresholds should stop
+# being worse.
+#
+# Divisions stay off throughout: forks are impossible at division_weight 1.0,
+# the term is worth 0.1, and 12 datasets hold ~12 division events. Edges carry
+# 90% of the score and 128,883 annotations against 151.
 res = lr.sweep(CACHE, root=COMP,
-               thresholds=(0.50, 0.35, 0.25, 0.15),
-               disappearances=(1.0, 1.5, 2.5),
+               thresholds=(0.50, 0.35, 0.25),
+               disappearances=(1.5, 2.5, 3.5),
+               velocities=(0.0, 0.5),
                appearance=0.0, division=1.0,
                out="/kaggle/working/replay_sweep.csv")
 
-print(f"\nbest threshold      {res['best_threshold']}")
-print(f"best disappearance  {res['best_disappearance']}")
-print(f"best score_full     {res['best_score_full']:.4f}")
-print(f"delta vs submitted  {res['delta_vs_baseline']:+.4f}")
+print(f"\nbest threshold        {res['best_threshold']}")
+print(f"best disappearance    {res['best_disappearance']}")
+print(f"best velocity_weight  {res['best_velocity_weight']}")
+print(f"best adj_edge_jaccard {res['best_adj_edge_jaccard']:.4f}")
+print(f"delta vs submitted    {res['delta_vs_baseline']:+.4f}")
 print("SWEEP DONE", flush=True)
