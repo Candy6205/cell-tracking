@@ -150,7 +150,25 @@ print("\n=== sweep ===", flush=True)
 # optimum sat on the disappearance edge of the grid, and 0.25 and 0.15 were
 # WORSE than 0.35 -- what running out of discrimination looks like.
 #
-# Round 2 adds the velocity term. `window_size = 2` means the edge model
+# Round 2 result: velocity is a SUBSTITUTE for disappearance, not a complement.
+# It helped at low disappearance (0.35/1.5: 0.9296 -> 0.9338) and hurt at high
+# (0.50/3.5: 0.9283 -> 0.9215) -- both prune unreliable links, and doing both
+# over-prunes (nodes 168675 -> 143028). Best overall stayed at velocity 0, so
+# round 3 drops the dimension; it doubled the cost of every cell for nothing.
+#
+# What round 2 did find: disappearance was on the grid edge AGAIN.
+#     disapp   1.5      2.5      3.5
+#     adj_J   0.9296   0.9337   0.9382     at threshold 0.35, still climbing
+# progress.md recorded disappearance 3.0 going bad, but that was measured at
+# threshold 0.5. Opening the gate replaces what the pruning removes, so the two
+# are coupled and neither could be read alone before the cache existed.
+#
+# Round 3 pushes disappearance to 5.5 and keeps 0.50/1.5 in the grid purely as
+# the anchor -- without it there is nothing to confirm this run scores the same
+# way the last one did.
+#
+# The old round-2 note follows.
+# Round 2 added the velocity term. `window_size = 2` means the edge model
 # structurally cannot see that a cell was already moving; the public tier
 # compensates in post-processing with a velocity weight of 0.5 and we never
 # have. If that is the missing discriminator, the lower thresholds should stop
@@ -160,9 +178,9 @@ print("\n=== sweep ===", flush=True)
 # the term is worth 0.1, and 12 datasets hold ~12 division events. Edges carry
 # 90% of the score and 128,883 annotations against 151.
 res = lr.sweep(CACHE, root=COMP,
-               thresholds=(0.50, 0.35, 0.25),
-               disappearances=(1.5, 2.5, 3.5),
-               velocities=(0.0, 0.5),
+               thresholds=(0.50, 0.40, 0.35, 0.30),
+               disappearances=(1.5, 3.5, 4.5, 5.5),
+               velocities=(0.0,),
                appearance=0.0, division=1.0,
                out="/kaggle/working/replay_sweep.csv")
 
