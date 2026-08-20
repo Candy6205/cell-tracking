@@ -520,6 +520,76 @@ now appear to drive the largest edge-failure bucket as well.
 "Detection is solved, every hour spent on it is wasted" is therefore **half
 right**. Recall is solved. Precision was never measured. Raising
 `det-threshold` above 0.99, or tightening NMS, is live and untried.
+### Counted, not estimated: what the gate actually costs
+
+`stranded_audit.py`, run 2026-08-20 on the cache plus ground truth. Two
+measurements, and they point in opposite directions, which is the point.
+
+**1. The stranded targets are disproportionately spurious.**
+
+| | matches a GT node within 7 um |
+|---|---|
+| targets with a confident parent (167,398) | **6.1%** |
+| stranded targets (22,474) | **1.5%** |
+| ratio | **0.24** |
+
+Sparse annotation depresses both rates equally, so the ratio is the signal,
+and it holds in every one of the 12 datasets (0.11 to 0.55). Most of the
+22,474 are detections the model invented. They have no true parent and
+**should** stay unlinked.
+
+**2. And yet 278 real edges are stuck behind the gate.**
+
+```
+GT edges                       10313
+  target cell never detected      27
+  target detected but STRANDED   278
+```
+
+**278 of the recorded 450 false negatives — 62% — exist because of the 0.5
+gate.** Not an upper bound; that is the count.
+
+### The arithmetic that decides it
+
+Recovering all 278 while manufacturing F new false positives gives
+`J = 10141 / (10631 + F)` against the current 0.9278:
+
+| F | J | delta |
+|---|---|---|
+| 0 | 0.9539 | **+0.026** |
+| 278 | 0.9296 | +0.002 |
+| 500 | 0.9107 | **-0.017** |
+
+**Break-even is near F = 300**, and the pool the solver may draw from holds
+22,196 spurious stranded targets. The 278 real edges are **1.2%** of it. So
+lowering the gate is a needle-in-haystack problem, and whether it pays comes
+down entirely to how selective the ILP is.
+
+That sharpens the sweep's prediction: `appearance_weight = 0.0` makes
+starting a track free while `disappearance_weight = 1.5` penalises ending
+one, so the solver is currently biased *towards* linking. At a lower gate
+that bias is a liability. **Expect the winning cell to pair a lower
+threshold with a LOWER disappearance weight**, not the 1.5 we submitted.
+
+### Why over-detection is now the higher-leverage target
+
+Those 22,474 spurious nodes are charged twice: they pay the node-count
+penalty, and they bury the 278 recoverable edges in noise.
+
+So reducing over-detection is not merely worth its own small penalty saving
+— **it is the precondition that makes the threshold lever safe**. Halve the
+spurious pool and the needle-in-haystack ratio halves with it, moving
+break-even in our favour. The two lines multiply; they do not add.
+
+The project has never tried it, because `detect_ceiling` reads 0.98-0.99 and
+that was taken to mean detection was solved. It counts **missed** cells only.
+`N/N_true` of 1.01 to 1.30 says up to 30% of predicted nodes are invented,
+and nothing in this log has ever measured that as a cost.
+
+**Next on this line:** sweep `det-threshold` upward from 0.99 and watch the
+stranded count, not just the score. It is a cached-replay quantity for the
+threshold part, but det-threshold changes detection itself, so it needs one
+inference pass per value — about 11 minutes each.
 
 ---
 
