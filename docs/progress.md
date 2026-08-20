@@ -123,9 +123,43 @@ node_recall        0.9974
 1. **Detection is solved.** `node_recall = 0.9974`. Every point of edge loss is
    a *linking* error, not a missed cell. Our classical DoG detector reaches
    0.70 recall by comparison — the classical path is dead as a main line.
-2. **Divisions are catastrophic.** 220 forks predicted, **12 real, 6 correct,
-   214 spurious** — 18x over-prediction. `division_jaccard = 0.0265` out of a
-   possible 1.0.
+2. **Divisions.** Official `evaluate.py` reported division TP/FP/FN =
+   **6 / 214 / 6**, and `division_jaccard = 0.0265` out of a possible 1.0.
+
+   **CORRECTED 2026-08-20.** This entry used to read "220 forks predicted,
+   12 real, 6 correct, 214 spurious -- 18x over-prediction". **That 220 is
+   6 + 214.** It was never counted from the graph, and no independent fork
+   count exists anywhere in this log, so "18x over-prediction" was circular.
+
+   It matters because the official metric only counts a predicted fork at
+   all when it is matched. Read from `division_metrics.py`:
+
+   ```python
+   fp_forks = (considered | evaluable_forks | invalid_forks) - tp_forks
+
+   evaluable_forks = {
+       pred_id for pred_id in pred_forks
+       if pred_id in pred_to_gt and gt_graph.out_degree(pred_to_gt[pred_id]) >= 1
+   }
+   ```
+
+   `evaluable_forks` needs a matched parent with GT out-degree >= 1;
+   `considered` only holds forks inside a GT division's local window; and
+   `invalid_forks` (cross-component, malformed) need matched descendants as
+   evidence. **A fork lying entirely among unannotated cells enters none of
+   the three and is not penalised** -- the same leniency the node and edge
+   terms already have.
+
+   So the greedy graph may well have held thousands of forks, of which 220
+   were merely the ones the metric could see. The true over-prediction
+   factor is unknown.
+
+   **Do not read this as an invitation to spam forks over unannotated
+   regions.** It gains nothing -- `div_J = TP/(TP+FP+FN)` and unmatched
+   forks add no TP -- and it is the same genre as the hub-node exploit that
+   was patched on 2026-07-17 and rescored. What the leniency legitimately
+   buys is room to run a division rule with decent recall and ordinary
+   precision, instead of needing surgical precision.
 3. The node-count penalty costs `0.8960 - 0.8820 = 0.014`.
 
 ### Division head-room, computed

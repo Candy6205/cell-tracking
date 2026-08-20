@@ -216,7 +216,11 @@ def relink(coords: np.ndarray, edges: list, appearance: float,
             pairs.append((ra, rb))
 
     T = int(t.max()) + 1 if len(t) else 0
-    nodes = {"t": t, "zyx": zyx, "T": T, "T_full": T}
+    # `orig` maps each solved row back to its row in the cached `coords`, so a
+    # caller can look up the model's edge probability for a pair the solver
+    # dropped. `build_graph` uses the coords index as node_id, which is what
+    # makes this a straight lookup rather than a re-match.
+    nodes = {"t": t, "zyx": zyx, "T": T, "T_full": T, "orig": nid}
     return nodes, np.asarray(pairs, dtype=np.int64).reshape(-1, 2)
 
 

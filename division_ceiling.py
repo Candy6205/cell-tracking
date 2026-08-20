@@ -147,6 +147,11 @@ def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
     # Rule 1: a matcher that silently matches almost nothing produces a
     # plausible-looking funnel of zeros. Sparse annotation puts the real rate
     # near 6%, so anything under 1% means the coordinate systems disagree.
+    # Solved row -> row in the cached `coords`, so a fork candidate can be
+    # looked up in the model's own candidate probabilities.
+    orig = np.asarray(solved["orig"], dtype=np.int64)
+    prob_of = {(int(a), int(b)): float(p) for a, b, p in zip(src, tgt, prob)}
+
     rate = len(matched) / max(1, len(pred_t))
     if rate < 0.01:
         warn_once("match_rate_collapsed",
@@ -179,6 +184,7 @@ def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
         children.setdefault(ra, []).append(rb)
 
     c = dict.fromkeys(STAGES, 0)
+    true_forks: set = set()          # (parent_row, orphan_row) that are REAL
     for parent, kids in children.items():
         if len(kids) < 2:
             continue
@@ -215,6 +221,7 @@ def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
         if not off_boundary(pred_phys[o]):
             continue
         c["off_boundary"] += 1
+        true_forks.add((int(pp), int(o)))
 
     # ---- the cost side, an UPPER bound on how many forks the filters admit --
     # A real orphan-fork pass also requires the parent to already have exactly
@@ -236,9 +243,86 @@ def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
         ok = ((dmat >= MIN_UM) & (dmat <= MAX_UM)).any(axis=1)
         pool += int(ok.sum())
 
+    # ---- where do the REAL forks rank under the rule's own scoring? --------
+    # Pool size alone does not decide this. `division_recovery` does not add
+    # forks indiscriminately: it ranks candidates by
+    #     d(parent, orphan) + 0.15 * d(child1, orphan)
+    # and takes the best N under a per-movie cap. So the question is not "how
+    # big is the pool" but "are the real ones near the top of it".
+    #
+    # Ranks near 1 mean a tight cap captures them and the rule works here.
+    # Ranks scattered through the thousands mean no cap can separate them and
+    # the line is dead however it is tuned.
+    child_of: dict[int, int] = {}
+    out_count: dict[int, int] = {}
+    for a, b in (pairs if len(pairs) else []):
+        out_count[int(a)] = out_count.get(int(a), 0) + 1
+        child_of.setdefault(int(a), int(b))
+
+    cand = []
+    for t in np.unique(pred_t):
+        if t == 0:
+            continue
+        here = orphan_rows[pred_t[orphan_rows] == t]
+        prev = np.array([p for p in np.nonzero(pred_t == t - 1)[0]
+                         if out_count.get(int(p), 0) == 1], dtype=int)
+        if not len(here) or not len(prev):
+            continue
+        d_po = np.linalg.norm(pred_phys[here][:, None, :]
+                              - pred_phys[prev][None, :, :], axis=2)
+        kids = np.array([child_of[int(p)] for p in prev], dtype=int)
+        d_co = np.linalg.norm(pred_phys[here][:, None, :]
+                              - pred_phys[kids][None, :, :], axis=2)
+        ok = (d_po >= MIN_UM) & (d_po <= MAX_UM) & (d_co >= MIN_SISTER_UM)
+        for oi, pi in zip(*np.nonzero(ok)):
+            o_row = int(here[oi])
+            if not off_boundary(pred_phys[o_row]):
+                continue
+            p_row = int(prev[pi])
+            cand.append((float(d_po[oi, pi] + 0.15 * d_co[oi, pi]),
+                         float(prob_of.get((orig[p_row], orig[o_row]), 0.0)),
+                         p_row, o_row))
+
+    def _greedy(key, reverse=False):
+        """Rank candidates by `key`, one fork per parent and per orphan."""
+        used_p, used_o, out = set(), set(), {}
+        r = 0
+        for item in sorted(cand, key=key, reverse=reverse):
+            p, o = item[2], item[3]
+            if p in used_p or o in used_o:
+                continue
+            used_p.add(p)
+            used_o.add(o)
+            r += 1
+            out[(p, o)] = r
+        return out, r
+
+    # The public tier's rule: pure geometry, no model probability at all.
+    by_geom, n_geom = _greedy(lambda x: x[0])
+    # Ours: the model's own edge probability for that exact pair, which the
+    # cache already holds. A fork target that is an orphan only because the
+    # solver refuses to fork still carries its original score, and that is a
+    # far more direct signal than a distance proxy.
+    by_prob, n_prob = _greedy(lambda x: x[1], reverse=True)
+
+    n_zero = sum(1 for x in cand if x[1] == 0.0)
+    if cand and n_zero == len(cand):
+        warn_once("no_cached_prob",
+                  f"{name}: every fork candidate looked up a probability of "
+                  f"0.0, so the probability ranking below is arbitrary. The "
+                  f"orig-row mapping from link_replay is wrong or the cache "
+                  f"does not cover these pairs")
+
     c["dataset"] = name
     c["orphans"] = int(len(orphan_rows))
     c["fork_pool_upper"] = pool
+    c["forks_ranked"] = n_geom
+    c["cand_without_prob"] = n_zero
+    c["ranks_geom"] = sorted(r for k in true_forks
+                             if (r := by_geom.get(k)) is not None)
+    c["ranks_prob"] = sorted(r for k in true_forks
+                             if (r := by_prob.get(k)) is not None)
+    c["true_forks_unranked"] = len(true_forks) - len(c["ranks_geom"])
     return c
 
 
@@ -264,25 +348,57 @@ def run(cache_dir, root, split="train", out="division_ceiling.csv") -> dict:
         prev = tot[k]
 
     ceiling = tot["off_boundary"]
+    ranked = sum(r["forks_ranked"] for r in rows)
     print(f"\nceiling: {ceiling} of {tot['divisions']} GT divisions are "
           f"recoverable by an orphan fork on this pipeline")
     print(f"orphan nodes                {orph}")
-    print(f"forks the filters admit     {pool}   (upper bound)")
-    if ceiling:
-        print(f"pool per real division      {pool / ceiling:.0f}x")
-        if pool / ceiling > 100:
-            print("  -> the filters are not selective enough here. Each real "
-                  "fork comes with ~%d spurious ones, every one of which is a "
-                  "division FP and an edge FP. Kunal's +0.0129 does not "
-                  "transfer to this orphan pool." % (pool / ceiling))
-        elif pool / ceiling > 20:
-            print("  -> marginal. Worth trying only with a hard per-movie cap, "
-                  "and measure the EDGE term as well as the division term.")
-        else:
-            print("  -> selective enough to be worth running.")
-    else:
-        print("  -> nothing survives the funnel. The orphan-fork line is dead "
-              "on this pipeline; drop it rather than tuning it.")
+    print(f"fork candidates ranked      {ranked}")
+
+    if not ceiling:
+        print("  -> nothing survives the funnel. Drop the line rather than "
+              "tuning it.")
+        return {"datasets": len(rows), "divisions": tot["divisions"],
+                "ceiling": 0, "orphans": orph, "fork_pool_upper": pool}
+
+    # ---- the number that actually decides it ------------------------------
+    # Pool size is not the question; the rule ranks and caps. So: taking the
+    # best N candidates per the ranking, how many of the real forks come with
+    # them, and what does the trade cost?
+    #
+    # divisions: div_J = TP / (TP + FP + FN), FN = 12 - TP, weight 0.1
+    # edges:     every spurious fork is one more edge FP on 9863/318/450
+    g = sorted(r for row in rows for r in row["ranks_geom"])
+    p = sorted(r for row in rows for r in row["ranks_prob"])
+    nz = sum(r["cand_without_prob"] for r in rows)
+    print(f"candidates with no cached probability  {nz} of {ranked}")
+
+    print(f"\nranks of the {ceiling} real forks:")
+    print(f"  by geometry     {g}   <- the public tier's rule")
+    print(f"  by edge_prob    {p}   <- ours, using the model's own score")
+
+    print(f"\n{'cap':>6}{'geom TP':>9}{'prob TP':>9}{'div_J':>8}{'div gain':>10}"
+          f"{'edge loss':>11}{'net':>9}   (probability ranking)")
+    best = (None, -1.0)
+    for cap in (5, 10, 20, 30, 50, 100, 200, 500, 1000, ranked):
+        tp_g = sum(1 for r in g if r <= cap)
+        tp_p = sum(1 for r in p if r <= cap)
+        added = min(cap * len(rows), ranked)     # cap is per movie
+        fp_div = max(0, added - tp_p)
+        fn_div = tot["divisions"] - tp_p
+        div_j = tp_p / max(1, tp_p + fp_div + fn_div)
+        div_gain = 0.1 * div_j
+        j_new = (9863 + tp_p) / (9863 + tp_p + 318 + fp_div + 450 - tp_p)
+        edge_loss = 0.9278 - j_new
+        net = div_gain - edge_loss
+        if net > best[1]:
+            best = (cap, net)
+        print(f"{cap:>6}{tp_g:>9}{tp_p:>9}{div_j:>8.3f}{div_gain:>+10.4f}"
+              f"{-edge_loss:>+11.4f}{net:>+9.4f}")
+
+    print(f"\nbest cap {best[0]} per movie, net {best[1]:+.4f}")
+    print("The edge term is 9x the division term, so a fork that misses costs "
+          "more than a fork that lands is worth. That is why the cap has to be "
+          "tight, and why the RANKING is the whole question.")
 
     print(f"\n[degraded] {tot['divisions']} divisions is a DIRECTION, not a "
           f"number. division_jaccard is meaningless below ~50 datasets, and "

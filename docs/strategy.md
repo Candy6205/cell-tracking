@@ -75,6 +75,56 @@ absolute number as a target.
 
 ---
 
+## External data is allowed — and it is the division answer
+
+*Added 2026-08-20. Nothing in these documents had recorded this.*
+
+Host Thibaut Goldsborough, 2026-08-13, on discussion /734330, asked directly
+whether Zebrahub **imaging data and the `*_tracks.csv` tracking annotations**
+may be used as external training data:
+
+> **"Yes you are free to use the data and all resources in Zebrahub for this
+> competition! There is no overlap with the test set."**
+
+### Why this reframes the division problem
+
+The whole log has reasoned inside an unstated box: **the weights are given,
+only post-processing is ours**. Every division conclusion here — the
+`division_weight` trade, the orphan-fork rule, the cap arithmetic — lives in
+that box.
+
+It does not survive one number. **The training split contains about 137
+annotated division events.** A model cannot learn division from that, which is
+why `division_jaccard ~ 0` for essentially the whole field (/728551) and why no
+setting of `ilp-division-weight` will conjure the signal: there is nothing to
+threshold. Tuning cannot create supervision.
+
+Zebrahub is **the same lab and the same light-sheet modality** as the
+competition data, so it is in-domain. That matters more than volume: the
+165k-division synthetic set (/732103) is large but morphologically wrong, and a
+rank-24 competitor reported that feeding uniform-ball masks to the host's HOCT
+over-links and produces spurious forks rather than real divisions (/728551).
+
+### What the frontier says is available
+
+On /728551, a competitor ranked **21** reports a division term of about **0.2**
+while the field sits at **~0** — worth **+0.02** of score. The same thread has
+`adjusted_edge_jaccard` plateauing at **0.90-0.91** for everyone on the public
+split_0 stack. So the edge term is where the field is stuck and the division
+term is where at least one frontier team is not.
+
+### Consequences for the plan below
+
+- Any experiment whose read-out is `division_jaccard` **on the 12-dataset
+  holdout is uninterpretable**: it holds ~12 division events. `submit_baseline`
+  already prints this warning; it was ignored once on 2026-08-20 and should not
+  be again.
+- Division work is a **supervision** task before it is a solver task. Fine-
+  tuning the edge head on Zebrahub tracks is the direct route.
+- GPU is not the constraint people assumed: 30 h/week that does not accumulate,
+  but ~170 h across the weeks remaining, against ~11 min for a 12-dataset
+  inference pass.
+
 ## Plan
 
 *Rewritten 2026-08-20 after the candidate cache and the stranded audit. The
