@@ -216,11 +216,34 @@ def relink(coords: np.ndarray, edges: list, appearance: float,
             pairs.append((ra, rb))
 
     T = int(t.max()) + 1 if len(t) else 0
-    # `orig` maps each solved row back to its row in the cached `coords`, so a
-    # caller can look up the model's edge probability for a pair the solver
-    # dropped. `build_graph` uses the coords index as node_id, which is what
-    # makes this a straight lookup rather than a re-match.
-    nodes = {"t": t, "zyx": zyx, "T": T, "T_full": T, "orig": nid}
+
+    # `orig` maps each solved row back to its row in the cached `coords`.
+    #
+    # Do NOT assume node_id is the coords index. `build_graph` does
+    # `node_ids = graph.bulk_add_nodes(...)` and then references
+    # `node_ids[src]`, so the ids are whatever tracksdata handed back. They
+    # very likely are 0..N-1 on a fresh graph, and if that ever stopped being
+    # true a velocity would silently attach to the wrong cell and still print
+    # a plausible number. Map by coordinate instead: the graph stores the same
+    # integers coords held, so the tuples match exactly.
+    key = {(int(a), int(b), int(c), int(d)): i
+           for i, (a, b, c, d) in enumerate(coords)}
+    orig = np.array([key.get((int(t[i]), int(round(zyx[i, 0])),
+                              int(round(zyx[i, 1])), int(round(zyx[i, 2]))), -1)
+                     for i in range(len(t))], dtype=np.int64)
+    n_lost = int((orig < 0).sum())
+    if n_lost:
+        warn_once("orig_unmapped",
+                  f"{n_lost} of {len(orig)} solved nodes did not map back to a "
+                  f"cached coordinate; anything using `orig` (velocity, "
+                  f"candidate-probability lookup) silently skips them")
+    if len(orig) and not np.array_equal(orig, nid[:len(orig)]):
+        warn_once("node_id_not_index",
+                  "graph node_id is NOT the coords row index on this "
+                  "tracksdata version. The coordinate mapping handles it, but "
+                  "any other code assuming the identity is wrong")
+
+    nodes = {"t": t, "zyx": zyx, "T": T, "T_full": T, "orig": orig}
     return nodes, np.asarray(pairs, dtype=np.int64).reshape(-1, 2)
 
 
