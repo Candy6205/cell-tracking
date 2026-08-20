@@ -77,41 +77,84 @@ absolute number as a target.
 
 ## Plan
 
-### First — cache the candidate set, then sweep the edge threshold
+*Rewritten 2026-08-20 after the candidate cache and the stranded audit. The
+infrastructure is built and validated; what changed is the ranking.*
 
-`threshold` defaults to 0.5, our submission never sets it, and with ILP on it is
-the only constraint on the linker. The softmax normalises over sources, so any
-target with two plausible parents splits its mass below the gate and emits no
-edge. That is the `DROPPED` bucket, 60% of all edge failures, and it is one
-config value. See the edge-threshold section in `progress.md`.
+### What we now know, in three numbers
 
-1. **Cache** — one inference pass at `threshold=0.05` over the holdout, dumping
-   `(coords, edges, probs)` per dataset. `predict_video` is the only GPU stage;
-   `build_graph` + `ILPSolver.solve` are CPU.
-2. **Replay** on CPU: `threshold` {0.50, 0.35, 0.25, 0.15, 0.10} x
-   `disappearance_weight` {1.0, 1.5, 2.5}. They interact — a lower gate gives the
-   solver cheap ways to dodge the disappearance cost.
+| | |
+|---|---|
+| GT edges unreachable at `threshold` 0.5 | **278 of the 450 FN — 62%** |
+| stranded targets they hide among | **22,474**, of which ~98.8% are spurious |
+| false positives at which recovering all 278 breaks even | **~300** |
 
-Everything below then also replays for free.
+The gate really is throwing away most of what remains, and the prize is
+narrow: 278 needles in a 22,474 haystack. Full detail in `progress.md`.
 
-### Next — CPU only, on predictions we already have
+### 1. The 2-D replay sweep — running, CPU, no quota
 
-- **Orphan-node forks** (`division_recovery.py`). Keep the linker 1:1, then add
-  forks in a second pass, only into parentless nodes, capped per movie. The
-  public tier measures **+0.0129** with the official scorer. Cannot displace a
-  true positive by construction.
-- **`MIN_TRACK_LEN = 3` component pruning**, with division and boundary
-  exemptions. Attacks the node-count penalty directly.
+`threshold` {0.50, 0.35, 0.25, 0.15} x `disappearance_weight` {1.0, 1.5,
+2.5}, replayed from the cache. The anchor cell reproduces the submitted
+0.9269 exactly, so the table is trustworthy.
 
-### Next — one inference pass each
+**Predicted result**, worth writing down before reading it:
+`appearance_weight = 0.0` makes starting a track free while
+`disappearance_weight = 1.5` penalises ending one, so the solver is biased
+towards linking. Once the gate opens onto a pool that is 98.8% junk, that
+bias is a liability. **Expect the winner to pair a lower threshold with a
+LOWER disappearance weight.** If instead the whole table sits below the
+anchor, the haystack won and the lever is dead — say so and move to 2.
 
-- **A `44b6`-only holdout.** Every number we own comes from `6bba`. This is the
-  cheapest probe of the offset and closes a real blind spot.
-- **Top-3 candidate parents at >=0.25 with a 10 um gate**, instead of a bare
-  `prob > 0.5`. Under `softmax(dim=0)` any target whose best parent scores
-  0.25-0.50 is stranded — that is the `DROPPED` bucket by construction.
-- **`det-threshold` sweep down to 0.95.**
+### 2. Reduce over-detection — the multiplier, and never tried
 
+The 22,474 spurious nodes are charged twice: the node-count penalty, and
+burying the 278 recoverable edges at 1.2%. **Halve the spurious pool and the
+needle-in-haystack ratio halves with it**, moving break-even in our favour.
+These two lines multiply, they do not add.
+
+`cache_det_sweep.py` tests `det-threshold` at 0.995 and 0.999 against the
+submitted 0.99 — one inference pass each, ~11 min. Read the ratio: stranded
+falling faster than nodes means the cut lands on the useless detections.
+
+This contradicts `public-solutions-recon.md` item 3, which proposed sweeping
+det-threshold **down** to 0.95 by analogy with the public tier. The audit
+points up. One of the two is wrong and the run settles it.
+
+Why the project missed this: `detect_ceiling` reads 0.98-0.99 and was taken
+to mean detection was solved. **It counts missed cells only.** `N/N_true`
+from 1.01 to 1.30 says up to 30% of predicted nodes are invented, and
+nothing has ever measured that as a cost.
+
+### 3. CPU only, on predictions we already have
+
+- **Orphan-node forks** (`division_recovery.py`, written but never run). Keep
+  the linker 1:1, then add forks in a second pass into parentless nodes only,
+  capped per movie. The public tier measures **+0.0129** with the official
+  scorer, and it cannot displace a true positive by construction.
+- **`MIN_TRACK_LEN = 3` pruning.** Expect close to nothing: ILP already holds
+  the node-count penalty at 0.0009. The public tier needs it because its
+  linker leaves scattered nodes; ours does not. Measure it, do not budget for
+  it.
+
+### 4. The `44b6` blind spot — one inference pass, and it needs care
+
+Every number we own comes from `6bba`. A naive `44b6` holdout **cannot**
+answer the offset question: `44b6` runs a median 327 cells/frame against
+`6bba`'s 97 and `corr(edge J, density) = -0.68`, so it would score lower for
+reasons unrelated to what the weights saw.
+
+`survey_match.py` picks the comparison. Strict density pairing was tried and
+discards the low-density half — `44b6` has almost nothing below 65
+cells/frame — so the deliverable is **10 datasets spanning the overlap in log
+density**, compared as fitted J-vs-density curves. Density becomes a
+covariate instead of a confound.
+
+### 5. Only if 1 and 2 both pay
+
+TTA over the linker features, and one-frame gap closing with synthetic
+midpoints. Both cost runtime, and there is 2.3x of inference budget spare
+(~5.2 h of the 12 h limit), so they are affordable — but they are refinements
+of a pipeline whose main leak may still be open.
 ### Deliberately not doing
 
 - **Global knob tuning.** The 0.952's author swept scalars extensively and
