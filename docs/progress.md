@@ -423,6 +423,103 @@ experiment afterwards — threshold, appearance/disappearance, orphan forks,
 component pruning, gap closing — is a CPU replay costing no quota at all.
 
 **Build the cache before running any sweep.**
+---
+
+## The candidate cache, and what it measured (2026-08-20)
+
+The GPU stage now runs once and every linking experiment replays on CPU.
+`cache_candidates.py` dumps the raw candidates, `link_replay.py` re-solves
+them, `run_sweep.py` is the Kaggle entry point. Toolchain, and the five traps
+that cost a run each, in `docs/kaggle-toolchain.md`.
+
+### The cache is faithful — verified, not assumed
+
+Replaying the submitted configuration (threshold 0.50, appearance 0.0,
+disappearance 1.5) out of the cache:
+
+```
+edge TP/FP/FN    9863 / 318 / 450        <- recorded 9863 / 318 / 450
+adj_edge_jaccard 0.9269                  <- recorded 0.9269
+```
+
+Digit for digit. **So a sweep over the cache measures the real pipeline**, and
+one full 12-dataset pass costs **154 s of CPU** against 11 min of GPU.
+
+### The correction it produced: 0.9953 / 0.9530 is the GREEDY decomposition
+
+The recorded `detect_ceiling 0.9953 / link_rate 0.9530` sits in this log where
+it reads as describing the current configuration. It does not:
+
+| | detect_ceiling | link_rate |
+|---|---|---|
+| as recorded | 0.9953 | 0.9530 |
+| ILP+A, measured 2026-08-20 | **0.9823** | **0.9736** |
+
+The recorded pair reproduces exactly from the greedy run's TP of 9783
+(9783 / 0.9530 = 10265 reachable, and 10265 / 10313 GT edges = 0.9953), so it
+is greedy's, not ILP+A's.
+
+**This is how ILP actually wins**: it gives up a little detection reach
+(0.9953 -> 0.9823, because the solver discards nodes) to buy a lot of linking
+(0.9530 -> 0.9736). That trade was not visible before.
+
+Detection's share of the loss is therefore **1.8%, not 0.5%** — still small,
+still linking-dominated, but 3.5x what this log claimed.
+
+### The measurement: 11.8% of targets have no candidate parent at all
+
+Pooled over the 12 held-out `6bba` datasets, dumping at threshold 0.05:
+
+| | value |
+|---|---|
+| candidates above 0.5 — everything the 0.876 submission ever saw | 167,398 |
+| candidates above 0.05 | 338,781 |
+| **ratio** | **2.02x** |
+| targets | 189,872 |
+| **targets with NO candidate above 0.5** | **22,474 = 11.8%** |
+
+The softmax normalises over sources, so at most one parent per target can
+exceed 0.5. `above_0.5` is therefore exactly the count of targets that had any
+candidate at all, and the identity holds in the data (`above_0.5 <= targets`
+in all 12). Those 22,474 targets are **structural false negatives**: no
+linker, however good, could have connected them.
+
+### It is driven by over-detection, NOT density
+
+Per-dataset stranded fraction against the statistics already in this log:
+
+| stranded fraction vs | Pearson r |
+|---|---|
+| **`N/N_true` (over-detection)** | **+0.79** |
+| true cells/frame (density) | **-0.07** |
+| edge Jaccard | -0.53 |
+
+**Density is uncorrelated.** This log's "density is the primary failure axis"
+holds for the score, but not for the mechanism behind the largest error
+bucket. The plausible mechanism: a spurious detection has no true parent, so
+its softmax column spreads over whatever is nearby and nothing clears 0.5.
+
+### Which cuts both ways — read this before spending on it
+
+A stranded target that is a **spurious detection should stay unlinked**;
+forcing an edge into it manufactures a false positive. The +0.79 correlation
+says a substantial share of the 22,474 are exactly that. So the 2.02x is
+**not** free headroom, and the "+0.041 upper bound" in the section above is
+optimistic — it assumed every stranded target was a real cell.
+
+Separating the two is precisely what `appearance_weight` and
+`disappearance_weight` arbitrate, which is why the sweep is 2-D.
+
+### The line this opens: over-detection has never been measured
+
+`detect_ceiling = 0.9823` counts **missed** cells. It says nothing about
+**spurious** ones. `N/N_true` runs 1.01 to 1.30 across the holdout, so up to
+30% of predicted nodes are invented. They pay the node-count penalty, and they
+now appear to drive the largest edge-failure bucket as well.
+
+"Detection is solved, every hour spent on it is wasted" is therefore **half
+right**. Recall is solved. Precision was never measured. Raising
+`det-threshold` above 0.99, or tightening NMS, is live and untried.
 
 ---
 
