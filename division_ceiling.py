@@ -95,6 +95,23 @@ STAGES = ["divisions", "parent_detected", "both_daughters_detected",
 
 
 def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
+    """
+    CORRECTED 2026-08-20. The first version defined an orphan as a node with no
+    incoming candidate above the gate. That is NOT what `division_recovery.py`
+    means: its rule selects nodes with **in-degree 0 after the ILP solve**.
+
+    The two sets differ exactly in the interesting case -- a daughter whose
+    edge scores above 0.5 but which the solver refused because
+    `ilp_division_weight 1.0` with `appearance_weight 0.0` makes a fork require
+    `edge_prob > 1.0`, i.e. forbids it outright. The wrong definition threw
+    those away and reported a ceiling of 1 of 12; they are 9 of the 12.
+
+    So this now runs the actual ILP and reads in-degree off the solved graph.
+    It costs a solve per dataset, which is why this is a CPU kernel and not an
+    inline check.
+    """
+    import link_replay as lr
+
     z = np.load(npz)
     coords, tgt, prob = z["coords"], z["tgt"], z["prob"]
     src = z["src"]
@@ -102,18 +119,33 @@ def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
     scale = np.asarray(read_scale(zarr_path(root, split, name)), dtype=float)
     gt = read_geff(geff_path(root, split, name))
 
-    pred_t = coords[:, 0].astype(int)
-    pred_phys = coords[:, 1:].astype(float) * scale
+    # Solve exactly the submitted configuration, then work on ITS node set.
+    edges = lr.select({"src": src, "tgt": tgt, "prob": prob,
+                       "dist": z["dist"]}, gate)
+    solved, pairs = lr.relink(coords, edges, lr.BASE["appearance"],
+                              lr.BASE["disappearance"], lr.BASE["division"])
+    if solved is None:
+        warn_once("solve_empty",
+                  f"{name} produced no solved graph; it contributes zeros to "
+                  f"the funnel below and the totals are NOT over all datasets")
+        return dict.fromkeys(STAGES + ["orphans", "fork_pool_upper"], 0) | \
+            {"dataset": name}
+
+    pred_t = solved["t"].astype(int)
+    pred_phys = solved["zyx"]
     gt_t = gt["t"].astype(int)
     gt_phys = np.stack([gt["z"], gt["y"], gt["x"]], axis=1) * scale
 
     matched = _match_nodes_per_frame(pred_t, pred_phys, gt_t, gt_phys)
     pred_of_gt = {g: p for p, g in matched.items()}
 
-    has_conf_in = np.zeros(len(coords), dtype=bool)
-    has_conf_in[tgt[prob > gate]] = True
-    has_conf_out = np.zeros(len(coords), dtype=bool)
-    has_conf_out[src[prob > gate]] = True
+    # in-degree / out-degree ON THE SOLVED GRAPH -- the rule's actual domain
+    n = len(pred_t)
+    has_conf_in = np.zeros(n, dtype=bool)
+    has_conf_out = np.zeros(n, dtype=bool)
+    if len(pairs):
+        has_conf_out[pairs[:, 0]] = True
+        has_conf_in[pairs[:, 1]] = True
 
     # volume extent in physical units, for the boundary filter
     hi = pred_phys.max(axis=0) if len(pred_phys) else np.zeros(3)
@@ -173,7 +205,9 @@ def _analyse(npz, root, name, split="train", gate: float = GATE) -> dict:
     # A real orphan-fork pass also requires the parent to already have exactly
     # one child and applies a per-movie cap, so this over-counts. It is here to
     # answer "is the pool 10x the prize or 1000x", not to predict the rule.
-    orphan_rows = np.nonzero(~has_conf_in)[0]
+    # A node at t = 0 has in-degree 0 by construction and is a track start, not
+    # a division daughter. Counting it would inflate the pool for free.
+    orphan_rows = np.nonzero(~has_conf_in & (pred_t > 0))[0]
     pool = 0
     for t in np.unique(pred_t):
         prev = np.nonzero((pred_t == t - 1) & has_conf_out)[0]

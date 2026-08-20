@@ -101,9 +101,34 @@ else:
           flush=True)
 
 sys.path.insert(0, str(CODE))
+if PACK is not None:
+    # division_ceiling now runs the real ILP through link_replay, which imports
+    # the official predict module and tracksdata. Those live in the repo inside
+    # the support pack, not in the code dataset.
+    for p in (PACK / "repo" / "src", PACK / "repo" / "scripts"):
+        if p.exists():
+            sys.path.insert(0, str(p))
+        else:
+            print(f"[degraded] {p} missing -- link_replay cannot import the "
+                  f"official build_graph/ILPSolver and the division funnel "
+                  f"will fail rather than silently use something else",
+                  flush=True)
 
 import stranded_audit as sa                                   # noqa: E402
+import division_ceiling as dc                                 # noqa: E402
 
-print("stranded_audit", sa.SCRIPT_VERSION, flush=True)
-res = sa.run(CACHE, COMP, out="/kaggle/working/stranded_audit.csv")
-print("\nAUDIT DONE", res, flush=True)
+print("stranded_audit", sa.SCRIPT_VERSION,
+      " division_ceiling", dc.SCRIPT_VERSION, flush=True)
+
+print("\n" + "=" * 62)
+print("1. what the 0.5 edge gate costs")
+print("=" * 62, flush=True)
+res_a = sa.run(CACHE, COMP, out="/kaggle/working/stranded_audit.csv")
+
+print("\n" + "=" * 62)
+print("2. can orphan forks recover anything on THIS pipeline")
+print("=" * 62, flush=True)
+res_d = dc.run(CACHE, COMP, out="/kaggle/working/division_ceiling.csv")
+
+print("\nAUDIT DONE", res_a, flush=True)
+print("CEILING DONE", res_d, flush=True)
