@@ -69,8 +69,18 @@ BOX_UM = tuple(s * v for s, v in zip(COMP_SHAPE, COMP_VOXEL))   # 104 um cube
 
 ZH_VOXEL = (1.24, 0.439, 0.439)                 # from the zarr's .zattrs
 
-SMOKE = True                # 2 crops, 20 frames -- flip off once it looks right
-N_CROPS = 2 if SMOKE else 20
+# Read ONE block per frame and cut a GRID x GRID tile of crops out of it.
+#
+# The naive version read each crop separately and cost 8.75 s/frame: the zarr
+# chunks are (1, 1, 128, 362, 362) and a 104 um crop is 84 x 237 x 237, so
+# every read pulled up to eight 33 MB chunks to use a sliver of each. Twenty
+# crops of a hundred frames would have taken 4.9 h.
+#
+# A 3x3 tile spans 252 x 711 x 711 voxels, which touches roughly the same eight
+# chunks -- so nine crops now cost one read instead of nine. About 18x less
+# downloaded.
+GRID = 3
+SMOKE = False
 N_FRAMES = 20 if SMOKE else 100
 T0 = 200                    # mid-development; t runs 0..790
 
@@ -139,40 +149,74 @@ zb = [int(round(b / v)) for b, v in zip(BOX_UM, ZH_VOXEL)]      # 84, 237, 237
 print(f"crop {BOX_UM[0]:.0f} um cube = {zb} voxels here -> resample to "
       f"{COMP_SHAPE}", flush=True)
 
-# Place crops where the cells are: the densest columns of the t=T0 slice.
+# Place the tile where the cells are: the densest GRID x GRID window at t=T0.
 f0 = tr[tr.t == T0]
 if f0.empty:
     raise SystemExit(f"[degraded] no track rows at t={T0}")
 gy = (f0.y // BOX_UM[1]).astype(int)
 gx = (f0.x // BOX_UM[2]).astype(int)
-dens = f0.groupby([gy, gx]).size().sort_values(ascending=False)
-print(f"\ndensest boxes at t={T0} (cells per 104 um column):", flush=True)
-for (iy, ix), n in dens.head(N_CROPS).items():
-    print(f"  y{iy} x{ix}: {n}", flush=True)
+cell = f0.groupby([gy, gx]).size()
+best, best_n = None, -1
+for iy in range(int(gy.min()), int(gy.max()) - GRID + 2):
+    for ix in range(int(gx.min()), int(gx.max()) - GRID + 2):
+        n = sum(int(cell.get((iy + a, ix + b), 0))
+                for a in range(GRID) for b in range(GRID))
+        if n > best_n:
+            best, best_n = (iy, ix), n
+iy0, ix0 = best
+print(f"\ndensest {GRID}x{GRID} tile at t={T0}: y{iy0} x{ix0}, "
+      f"{best_n} cells across it", flush=True)
 
 CROPS = OUT / "crops"
 CROPS.mkdir(exist_ok=True)
 zc = int(f0.z.median() // BOX_UM[0])
 
-for k, ((iy, ix), _n) in enumerate(dens.head(N_CROPS).items(), 1):
-    t_start = time.time()
+# one block covering the whole tile
+blk_um = (zc * BOX_UM[0], iy0 * BOX_UM[1], ix0 * BOX_UM[2])
+blk_vx = [int(round(o / v)) for o, v in zip(blk_um, ZH_VOXEL)]
+blk_sz = [zb[0], zb[1] * GRID, zb[2] * GRID]
+print(f"block {blk_sz} voxels at {blk_vx}, "
+      f"{np.prod(blk_sz) * 2 / 2**20:.0f} MB per frame", flush=True)
+
+zoom_f = [c / b for c, b in zip(COMP_SHAPE, zb)]
+
+# GRID^2 crops x N_FRAMES x 64x256x256 uint16 is 7.5 GB at GRID=3, N_FRAMES=100,
+# on top of ~1 GB of tracks in pandas. Write through to disk instead of holding
+# it: open_memmap gives a real .npy that np.load can mmap straight back.
+from numpy.lib.format import open_memmap                       # noqa: E402
+
+TMP = OUT / "tmp"
+TMP.mkdir(exist_ok=True)
+vols = {(a, b): open_memmap(TMP / f"v{a}{b}.npy", mode="w+",
+                            dtype=np.uint16, shape=(N_FRAMES,) + COMP_SHAPE)
+        for a in range(GRID) for b in range(GRID)}
+
+t_start = time.time()
+for i, t in enumerate(range(T0, T0 + N_FRAMES)):
+    sl = tuple(slice(o, o + s) for o, s in zip(blk_vx, blk_sz))
+    block = np.asarray(arr[t, 0][sl])
+    if block.shape != tuple(blk_sz):
+        pad = np.zeros(tuple(blk_sz), dtype=block.dtype)
+        pad[:block.shape[0], :block.shape[1], :block.shape[2]] = block
+        block = pad
+        if i == 0:
+            print(f"[degraded] the block runs off the volume edge and is "
+                  f"zero-padded; crops on that side are partly empty",
+                  flush=True)
+    for a in range(GRID):
+        for b in range(GRID):
+            sub_ = block[:, a * zb[1]:(a + 1) * zb[1],
+                         b * zb[2]:(b + 1) * zb[2]]
+            vols[(a, b)][i] = zoom(sub_, zoom_f, order=1).astype(np.uint16)
+    if (i + 1) % 10 == 0 or i == 0:
+        el = time.time() - t_start
+        print(f"  frame {i+1}/{N_FRAMES}  {el:.0f}s  "
+              f"eta {el / (i + 1) * (N_FRAMES - i - 1):.0f}s", flush=True)
+
+for (a, b), vol in vols.items():
+    vol.flush()
+    iy, ix = iy0 + a, ix0 + b
     o_um = (zc * BOX_UM[0], iy * BOX_UM[1], ix * BOX_UM[2])
-    o_vx = [int(round(o / v)) for o, v in zip(o_um, ZH_VOXEL)]
-    sl = tuple(slice(o, o + b) for o, b in zip(o_vx, zb))
-
-    vols = np.empty((N_FRAMES,) + COMP_SHAPE, dtype=np.uint16)
-    for i, t in enumerate(range(T0, T0 + N_FRAMES)):
-        raw = np.asarray(arr[t, 0][sl])
-        if raw.shape != tuple(zb):
-            print(f"[degraded] crop {k} frame {t} came back {raw.shape}, "
-                  f"expected {tuple(zb)} -- it runs off the volume edge and "
-                  f"is padded with zeros", flush=True)
-            pad = np.zeros(tuple(zb), dtype=raw.dtype)
-            pad[:raw.shape[0], :raw.shape[1], :raw.shape[2]] = raw
-            raw = pad
-        f = [c / b for c, b in zip(COMP_SHAPE, zb)]
-        vols[i] = zoom(raw, f, order=1).astype(np.uint16)
-
     m = tr[(tr.t >= T0) & (tr.t < T0 + N_FRAMES)
            & (tr.z >= o_um[0]) & (tr.z < o_um[0] + BOX_UM[0])
            & (tr.y >= o_um[1]) & (tr.y < o_um[1] + BOX_UM[1])
@@ -187,16 +231,19 @@ for k, ((iy, ix), _n) in enumerate(dens.head(N_CROPS).items(), 1):
 
     name = f"{MOVIE}_z{zc}y{iy}x{ix}"
     np.savez_compressed(
-        CROPS / f"{name}.npz", image=vols, nodes=nodes,
+        CROPS / f"{name}.npz", image=vol, nodes=nodes,
         track_id=m.track_id.to_numpy().astype(np.int64),
         parent_track_id=m.parent_track_id.to_numpy().astype(np.int64),
         origin_um=np.asarray(o_um, dtype=np.float64),
         voxel_um=np.asarray(COMP_VOXEL, dtype=np.float64))
     mb = (CROPS / f"{name}.npz").stat().st_size / 2 ** 20
     per_frame = len(nodes) / max(1, N_FRAMES)
-    print(f"[{k}/{N_CROPS}] {name}: {len(nodes):,} nodes "
-          f"({per_frame:.0f}/frame), {mb:.0f} MB, {time.time()-t_start:.0f}s",
-          flush=True)
+    print(f"  {name}: {len(nodes):,} nodes ({per_frame:.0f}/frame), "
+          f"{mb:.0f} MB", flush=True)
+
+for p in TMP.glob("*.npy"):
+    p.unlink()
+TMP.rmdir()
 
 tot = sum(p.stat().st_size for p in CROPS.glob("*.npz")) / 2 ** 20
 print(f"\n{len(list(CROPS.glob('*.npz')))} crops, {tot:.0f} MB", flush=True)
