@@ -222,6 +222,20 @@ exhausted.** The remaining gains are structural.
 
 `summarise()` drops the division term entirely when a submission contains no
 forks. Our submission has none — therefore **our 0.876 IS our pure adjusted edge
+
+**CORRECTED 2026-08-20.** The number is right, the reason is wrong.
+`summarise()` drops the division term only when the WHOLE split has no
+divisions at all — `metrics.py`:
+
+    division_total = totals["division_tp"] + totals["division_fp"] + totals["division_fn"]
+    if division_total == 0:
+        division_jaccard = float("nan")
+        score = adj_edge_jaccard
+
+The hidden test has ground-truth divisions, so `division_fn > 0` and the term
+is **included at zero**, not dropped. Same number; different meaning. The
+maximum score is **1.1**, not 1.0, and we forfeit the whole 0.1.
+
 Jaccard on the hidden test**, with no ablation needed.
 
 ---
