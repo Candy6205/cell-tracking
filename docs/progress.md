@@ -675,6 +675,104 @@ carries 21,697,591 annotated nodes and 635,042 divisions against this
 competition's 133,318 and 151.
 
 ---
+
+## ⭐⭐ The division lever is the SOLVER's ban, not the gate (2026-08-21)
+
+Everything this log has written about divisions assumed the missing daughter
+was missing because the model never scored her. `division_ceiling.py` measured
+it, and the assumption is wrong.
+
+### The premise, measured
+
+| | |
+|---|---|
+| GT divisions in the 12-dataset holdout | 12 |
+| **with BOTH daughters carrying a candidate above 0.5** | **9** |
+| orphan nodes before the solve | 24,114 |
+| orphan nodes after the solve | **11,016** |
+
+The first row is the one that changes the plan. The edge head applies
+`softmax(dim=0)`, normalising **down the target column**, so both daughters can
+score above 0.5 at the same time without competing — they are different
+columns. In 9 of 12 cases they do.
+
+So the division information is in the candidate set already. What discards it
+is one line of solver configuration:
+
+```
+a fork is taken iff   edge_prob > division_weight - appearance_weight
+we submit             division_weight 1.0,  appearance_weight 0.0
+therefore a fork needs edge_prob > 1.0      <- impossible
+```
+
+The parent keeps one daughter, the other daughter's confident incoming edge is
+thrown away, and she ends the solve with in-degree 0.
+
+**This is not the stranded pool.** `stranded_audit.py` found the pre-solve
+stranded targets to be ~98.5% spurious, and that number has been the standing
+argument against every orphan-fork idea. It does not apply to these: a declined
+daughter has a *confident* edge, from a node the solver kept, and the ILP has
+already discarded more than half the junk (24,114 -> 11,016) before any fork
+rule sees it.
+
+### `fork_pass.py` — the rule that follows from it
+
+After the solve, for every node with in-degree 0 and `t > 0`, look up the
+model's own probability for an edge from each solved node in the previous frame
+that already continues into exactly one daughter. Take the best above a floor,
+one new child per parent, capped per movie.
+
+Two properties, both by construction:
+
+- it **ranks by the model's probability**, not by geometry.
+  `division_recovery.py` ranks by a 3.5–11 um length band because it was built
+  for a pipeline that had no score for the pair. Ours has one, and
+  `division_ceiling` computes both rankings side by side for exactly this
+  comparison.
+- it **cannot displace anything.** The orphan had in-degree 0; the parent goes
+  from one child to two, which is the out-degree cap the official metric
+  applies anyway. So the solver's own optimum is untouched.
+
+### Why it is cheap — the per-fork accounting
+
+Verified against `score_one` on a synthetic fixture (`fork_pass.selftest()`,
+16 checks, both directions):
+
+| the added fork is | edge term | division term |
+|---|---|---|
+| correct | **+1 TP, −1 FN** | +1 div TP |
+| wrong, on an annotated cell | +1 FP | +1 div FP |
+| wrong, among unannotated cells | **nothing** | **nothing** |
+
+The third row is why this is worth running: only ~6% of predicted nodes match a
+GT node at all, so most mistakes this rule can make are invisible to both
+terms. That is the same leniency that stops sparse annotation from punishing
+every correct link into an unannotated cell — but it is also exactly what the
+2026-07-17 patch closed for the hub-node exploit. **The cap and the floor exist
+so this stays a rule and not fork-spam.** Do not raise the cap to chase the
+division term.
+
+### What has NOT been measured
+
+`fork_pass.py` has never been run on real data — no GPU session has been open
+since it was written. What exists is the rule, the harness, and the accounting
+proof. The sweep is stage 3 of `run_sweep.py` and costs no quota.
+
+Read it in this order:
+
+1. **The floor 1.01 control row.** No probability reaches it, so that row must
+   reproduce the linking sweep's cell at the same threshold/disappearance. If
+   it does not, stop — the harness is wrong.
+2. **`adj_edge_jaccard` against that control.** 12 datasets and ~10k edges make
+   this readable. If it does not fall, the pass is free.
+3. **The division columns: direction only.** 12 datasets hold ~9 division
+   events. `division_jaccard` off that is noise, and this log has already
+   ignored that warning once.
+
+If the pass is free on the edge term, the division count has to be settled on a
+wider cache — ~66 datasets is where ~50 events live.
+
+---
 ## ⭐ The scorer bug (2026-08-18)
 
 Read from the real `tracking_cellmot/metrics.py::_evaluate_matched_graph`:
@@ -789,12 +887,18 @@ Local folder `D:\programming\cell tracking\`:
 | `check_weights.py` | inspect the published checkpoints for their training split |
 | `error_analysis.py` | classify every edge error: detection / dropped / confusion / spurious |
 | `division_features.py` | do geometry, intensity or elongation distinguish a dividing cell? |
-| `division_recovery.py` | add missed divisions back into an ILP graph, post-hoc |
+| `division_recovery.py` | add missed divisions back into an ILP graph, post-hoc — GEOMETRY-ranked, superseded by `fork_pass.py` |
+| `division_ceiling.py` | funnel over every GT division: how many forks could a rule recover here at all |
+| `fork_pass.py` | add back the forks the SOLVER refused, ranked by the model's own edge probability |
 | `division_strip_cell.py` | static filmstrip of one GT division |
 | `division_gif_cell.py` | animated view of one GT division |
 | `sweep_edge_threshold.py` | sweep the linker threshold offline from one inference run |
 | `read_gate.py` | read DeepCenter's tuning files (threshold sweep, history) |
 | `make_fake_data.py` | synthetic data for smoke tests (numbers meaningless) |
+| `cache_candidates.py` | dump `(coords, src, tgt, prob, dist)` per dataset — the one GPU stage |
+| `link_replay.py` | re-solve a cached candidate set on CPU; the replay sweep |
+| `stranded_audit.py` | count what the 0.5 gate strands, and how much of it is real |
+| `run_sweep.py` | the CPU Kaggle kernel: link sweep, then the fork sweep |
 | `run_cells.md` | Kaggle cells, one fenced block per cell |
 | `submission_notebook.md` | the cells that produced the 0.876 submission |
 
@@ -946,6 +1050,11 @@ writing up only.
 
 ### Immediate — all on the official pipeline
 
+- [ ] **Run the fork sweep** — stage 3 of `run_sweep.py`, CPU, no quota. It is
+      written and self-tested; nothing has touched real data. Read the floor
+      1.01 control first, then `adj_edge_jaccard`, then the division columns as
+      a direction only. See "The division lever is the SOLVER's ban".
+
 - [x] ~~Confirm ILP+A on all 12 held-out datasets~~ — done 2026-08-19,
       **0.9269**, improved 12 of 12.
 - [x] ~~SUBMIT~~ — done 2026-08-19, **LB 0.876**. Runtime fits comfortably
@@ -1062,4 +1171,4 @@ are **optimistic**. Only the directions are reliable.
 
 ---
 
-*Last updated: 2026-08-19 (KL), after the 0.876 submission*
+*Last updated: 2026-08-21, after `fork_pass.py` — written and self-tested, not yet run on data*

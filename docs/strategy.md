@@ -191,10 +191,17 @@ nothing has ever measured that as a cost.
 
 ### 3. CPU only, on predictions we already have
 
-- **Orphan-node forks** (`division_recovery.py`, written but never run). Keep
-  the linker 1:1, then add forks in a second pass into parentless nodes only,
-  capped per movie. The public tier measures **+0.0129** with the official
-  scorer, and it cannot displace a true positive by construction.
+- **Forks the solver refused** (`fork_pass.py`, written and self-tested, not
+  yet run on data). `division_ceiling.py` measured the premise: **9 of the 12
+  GT divisions have BOTH daughters carrying a candidate above 0.5**. The
+  softmax normalises down the target column, so two daughters do not compete;
+  what discards the second one is `division_weight 1.0` with
+  `appearance_weight 0.0`, which makes a fork require `edge_prob > 1.0`. The
+  pass adds those edges back after the solve, ranked by the model's own
+  probability, and cannot displace anything the solver chose.
+  **This supersedes `division_recovery.py`**, which ranks the same candidates
+  by a geometric length band because it was built for a pipeline with no score
+  for the pair. The borrowed **+0.0129** belongs to that pipeline, not ours.
 - **`MIN_TRACK_LEN = 3` pruning.** Expect close to nothing: ILP already holds
   the node-count penalty at 0.0009. The public tier needs it because its
   linker leaves scattered nodes; ours does not. Measure it, do not budget for
@@ -228,7 +235,8 @@ of a pipeline whose main leak may still be open.
   taken iff `edge_prob > division_weight - appearance_weight`, so the knob
   relaxes the bar for every short spurious second edge while real division edges
   — median 5.72 um against 1.82 um for ordinary edges — stay unlikely. Wrong
-  direction. The orphan-fork pass is the right one.
+  direction. `fork_pass.py` is the right one: it is local to pairs the model
+  already scored, instead of moving a global bar.
 - **Elongation as a division feature.** Measured AUC 0.54. Dead.
 - **Frame striding to fit the runtime.** Structurally scores 0.0.
 
@@ -260,4 +268,4 @@ a shakeup.
 
 ---
 
-*Last updated: 2026-08-20*
+*Last updated: 2026-08-21*

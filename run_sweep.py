@@ -8,6 +8,14 @@ also tells us what one full pass costs in wall time. Only then is a real sweep
 worth launching.
 
 No GPU. `build_graph` and `ILPSolver.solve` are CPU, so this costs no quota.
+
+Two stages now share this kernel, because they share the mount and the 54-wheel
+install and every finished run emails the account owner (toolchain trap 7):
+
+    RUN_LINK_SWEEP   the threshold x disappearance replay
+    RUN_FORK_SWEEP   fork_pass, on top of whatever linking optimum came out
+
+Flip either to False to run the other alone.
 """
 
 from __future__ import annotations
@@ -18,8 +26,12 @@ import subprocess
 import sys
 import time
 
-SCRIPT_VERSION = "2026-08-20a"
+SCRIPT_VERSION = "2026-08-21a"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
+
+# Which stages this run does. Both share one mount and one wheel install.
+RUN_LINK_SWEEP = True
+RUN_FORK_SWEEP = True
 
 
 def _first_existing(*paths):
@@ -177,16 +189,55 @@ print("\n=== sweep ===", flush=True)
 # Divisions stay off throughout: forks are impossible at division_weight 1.0,
 # the term is worth 0.1, and 12 datasets hold ~12 division events. Edges carry
 # 90% of the score and 128,883 annotations against 151.
-res = lr.sweep(CACHE, root=COMP,
-               thresholds=(0.50, 0.40, 0.35, 0.30),
-               disappearances=(1.5, 3.5, 4.5, 5.5),
-               velocities=(0.0,),
-               appearance=0.0, division=1.0,
-               out="/kaggle/working/replay_sweep.csv")
+if RUN_LINK_SWEEP:
+    res = lr.sweep(CACHE, root=COMP,
+                   thresholds=(0.50, 0.40, 0.35, 0.30),
+                   disappearances=(1.5, 3.5, 4.5, 5.5),
+                   velocities=(0.0,),
+                   appearance=0.0, division=1.0,
+                   out="/kaggle/working/replay_sweep.csv")
 
-print(f"\nbest threshold        {res['best_threshold']}")
-print(f"best disappearance    {res['best_disappearance']}")
-print(f"best velocity_weight  {res['best_velocity_weight']}")
-print(f"best adj_edge_jaccard {res['best_adj_edge_jaccard']:.4f}")
-print(f"delta vs submitted    {res['delta_vs_baseline']:+.4f}")
-print("SWEEP DONE", flush=True)
+    print(f"\nbest threshold        {res['best_threshold']}")
+    print(f"best disappearance    {res['best_disappearance']}")
+    print(f"best velocity_weight  {res['best_velocity_weight']}")
+    print(f"best adj_edge_jaccard {res['best_adj_edge_jaccard']:.4f}")
+    print(f"delta vs submitted    {res['delta_vs_baseline']:+.4f}")
+    print("SWEEP DONE", flush=True)
+    BEST_THR = res["best_threshold"]
+    BEST_DIS = res["best_disappearance"]
+else:
+    # The converged optimum from round 3, so the fork stage can run alone.
+    BEST_THR, BEST_DIS = 0.40, 3.5
+    print(f"\n[skipped] link sweep off; forks run at the recorded optimum "
+          f"threshold {BEST_THR} / disappearance {BEST_DIS}", flush=True)
+
+# ---- 3. forks the SOLVER refused, added back after the solve.
+#
+# division_ceiling.py established the premise: 9 of the 12 GT divisions have
+# BOTH daughters carrying a candidate above 0.5. The gate is not what hides
+# them -- `division_weight 1.0` with `appearance_weight 0.0` makes a fork need
+# edge_prob > 1.0, so it is forbidden and the second daughter ends the solve
+# with in-degree 0. fork_pass adds exactly those edges back.
+#
+# READ THE EDGE COLUMNS. This cache holds ~9 division events, so its
+# division_jaccard is noise. What 12 datasets CAN answer is whether the pass
+# is free: if adj_edge_jaccard does not fall, it is, and the division count
+# then has to be measured on a wider cache.
+#
+# The floor list starts at 1.01, which no probability reaches, so that row is
+# the no-fork control and must reproduce the linking sweep's cell at the same
+# (threshold, disappearance).
+if RUN_FORK_SWEEP:
+    print("\n=== forks ===", flush=True)
+    import fork_pass as fp                                       # noqa: E402
+
+    print("fork_pass", fp.SCRIPT_VERSION, flush=True)
+    fp.selftest(verbose=True)
+    fres = fp.sweep(CACHE, root=COMP,
+                    floors=(1.01, 0.90, 0.70, 0.50, 0.30),
+                    cap=fp.DEFAULT_CAP,
+                    threshold=BEST_THR, disappearance=BEST_DIS,
+                    appearance=0.0,
+                    out="/kaggle/working/fork_sweep.csv")
+    print(f"\nfork rows {fres['n_rows']}")
+    print("FORKS DONE", flush=True)
