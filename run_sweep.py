@@ -26,12 +26,15 @@ import subprocess
 import sys
 import time
 
-SCRIPT_VERSION = "2026-08-21a"
+SCRIPT_VERSION = "2026-08-21b"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 # Which stages this run does. Both share one mount and one wheel install.
 RUN_LINK_SWEEP = True
-RUN_FORK_SWEEP = True
+# Off by default. Divisions come after the edge and node predictions are good
+# enough (priority ruling, 2026-08-21), and the fork ban itself stays: this
+# stage never touches division_weight, it only adds forks back after the solve.
+RUN_FORK_SWEEP = False
 
 
 def _first_existing(*paths):

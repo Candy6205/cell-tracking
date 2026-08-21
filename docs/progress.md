@@ -676,7 +676,18 @@ competition's 133,318 and 151.
 
 ---
 
-## ⭐⭐ The division lever is the SOLVER's ban, not the gate (2026-08-21)
+## PARKED: forks the solver refused (2026-08-21)
+
+> **Priority ruling, from the project owner, 2026-08-21: divisions come after
+> the edge and node predictions are good enough. Do not pick this up as the
+> next thing to run.** The live thread is Zebrahub — a better detector and
+> edge head. This section is written down so it does not have to be
+> rediscovered, not because it is next.
+>
+> **`division_weight = 1.0` is a deliberate decision, not an oversight.**
+> Lowering it was measured 8:1 against (divJ 0 -> 0.0308 buys +0.0031 while
+> adj_J loses 0.0245) and the ban was kept on purpose to protect the edge
+> term. Everything below works *with* that ban and never asks to relax it.
 
 Everything this log has written about divisions assumed the missing daughter
 was missing because the model never scored her. `division_ceiling.py` measured
@@ -1050,10 +1061,6 @@ writing up only.
 
 ### Immediate — all on the official pipeline
 
-- [ ] **Run the fork sweep** — stage 3 of `run_sweep.py`, CPU, no quota. It is
-      written and self-tested; nothing has touched real data. Read the floor
-      1.01 control first, then `adj_edge_jaccard`, then the division columns as
-      a direction only. See "The division lever is the SOLVER's ban".
 
 - [x] ~~Confirm ILP+A on all 12 held-out datasets~~ — done 2026-08-19,
       **0.9269**, improved 12 of 12.
@@ -1091,6 +1098,11 @@ writing up only.
 
 ### Deferred
 
+- [ ] **The fork sweep** — stage 3 of `run_sweep.py`, written and self-tested,
+      never run on data. **Deliberately parked behind the edge/node work** per
+      the 2026-08-21 priority ruling; `RUN_FORK_SWEEP` is off by default. When
+      it does run: read the floor 1.01 control first, then `adj_edge_jaccard`,
+      then the division columns as a direction only.
 - [ ] `cell_count.py` on real data — only matters if the classical path revives,
       or if N_true estimation helps the official pipeline's node-count penalty
 - [ ] Train the U-Net ourselves, with a split we choose

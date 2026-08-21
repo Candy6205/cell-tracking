@@ -192,7 +192,8 @@ nothing has ever measured that as a cost.
 ### 3. CPU only, on predictions we already have
 
 - **Forks the solver refused** (`fork_pass.py`, written and self-tested, not
-  yet run on data). `division_ceiling.py` measured the premise: **9 of the 12
+  yet run on data — **parked**: divisions come after the edge and node
+  predictions are good enough, and `division_weight = 1.0` stays as it is). `division_ceiling.py` measured the premise: **9 of the 12
   GT divisions have BOTH daughters carrying a candidate above 0.5**. The
   softmax normalises down the target column, so two daughters do not compete;
   what discards the second one is `division_weight 1.0` with
