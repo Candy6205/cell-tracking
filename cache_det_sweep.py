@@ -1,5 +1,5 @@
 """
-cache_det_sweep.py -- does raising `det-threshold` cut the spurious pool?
+cache_det_sweep.py -- where should `det-threshold` go?
 
 Why this is the indicated experiment
 ------------------------------------
@@ -20,19 +20,25 @@ inference pass per value. Everything downstream still replays on CPU.
 
 What to read in the output
 --------------------------
-`nodes` and `stranded` should both fall as the threshold rises. The question is
-the RATIO: if `stranded` falls faster than `nodes`, the extra detections being
-cut are disproportionately the useless ones and this is a real win. If they
-fall together, the spurious detections are as confident as the real ones and
-this line is dead -- which is worth knowing in 22 minutes.
+This run only CACHES and counts; it does not score. That was the flaw in its
+first version, and the counts alone pointed the wrong way. The caches it writes
+to `/kaggle/working/cache_det/det{v}/` are the deliverable -- score them with
+`link_replay` at the converged linking optimum before concluding anything.
+
+What the counts are still good for: `nodes` should RISE as the threshold falls,
+and the question is whether `recoverable` falls with it. Lowering the gate only
+helps if the extra detections are the endpoints of GT edges we currently cannot
+reach.
 
 `recoverable` is the count of GT edges whose target is detected but stranded,
 i.e. the 278 figure recomputed per threshold. It must not collapse: cutting the
 spurious pool by throwing away the recoverable edges too is not progress.
 
 Note the direction. `docs/public-solutions-recon.md` item 3 proposed sweeping
-det-threshold DOWN to 0.95, copied from the public tier. The audit points the
-other way. Both cannot be right, and this settles which.
+det-threshold DOWN to 0.95, copied from the public tier, and the first version
+of this file argued UP from the stranded-pool audit. Scoring the converged
+linking optimum settled it: recon was right and the audit argument was not,
+because it counted nodes and never scored them.
 
     kaggle kernels push -p .
 """
@@ -56,10 +62,33 @@ HOLDOUT_6BBA = [
     "6bba_7b5d3b2c", "6bba_afb141ff", "6bba_aeee7805", "6bba_c27cba08",
 ]
 
-# 0.99 is the submitted value and is already cached by cache_candidates.py, so
-# it is not repeated here. Upward only: the audit says the pool is too dirty,
-# not too small.
-DET_THRESHOLDS = (0.995, 0.999)
+# CORRECTED 2026-08-20. The first run of this file swept UPWARD (0.995, 0.999)
+# on the argument that the stranded pool was too dirty. It counted nodes and
+# never scored them, which was the mistake.
+#
+# Scored, the picture inverts. At the converged linking optimum
+# (threshold 0.40, disappearance 3.5) the remaining loss splits:
+#
+#     detect_ceiling 0.9825  ->  180 of the 343 FN are edges whose endpoint
+#                                was never detected              52%
+#     link_rate      0.9839  ->  163 are reachable but unlinked  48%
+#
+# Detection is the larger half now. progress.md still says it contributes
+# 0.5% and that every hour spent on it is wasted; that was measured at the
+# old configuration, FN 450 and link_rate 0.9530, and no longer holds.
+#
+# The threshold/disappearance pair only MOVES loss between the two. Raising
+# disappearance buys link_rate by spending detect_ceiling: 0.9919/0.9775 at
+# 0.35/1.5 against 0.9773/0.9859 at 0.35/5.5. To go further the ceiling has
+# to rise, which means detecting MORE, not less.
+#
+# Which is what /733877 measured on hand-built graphs: an unmatched predicted
+# node is never a false positive, the whole cost is 0.1 x over-prediction,
+# and thresholds in the field are too high. Ours is 0.99.
+#
+# 0.99 is the submitted value and is already cached by cache_candidates.py,
+# so it is not repeated here. DOWNWARD now: the ceiling is what binds.
+DET_THRESHOLDS = (0.98, 0.95)
 
 CAND_THRESHOLD = 0.05
 TOPK = 16
