@@ -149,27 +149,49 @@ zb = [int(round(b / v)) for b, v in zip(BOX_UM, ZH_VOXEL)]      # 84, 237, 237
 print(f"crop {BOX_UM[0]:.0f} um cube = {zb} voxels here -> resample to "
       f"{COMP_SHAPE}", flush=True)
 
-# Place the tile where the cells are: the densest GRID x GRID window at t=T0.
+# Place the tile where the cells are.
+#
+# CORRECTED 2026-08-21. The first version binned by y and x only and took the
+# median z as the depth. That maximised a COLUMN through the whole embryo, then
+# cut a single 104 um slab out of it -- so it picked a spot that was dense at
+# some other depth and four of nine crops came back with zero nodes. Bin all
+# three axes and search the tile at each depth.
 f0 = tr[tr.t == T0]
 if f0.empty:
     raise SystemExit(f"[degraded] no track rows at t={T0}")
+gz = (f0.z // BOX_UM[0]).astype(int)
 gy = (f0.y // BOX_UM[1]).astype(int)
 gx = (f0.x // BOX_UM[2]).astype(int)
-cell = f0.groupby([gy, gx]).size()
+cell = f0.groupby([gz, gy, gx]).size()
+
 best, best_n = None, -1
-for iy in range(int(gy.min()), int(gy.max()) - GRID + 2):
-    for ix in range(int(gx.min()), int(gx.max()) - GRID + 2):
-        n = sum(int(cell.get((iy + a, ix + b), 0))
-                for a in range(GRID) for b in range(GRID))
-        if n > best_n:
-            best, best_n = (iy, ix), n
-iy0, ix0 = best
-print(f"\ndensest {GRID}x{GRID} tile at t={T0}: y{iy0} x{ix0}, "
-      f"{best_n} cells across it", flush=True)
+for iz in range(int(gz.min()), int(gz.max()) + 1):
+    for iy in range(int(gy.min()), int(gy.max()) - GRID + 2):
+        for ix in range(int(gx.min()), int(gx.max()) - GRID + 2):
+            n = sum(int(cell.get((iz, iy + a, ix + b), 0))
+                    for a in range(GRID) for b in range(GRID))
+            if n > best_n:
+                best, best_n = (iz, iy, ix), n
+zc, iy0, ix0 = best
+print(f"\ndensest {GRID}x{GRID} tile at t={T0}: z{zc} y{iy0} x{ix0}, "
+      f"{best_n} cells in the slab", flush=True)
+
+# Say what each crop will hold BEFORE spending twelve minutes reading images.
+print("  expected cells per crop at this frame:", flush=True)
+empty = 0
+for a in range(GRID):
+    row = []
+    for b in range(GRID):
+        n = int(cell.get((zc, iy0 + a, ix0 + b), 0))
+        empty += n == 0
+        row.append(f"{n:>5}")
+    print("   " + " ".join(row), flush=True)
+if empty:
+    print(f"  [degraded] {empty} of {GRID*GRID} crops are empty at t={T0}; "
+          f"they will still be written, as image with no labels", flush=True)
 
 CROPS = OUT / "crops"
 CROPS.mkdir(exist_ok=True)
-zc = int(f0.z.median() // BOX_UM[0])
 
 # one block covering the whole tile
 blk_um = (zc * BOX_UM[0], iy0 * BOX_UM[1], ix0 * BOX_UM[2])
