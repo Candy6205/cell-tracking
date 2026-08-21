@@ -627,6 +627,54 @@ inference pass per value — about 11 minutes each.
 
 ---
 
+## det-threshold is not the lever, and the ceiling is the model (2026-08-21)
+
+Scored on the cache at the converged linking optimum (threshold 0.40,
+disappearance 3.5), so only `det_threshold` varies:
+
+| det | adj_J | edge_J | detect_ceiling | link_rate | nodes |
+|---|---|---|---|---|---|
+| **0.99** | **0.9387** | 0.9363 | 0.9825 | 0.9839 | 161,649 |
+| 0.98 | 0.9375 | 0.9362 | 0.9827 | 0.9836 | 164,185 |
+| 0.95 | 0.9367 | 0.9365 | 0.9821 | 0.9842 | 166,209 |
+
+**`detect_ceiling` does not move** -- 0.9825 / 0.9827 / 0.9821 -- and neither
+does `edge_J`. The fall in `adj_J` is entirely the node-count penalty on 2.8%
+more nodes.
+
+So the extra detections admitted by a lower gate are **not** the missing
+endpoints of the 180 unreachable GT edges. Those cells are not peaks in the
+heatmap at any threshold down to 0.95. The detection ceiling is set by the
+model's output, not by our threshold.
+
+### Three wrong directions on one knob
+
+For the record, because the pattern matters more than the knob:
+
+1. **Raise it** — argued from the stranded pool being 98% spurious. Counted
+   nodes, never scored.
+2. **Lower it** — argued from detection being 52% of the loss and from a
+   claim that sparse annotation deflates the sigmoid. The deflation claim was
+   wrong: the negative term carries total weight 0.1 across ~4.19M voxels, so
+   an unannotated cell is pulled toward zero with weight ~2.4e-8.
+3. **Lower it** — argued from the metric alone: over-detection costs
+   `0.1 x over-prediction` and nothing else, while a miss costs an FN plus an
+   induced FP. This reasoning is sound and the direction still lost.
+
+Reasoning (3) is the only one that did not depend on a story about the
+model's internals, and it is the only one that would have been safe to act on
+without measuring. It was still not enough. **Score the thing.**
+
+### What it leaves open
+
+The threshold/disappearance pair converged, and it only ever moved loss
+between detection and linking. `det_threshold` cannot raise the ceiling. What
+remains for the edge term is a **better detector**, which means training --
+and `docs/strategy.md` records the host permitting Zebrahub, whose ZSNS001
+carries 21,697,591 annotated nodes and 635,042 divisions against this
+competition's 133,318 and 151.
+
+---
 ## ⭐ The scorer bug (2026-08-18)
 
 Read from the real `tracking_cellmot/metrics.py::_evaluate_matched_graph`:
