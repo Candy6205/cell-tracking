@@ -36,6 +36,20 @@ not show up as rank until that plateau is cleared.
 Our submission contains no forks at all, so `summarise()` drops the division
 term entirely: **0.876 is our pure adjusted edge Jaccard on the hidden test.**
 
+**CORRECTED 2026-08-20.** The number is right, the reason is wrong.
+`summarise()` drops the division term only when the WHOLE split has no
+divisions at all — `metrics.py`:
+
+    division_total = totals["division_tp"] + totals["division_fp"] + totals["division_fn"]
+    if division_total == 0:
+        division_jaccard = float("nan")
+        score = adj_edge_jaccard
+
+The hidden test has ground-truth divisions, so `division_fn > 0` and the term
+is **included at zero**, not dropped. Same number; different meaning. The
+maximum score is **1.1**, not 1.0, and we forfeit the whole 0.1.
+
+
 ---
 
 ## The three things that actually moved the score
