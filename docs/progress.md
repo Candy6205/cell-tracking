@@ -1,214 +1,1161 @@
 # Progress log — Biohub Cell Tracking During Development
 
-> What is done, what is confirmed, what is next, and what already bit us.
-> Engineering conventions live in `docs/engineering-rules.md`
-> (rule 1: **degradation is never silent**).
+> Reader: a future AI session. Strictly reverse-chronological; the newest
+> entry and the state block below are always at the top. Stable lookup facts
+> (metric, survey, mechanics, code map, traps) live in `reference.md` — this
+> file records events and measurements only. When a later entry overturns an
+> earlier claim, the earlier text carries a `SUPERSEDED` mark in place.
+> Engineering conventions: `engineering-rules.md` (rule 1: degradation is
+> never silent).
+
+## Current state (2026-08-23, session handoff)
+
+**FIRST ACTION: read BOTH pending submissions**
+(`py -m kaggle competitions submissions biohub-cell-tracking-during-development`).
+
+- **55709347 -- the one that matters**: xl detect + ranker + capacity-2
+  ILP at div_w 0.55, solved in 25-frame windows. Best on every ruler
+  built so far.
+- **55707206 -- the same thing with one global solve.** Lower locally
+  and projected at 11.8 h against a 12 h cap, so it may time out. If it
+  does, that is information, not a loss: slots are not the scarce
+  resource (user's call, 2026-08-23).
+
+Reading the pair: if both land, 55709347 - 55707206 is the LB's own
+verdict on windowing, and 55709347 - 0.917 is the verdict on the whole
+linker line. If only 55707206 times out, the runtime fix is vindicated.
+
+After that, the open lever is `GATE_UM` -- see the forensics entry.
+`biohub-gate-sweep` was in flight when this was written.
+
+- **LB best 0.917** (ref 55690436, verbatim xl reproduction). Holdout
+  baseline for the xl family: 0.9318 (adj 0.9185 / div 0.1333);
+  family-specific local-to-LB offset ~-0.015.
+- **Edge re-ranker line (2026-08-23):** v1 failed (sparse-GT labeling
+  gave 97% positives); v2 fixed labels by EXCLUSION negatives (the
+  candidate hitting the GT child is positive, all other in-gate
+  candidates of that source are negative) -> 39.8k pairs, 46.8% pos,
+  AUC 0.9884, linker-only adj_J 0.9239 vs Hungarian 0.9185 (+0.0054);
+  v3 full-pipeline composite only 0.9320 vs 0.9318 — the edge gain is
+  eaten by div_J 0.1333->0.0800. **Diagnosis (user's): 1:1 assignment
+  steals division second-daughters into wrong continuations, draining
+  the orphan pool the division patch mines.** v4 (in flight) tests the
+  reconciliation: the ranker's labels already score parent->second-
+  daughter edges HIGH (both GT children were positives), so a
+  capacity-2 ILP fed ranker probs (division surcharge 0.75/0.85/0.95)
+  can take both daughters natively; plus Hungarian p_min 0.30-0.40.
+  Detection caches for all 44 datasets + the trained ranker pkl live in
+  the `biohub-edge-ranker` kernel output (iterations cost ~minutes).
+- **Toolchain notes for the next session:** CLI needs
+  `KAGGLE_API_TOKEN` minted per call (kaggle-toolchain.md 1b); pack
+  wheels + `pip -e repo --no-deps` is the proven env for ILP+scoring
+  kernels; ERRORed kernels' outputs are downloadable but NOT attachable
+  as kernel sources; official metric needs a GPU machine even to score.
+- Uncommitted: two days of docs + scripts (progress/reference/recon
+  restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
+  when the user says so.
+
+## 2026-08-23 -- SUBMITTED ref 55709347: windowed ILP. Better on both rulers, and it fits the clock.
+
+`biohub-submit-w25` = ref 55707206 with a single change, the ILP solved
+in 25-frame windows overlapping by one frame.
+
+**Runtime, measured on the visible 4 (this was the open question):**
+
+| dataset | pairs | feats | solve | total | was |
+|---|---|---|---|---|---|
+| 44b6_0113de3b | 55 581 | 3 s | 19 s | 111 s | 120 s |
+| 44b6_0b24845f | 73 589 | 5 s | 26 s | 126 s | 145 s |
+| 6bba_05b6850b | 8 711 | 1 s | 4 s | 88 s | 90 s |
+| 6bba_05db0fb1 | 272 577 | 16 s | **100 s** | **222 s** | **485 s** |
+
+The densest movie's solve fell **390 s -> 100 s (3.9x)**: windowing pays
+most exactly where the ~n^1.5 blow-up hurts. Average 137 s/dataset
+against 210 s, so **~7.7 h for ~200 volumes**, a 36% margin under the
+12 h cap where the global solve projected 11.8 h. **The runtime line is
+closed.**
+
+**Three-way paired score on the visible 4** (`biohub-score-subs`, all
+three finished CSVs against train GT -- movies that are not the
+holdout, two of them from the `44b6` family the holdout lacks):
+
+| | score | adj_J | div_J | div TP/FP/FN |
+|---|---|---|---|---|
+| xl 0.917 pipeline | 0.8678 | 0.8678 | 0.0000 | 0/5/3 |
+| ranker, global ILP | 0.8855 | 0.8855 | 0.0000 | 0/11/3 |
+| **ranker, window 25** | **0.8932** | **0.8932** | 0.0000 | 0/12/3 |
+
+w25 - xl0917 = **+0.0254**; w25 - global = **+0.0077**. Windowing gains
+MORE here than on the holdout (+0.0014), so it is not a holdout artefact.
+
+Still carried: div_J is 0.0000 for all three -- those 4 movies hold 3 GT
+divisions and nobody catches any. **Every visible-4 delta is pure
+adj_J**; the division half of the holdout result remains single-source.
+
+## 2026-08-23 -- rule 1 audit: four silent degradations found and given a voice
+
+The user reaffirmed engineering rule 1. Audited this session's scripts;
+four paths dropped data without saying so, all now counted and warned:
+
+| where | what was silent |
+|---|---|
+| `solve_edges` | a window producing no edges left those frames UNLINKED |
+| geff edge filter | `if a in rm and b in rm` dropped edges whose endpoint lost its node |
+| `_emit` | self-loops, missing nodes and duplicates all `continue`d together |
+| `score_subs` | CSV edges naming an absent node id -- **in the SCORER**, so a config could be judged on a silently low score |
+
+The last is the dangerous one: a silent drop there biases a measurement
+rather than an output, and could get a better configuration rejected.
+
+`_emit` was given a COUNT ONLY -- its three drops are xl-repro's verbatim
+behaviour that produced 0.917, so it now speaks without changing what it
+does. Note the running `gate_sweep` and `score_subs` jobs were launched
+BEFORE this patch; if their numbers look odd, suspect this first.
+
+## 2026-08-23 -- ⭐⭐⭐ FORENSICS: the linker is finished. Every remaining division is lost upstream.
+
+`biohub-div-forensics` walked all 12 holdout GT divisions down the funnel.
+
+| stage | what stops it | count |
+|---|---|---|
+| 0 | parent undetected | 1 |
+| 1 | a daughter undetected | 1 |
+| 2 | **pair outside `GATE_UM` (10 um)** | **3** |
+| 3 | probability below `ILP_FLOOR` (0.10) | 2 |
+| 4 | reachable -- the solver's call | 5 |
+
+**divTP at div_w 0.55 is 5, and stage 4 is 5. The solver takes ALL of
+them.** FN 7 equals the seven unreachable ones exactly. That closes the
+question the twelve-point sweep raised: division FN never fell below 6
+because the linker had already extracted 100% of what the candidate set
+contained. **No linker-side knob -- div_w, windowing, calibration --
+can move div_J further.** Stop tuning it.
+
+Per-division detail (parent match distance, and for stage 1 the nearest
+detection of any score to the missed daughter):
+
+```
+6bba_7af54fde t=55 stage=0  pd=5.16
+6bba_afb141ff t=48 stage=1  pd=1.15  daughter miss 5.47 um, nearest det
+                                     5.47 um scoring 0.412
+6bba_268e1230 t=24 stage=2  pd=2.12
+6bba_2312ac41 t=10 stage=2  pd=3.52
+6bba_7af54fde t=52 stage=2  pd=1.55
+6bba_3abfe10a t=81 stage=3  pd=3.16  min pair prob 0.016
+6bba_5c824876 t=2  stage=3  pd=0.33  min pair prob 0.080
+6bba_2312ac41 t=19 stage=4  prob 0.393    6bba_afb141ff t=47  0.711
+6bba_afb141ff t=32 stage=4  prob 0.215    6bba_afb141ff t=28  0.605
+6bba_aeee7805 t=13 stage=4  prob 0.797
+```
+
+Note stage 1 is not really a detection failure: a detection scoring
+0.412 (well over `UNET_THRESH` 0.15) sits 5.47 um away, just outside
+`MATCH_UM` 5.0. It is a matching-radius near-miss.
+
+### The lever: `GATE_UM`, worth roughly twice the whole ranker line
+
+Stage 2 is the biggest actionable bucket -- 3 divisions where parent AND
+both daughters are detected and the pair simply never enters the
+candidate set. Sister separations read off the strips:
+
+```
+268e1230 t=24  11.55 um     2312ac41 t=10  16.05 um
+3abfe10a t=81  11.98 um     5c824876 t=2   11.55 um
+7af54fde t=52  12.90 um     7af54fde t=55  12.19 um
+afb141ff t=48   7.85 um
+```
+
+Against a 10 um gate, and the strips repeatedly print `OUT OF SLAB` with
+z jumping 8-10 planes: **divisions here separate along Z**, the coarse
+axis at 1.625 um/plane (4x the xy pitch), so daughters gain physical
+distance fast. The gate was sized for ordinary motion (the 6bba median
+displacement p99 is 7.81 um) and divisions are not ordinary motion.
+
+Arithmetic if raising the gate recovers all three: TP 5 -> 8, FN 7 -> 4,
+div_J 5/35 = 0.1429 -> 8/35 = 0.2286, worth **+0.0086** on the composite
+-- nearly twice everything the ranker line has bought (+0.0045).
+
+**Do not just raise the constant.** `pair_features` includes `rank`
+within the source's candidate list and both candidate counts; widening
+the gate shifts those feature distributions, so **the ranker must be
+retrained at each gate value** or its probabilities are read off a
+distribution it never saw. Retraining costs 170 s.
+
+Design for the next kernel: sweep `GATE_UM` 10/14/18 with a retrain at
+each, and report the funnel, the composite, and the solve time (a wider
+gate means more candidate pairs, so it buys divisions and pays in
+runtime -- exactly the trade the 12 h cap cares about).
+
+### Timing split: the solve is 88% of linking, features are 12%
+
+| dataset | pairs | vel | feats | predict | solve |
+|---|---|---|---|---|---|
+| 6bba_268e1230 | 6 938 | 0.1 s | 0.4 s | 0.3 s | 4.3 s |
+| 6bba_2312ac41 | 18 484 | 0.2 s | 1.0 s | 0.3 s | 11.2 s |
+| 6bba_283bf9f1 | 39 027 | 0.5 s | 2.0 s | 0.4 s | 22.6 s |
+| 6bba_3a1849c2 | 10 968 | 0.1 s | 0.6 s | 0.2 s | 5.9 s |
+
+Feature side 6 s against 44 s of solve. **Windowing attacks the right
+88%.** Projection for the hidden test: the submission run's 210 s/dataset
+splits as detect 86 s + features ~15 s + solve ~109 s; at the measured
+2.08x the solve drops to ~52 s, giving ~153 s/dataset and **~8.5 h for
+~200 volumes** against the 12 h cap. Comfortable-ish, not generous, and
+`biohub-submit-w25` will replace this estimate with a measurement.
+
+## 2026-08-23 -- ⭐⭐ windowing the ILP is free speed AND a better score; calibration is dead
+
+`biohub-ranker-wincal`, two independent lines in one kernel.
+
+### W line -- window the ILP in time (uncalibrated, div_w 0.55)
+
+| window | score | adj_J | div_J | ILP forks | link | speedup |
+|---|---|---|---|---|---|---|
+| global | 0.9368 | 0.9233 | 0.1351 | 111 | 326 s | 1.00x |
+| 50 | 0.9368 | 0.9230 | 0.1389 | 111 | 213 s | 1.53x |
+| **25** | **0.9382** | 0.9235 | **0.1471** | 108 | **157 s** | **2.08x** |
+| 10 | 0.9343 | 0.9214 | 0.1290 | 88 | 126 s | 2.59x |
+
+**Window 25 is both faster and better** (+0.0014 over the global solve at
+2.08x). W=10 cuts too deep and loses real context. Likely mechanism for
+the gain: with `disappearance_weight` 1.5 the global solve is pushed to
+build very long tracks; a window bounds how far that pressure travels --
+and it is div_J that improves (0.1351 -> 0.1471, division FP 25 -> 22),
+i.e. fewer wrong long-range commitments.
+
+Scheme (copy it, do not reinvent): window k covers frames [a, b] and
+k+1 covers [b, c] -- they SHARE ONE FRAME but never share an EDGE, since
+k owns a->a+1 .. (b-1)->b and k+1 owns b->b+1 .. So merged edge sets
+cannot conflict and no reconciliation pass is needed. Same as ultrack's
+`window_size` / `overlap_size` (their default overlap is 1).
+
+**Trap paid for in advance:** mapping solved nodes back to global indices
+must be done BY COORDINATE, never by `node_id` -- node_id is not a stable
+handle across the solve (progress.md 02f7c8b).
+
+Caveat on the control: `wglobal` reads 0.9368 where the fine sweep's
+div_w 0.55 read 0.9363. Not noise -- `run_config` assembles nodes from
+ALL seeds and lets `_short_filter`/`_emit` prune, where the B line built
+them from the ILP's kept nodes. The window comparison is paired inside
+this kernel, so it stands; do not mix these two numbers across kernels.
+
+### C line -- probability calibration: HYPOTHESIS WRONG, do not retry
+
+The theory was that the ranker's labels (BOTH GT children positive)
+inflate second-daughter probabilities, and that div_w 0.55 is paying for
+that bias. Isotonic regression fitted on the held-out 10%:
+
+```
+raw mean 0.4191 -> cal 0.4168;  frac>0.55  0.4214 -> 0.4118
+```
+
+**The probabilities were already calibrated.** Isotonic moved the mean by
+0.0023. And the calibrated sweep is monotone increasing in div_w and
+never beats uncalibrated -- 0.9258 / 0.9286 / 0.9311 / 0.9343 at div_w
+0.05 / 0.15 / 0.30 / 0.55, against 0.9368 uncalibrated at 0.55. Isotonic
+flattens probabilities into steps, creating ties the ILP then breaks
+arbitrarily; that is the likely cost. **Line closed.** The ultrack
+contrast (their `division_weight` default is -0.001) therefore needs a
+different explanation -- most likely their candidates are
+segmentation-hypothesis based and mutually exclusive by construction.
+
+### ⭐ The structural finding, worth more than either line
+
+Across ALL twelve sweep points -- 8 uncalibrated, 4 calibrated, forks
+ranging 0 to 1847 -- **division FN never drops below 6**. divTP moves
+only between 4 and 6 while division FP explodes.
+
+The divisions we miss are **not in the candidate set at all**; the solver
+is not refusing them. That kills the "7 FPs per TP is a bargain" line of
+attack (user's marginal analysis, which is arithmetically right): the
+exchange rate is fine, there is simply nothing to buy. Anything that
+moves div_J has to act UPSTREAM -- the candidate gate `GATE_UM`, the
+detection threshold (a just-divided second daughter is small and dim and
+plausibly sits under `UNET_THRESH` 0.15), or a purpose-built division
+detector. `biohub-div-forensics` walks every GT division down the funnel
+to find which stage loses them.
+
+### Metric note that makes over-forking cheap (user's observation, verified)
+
+`reference.md#the-metric`: a fork lying entirely among unannotated cells
+enters no FP set. Measured from the div_w 0.55 -> 0.20 step: 913 extra
+forks cost only -0.0027 adj_J, which at ~10.7k holdout edges is roughly
+**30 visible edge FPs -- about 97% of the extra forks are invisible to
+the metric**. But the div_J denominator is the real bill: the same step
+cost -0.0056 there, twice the edge damage. So forks are nearly free on
+edges and not free on divisions. (adj_J is a weighted per-dataset average
+with a node-count penalty, so treat the 30 as an order of magnitude.)
+
+## 2026-08-23 -- SUBMITTED ref 55707206: ranker + capacity-2 ILP linker
+
+Kernel `biohub-submit-ranker` v2. Single variable against LB 0.917
+(ref 55690436): the linker. Detection side and post-link patches are
+unchanged; the Hungarian is replaced by ranker probabilities feeding a
+capacity-2 tracksdata ILP at division weight 0.55.
+
+**Independent confirmation before submitting.** `biohub-score-subs`
+scored BOTH finished CSVs against train GT on the same visible 4 -- a
+paired comparison on movies that are not the holdout, two of them from
+the `44b6` family the holdout does not contain:
+
+| | score | adj_J | div_J | div TP/FP/FN |
+|---|---|---|---|---|
+| xl 0.917 pipeline | 0.8678 | 0.8678 | 0.0000 | 0/5/3 |
+| **ranker + cap-2 ILP** | **0.8855** | **0.8855** | 0.0000 | 0/11/3 |
+| delta | **+0.0178** | +0.0178 | 0 | |
+
+Four times the holdout delta, on different movies -- different data, so
+the magnitudes are not comparable, but the sign is confirmed away from
+the holdout, which is the thing the family-calibration rule says to
+worry about.
+
+**Limit on that evidence, carried deliberately:** div_J is 0.0000 for
+BOTH pipelines here. Those 4 movies hold only 3 GT divisions and neither
+pipeline caught any (ranker 11 division FPs vs xl's 5, but with 0 TP the
+division term is 0 either way). So **the +0.0178 is entirely adj_J**;
+the division half of the holdout result (div_J 0.1429 vs 0.1333) has NOT
+been reproduced outside the holdout and remains single-source evidence.
+
+The scoring kernel then died on a cosmetic per-dataset print
+(`per_sample_metrics` returns no "score" key -- that appears only after
+`summarise`); every number above had already been emitted. Not worth a
+re-run, but fix `score_subs.py` before reusing it.
+
+## 2026-08-23 -- the submission kernel runs, and the ILP does not fit the 12 h cap
+
+`biohub-submit-ranker` v2 COMPLETE: offline env works (pack wheels,
+tracksdata, `predict_unet_transformer` from the pack, ranker pkl via
+kernel source), all three xl models load, `submission.csv` written with
+the right schema. v1 had died on `edge_ranker.pkl` holding
+`{"model": clf, "version": ...}` rather than a bare model -- the load
+now unwraps and asserts `predict_proba` at load time, so that class of
+error surfaces in 40 s instead of after a 10 min model load.
+
+Counts against the 0.917 pipeline on the same visible 4 (a real paired
+check that the graft is not producing well-formed garbage):
+
+| dataset | xl0917 nodes/edges | ranker nodes/edges | ILP forks | runtime xl -> ranker |
+|---|---|---|---|---|
+| 44b6_0113de3b | 23878 / 23152 | 23794 / 23048 | 5 | 82 s -> 120 s |
+| 44b6_0b24845f | 28147 / 26186 | 27599 / 25862 | 20 | 87 s -> 145 s |
+| 6bba_05b6850b | 6135 / 5906 | 6090 / 5894 | 7 | 74 s -> 90 s |
+| 6bba_05db0fb1 | 68259 / 65947 | 66813 / 64421 | 8 | 102 s -> **485 s** |
+
+Nodes -1.7%, edges -1.6% -- the small drop the ILP's node-dropping
+predicts. Forks per dataset match the holdout's 111/12.
+
+### ⚠ THE RUNTIME PROBLEM (read before touching the submission kernel)
+
+The hidden test is **~199-200 volumes** (`competition-brief.md:189`) and
+the cap is 12 h. Measured here: **210 s/dataset average** -> 200 x 210 s
+= **11.7 h + 10.6 min setup**, i.e. flush against the cap. The 0.917
+pipeline runs 86 s/dataset (~5 h), so the whole excess is the linker.
+
+Worse, the linking cost is **superlinear in candidate pairs, ~n^1.5**:
+
+| pairs | features + ILP |
+|---|---|
+| 8.7k | ~16 s |
+| 55.6k | ~38 s |
+| 73.6k | ~58 s |
+| **272.6k** | **~383 s** |
+
+3.7x the pairs costs 6.6x the time. `6bba_05db0fb1` is not even the
+worst case the train set contains -- the densest 6bba movie runs 519
+cells/frame. A handful of denser hidden volumes blows the budget.
+
+Fixes, in the order they should be tried:
+
+1. **Window the ILP in time.** One global solve costs ~n^1.5; W windows
+   (overlapping by a frame so tracks are not cut) cost n^1.5 / sqrt(W),
+   ~3.2x faster at W=10, and turn the superlinearity into near-linear so
+   dense movies stop exploding. Needs a holdout re-validation (~30 min).
+2. **Raise `ILP_FLOOR`** (0.10). At AUC 0.9884 true edges score high, so
+   0.25-0.30 should cost nothing and cuts solver edges. Note it does NOT
+   cut feature cost -- features are built for every in-gate pair and only
+   then filtered by probability.
+3. **A wall-clock guard, needed regardless.** Track elapsed time and
+   remaining datasets; when the projection exceeds the cap, fall the rest
+   back to the Hungarian linker that is already in the file. That floors
+   the result at baseline behaviour and guarantees a valid CSV. Rule 1:
+   print how many datasets fell back and from which one.
+
+**User's call (2026-08-23), overriding the recommendation to fix first:**
+submit anyway. Their reasoning, which is sound: a timeout does not burn a
+submission slot, and slots are not the scarce resource -- producing one
+real improvement takes days, so the account rarely spends even one slot a
+day. 11.8 h against a 12 h cap may simply pass. The optimisation work
+above stays queued either way.
+
+## 2026-08-23 -- ⭐⭐⭐ div_w 0.55: 0.9363, and it beats the baseline on BOTH terms
+
+`biohub-ranker-fine` filled the 0.20-0.75 gap the diag left. Eight points
+now, one clean unimodal curve, argmax 0.55.
+
+| div_w | ILP forks | score | adj_J | div_J | div TP/FP/FN |
+|---|---|---|---|---|---|
+| 0.20 | 1024 | 0.9280 | 0.9193 | 0.0870 | 6/57/6 |
+| 0.35 | 394 | 0.9309 | 0.9211 | 0.0980 | 5/39/7 |
+| 0.45 | 190 | 0.9344 | 0.9216 | 0.1282 | 5/27/7 |
+| 0.50 | 148 | 0.9345 | 0.9214 | 0.1316 | 5/26/7 |
+| **0.55** | 111 | **0.9363** | **0.9220** | **0.1429** | 5/23/7 |
+| 0.65 | 49 | 0.9351 | 0.9222 | 0.1290 | 4/19/8 |
+| 0.75 | 12 | 0.9331 | 0.9224 | 0.1071 | 3/16/9 |
+| 1.50 | 0 | 0.9331 | 0.9224 | 0.1071 | 3/16/9 |
+
+**The win is not a trade.** At 0.55 both terms beat the xl baseline
+(adj 0.9185 / div 0.1333): adj_J +0.0035 AND div_J +0.0096. Divisions
+end up BETTER than the pipeline whose divisions the ranker was accused
+of draining -- the capacity-2 solve more than repays what 1:1 stole.
+
+Caveat to carry: the peak sits 0.0018 above its neighbours on SMALL
+COUNTS -- div_J moves on FP 27/23/19 and TP 5/5/4 against 12 GT
+divisions. The computation is deterministic (identical AUC 0.9884 in
+all three training runs), so this is not run-to-run noise, but the
+argmax is not sharply resolved: 0.45-0.65 are all defensible and 0.55
+is simply the best measured. Predicted LB at the -0.015 family offset:
+~0.921 vs the standing 0.917.
+
+**Submission kernel built: `biohub-submit-ranker`** (`submit_ranker.py`).
+Detection side is xl-repro verbatim; the linker is ranker probs -> the
+capacity-2 ILP at div_w 0.55; every post-link patch is ranker-diag's,
+because those -- not xl-repro's -- are the code path that measured
+0.9363 (they differ: xl's gap-close sorts proposals by distance and
+takes the closest under the cap, ranker's takes them in Hungarian
+order). Verified before pushing:
+
+- **Detector parity, the one that could have killed it.** The ranker
+  trained on `biohub-edge-ranker`'s caches, which mount xiaoleilian's
+  two weight datasets -- the same pair xl-repro uses -- with identical
+  branches, flip views and POOL/CAND_THR/UNET_THRESH/NMS_UM/SCALE. The
+  ranker learned on the xl detector's own coordinates, so the
+  distribution shift that buried the chimera does not apply.
+- **Offline.** Internet is off at submission; tracksdata/pyscipopt come
+  from the support-pack wheels and `predict_unet_transformer` from the
+  pack's repo copy. No clone anywhere.
+- **An AST pass for undefined names caught two real graft bugs** that
+  compile fine and die at runtime: `class UNet3D` and `_dist_um` were
+  missing, because the block extractor took `def` and not `class`. Run
+  that check on any assembled script.
+- `submission.csv` is written BEFORE scoring, and scoring is wrapped
+  whole: a scoring failure must never cost a submission. On the hidden
+  rescore the train-GT lookup misses and scoring says so and skips.
+
+## 2026-08-23 -- ⭐⭐ diag: the knob was live, the window was dead, and the reconciliation works
+
+`biohub-ranker-diag` counted out-degree-2 nodes in the SOLVED graph
+before any patch touched it, over a widened div_w sweep. This is the
+measurement v4 could not produce.
+
+| div_w | ILP forks | final forks | patch added | score | adj_J | div_J | div TP/FP/FN |
+|---|---|---|---|---|---|---|---|
+| 0.20 | **1024** | 1423 | 399 | 0.9280 | 0.9193 | 0.0870 | 6/57/6 |
+| **0.50** | **148** | 590 | 442 | **0.9345** | 0.9214 | **0.1316** | 5/26/7 |
+| 0.75 | 12 | 461 | 449 | 0.9331 | 0.9224 | 0.1071 | 3/16/9 |
+| 1.50 | **0** | 451 | 451 | 0.9331 | 0.9224 | 0.1071 | 3/16/9 |
+
+Fork count runs 1024 -> 148 -> 12 -> 0, monotone across a huge range:
+`division_weight` was always wired correctly. **v4's 0.75-0.95 window
+sat entirely in the dead zone** (12 forks at 0.75, zero above), so its
+three "identical" rows were one solved graph three times. The
+byte-identity was a badly placed window, not a broken knob -- worth
+recording, because the pessimistic reading (mechanism never engaged)
+was wrong and would have shelved a live line.
+
+**The reconciliation is confirmed.** At div_w 0.50 the ILP natively
+takes 148 forks, div_J returns to near-baseline (0.1316 vs 0.1333) and
+finds one MORE true division than baseline (5 TP vs 4), while adj_J
+holds at 0.9214 (+0.0029 over baseline). Taking both daughters
+natively is exactly what stops the stealing, as diagnosed.
+
+Clean decomposition of the +0.0027 over baseline, two separate sources:
+
+- **+0.0013 is the ranker's edges alone** -- at div_w 1.50 the ILP forks
+  zero times, divisions come purely from `_add_safe_divisions`, and the
+  pipeline still scores 0.9331 vs baseline 0.9318.
+- **+0.0014 more is native forking**, 0.9331 -> 0.9345 at div_w 0.50.
+
+0.20 over-forks: most TPs (6) but division FP 57 and adj_J falls to
+0.9193. The curve is peaked between 0.20 and 0.75 with only those two
+brackets measured, hence `biohub-ranker-fine` (0.35/0.45/0.55/0.65)
+before the submission slot is spent.
+
+Kernels this round, all in the repo: `ranker_v4.py`, `ranker_diag.py`,
+`ranker_fine.py`. The diag/fine pair skips the A line via
+`P_MIN_SWEEP = ()` (measured twice, identical).
+
+## 2026-08-23 -- ranker v4: the gate is cleared by 0.0001, and the knob never moved
+
+Two runs. The first ERRORed at 8.5 min: `P` was bound to the pipeline
+module at import, then clobbered inside the module-level `p_min` loop by
+`pairs, rows, P, C = feats[t]`, so the B line's `P.build_graph` hit a
+numpy array. Pure name shadowing; the import is now `as PIPE`. Also
+hardened: the B line mapped ILP endpoints with `remap[int(a)]`, which
+KeyErrors on the `edge_endpoint_missing` case `link_replay` has warned
+about since 2026-08-20 -- now dropped loudly as a lower bound (rule 1).
+The script lived only in a dead session's scratchpad and on Kaggle; it
+is now `ranker_v4.py` in the repo.
+
+| config | score | adj_J | div_J | div TP/FP/FN |
+|---|---|---|---|---|
+| xl baseline | 0.9318 | 0.9185 | **0.1333** | 4/18/8 |
+| A line, p_min 0.30 | 0.9305 | 0.9222 | 0.0833 | -- |
+| A line, p_min 0.35 | 0.9284 | 0.9200 | 0.0833 | -- |
+| A line, p_min 0.40 | 0.9278 | 0.9195 | 0.0833 | -- |
+| **B line, div_w 0.75** | **0.9331** | 0.9224 | 0.1071 | 3/16/9 |
+| **B line, div_w 0.85** | **0.9331** | 0.9224 | 0.1071 | 3/16/9 |
+| **B line, div_w 0.95** | **0.9331** | 0.9224 | 0.1071 | 3/16/9 |
+
+Composite is exactly `adj_J + 0.1 * div_J` (verified on all seven rows).
+That decomposes the A line's failure precisely: the ranker buys
+**+0.0037 adj_J** and pays **-0.050 div_J = -0.0050**, net -0.0013. The
+daughter-stealing diagnosis is confirmed as a mechanism -- and div_J
+sits at 0.0833 for every p_min, so no threshold reaches it.
+
+**The B line's result does not yet mean what it looks like.** Three
+surcharges spanning 0.75-0.95 returned identical score, adj_J, div_J
+AND TP/FP/FN. Identical to every digit means one solved graph, i.e.
+`division_weight` had no effect. With `edge_weight = -1.0 *
+edge_prob`, a fork is taken iff the second daughter's prob exceeds
+div_w, so either every accepted fork scored > 0.95, or **no fork was
+accepted at all** and all 3 TPs still come from the post-hoc
+`_add_safe_divisions` patch. Supporting the latter: B is still BELOW
+baseline on divisions (0.1071 vs 0.1333, 3 TP vs 4). It recovered part
+of what the A line lost, not all. So the +0.0013 over baseline reads as
+"the edge gain finally is not fully cancelled", not as "capacity-2
+takes both daughters natively" -- which was the entire hypothesis.
+
+Predicted LB at the -0.015 family offset: ~0.918 vs the standing 0.917.
+Inside the noise. **The pre-registered rule is technically cleared and
+substantively unsettled**; a submission slot is the scarce resource,
+GPU quota is not, so `biohub-ranker-diag` counts forks in the solved
+graph before any patch, over a div_w sweep widened to 0.2-1.5.
+
+## Current state (2026-08-21)
+
+### 2026-08-22 VERDICT: from-scratch retraining is closed; main line = post-processing + model swap/ensemble
+
+Session 1 (4 full epochs, clean split, official recipe, 10.3 h) delivered
+the learning curve: eval score (acc x recall on the 12-holdout) =
+0.8980 / 0.9000 / 0.9157 / 0.9121 — one epoch buys 0.90, then the curve
+crawls (+0.016 over three epochs, last epoch negative). Target: the
+public weights' 0.9835 at epoch 402. Real epoch cost: **2.53 h** (not
+2.1; smoke extrapolation was optimistic). 50 epochs = 127 h. The
+400-epoch tail is real; parity from scratch is unaffordable. Appeal
+path (not scheduled): a 3-epoch LR-schedule probe (3e-4 + cosine) —
+constant lr 1e-4 may explain some of the crawl. Warm-start surgery
+stays rejected (user: twisted melons; 0.764 as evidence). **Main line
+is now B+C: the learned edge re-ranker + luxury inference (TTA,
+ensemble, sub-voxel refinement) + adopting/ensembling the public
+xiaoleilian detector.** Artifacts kept: session-1 checkpoint (clean
+split, eval 0.9157) ferried to dataset `faustine649/biohub-train-ckpt`
+— an ensemble-diversity candidate; the resumable trainer harness works
+(4 epochs, per-epoch full checkpoints, zero incidents).
+
+### 2026-08-22 post-processing round (details in entries below when logged)
+
+- **Orphan patch v2 (0.917-derived strict filters: mutual-nearest sister,
+  both children continue, divergence >= 2.25 um): local +0.0132** —
+  v2 cap15 0.9401 vs v1 cap15 0.9348 (reproduced) vs cap0 0.9269, div
+  TP/FP 2/13 -> 3/10. Higher caps degrade. Submission v2 in validation
+  (`biohub-submit-orphan` v2); v1's local delta transferred 1:1 to LB.
+- **Velocity-into-cost: line closed.** First-ever sweep of link_replay's
+  velocity_adjust (24-cell grid, baseline 0.9387 reproduced): velocity
+  only gains where disappearance is low (max +0.0041 at 0.35/2.5/0.25)
+  and no cell beats the incumbent 0.40/3.5/0.0 — it substitutes for high
+  disappearance cost rather than adding to it, and costs TP. Velocity
+  survives only as a FEATURE for the learned edge re-ranker (the 0.915
+  anatomy, recon addendum 2026-08-22b), which is the next post-processing
+  build.
+- Kernel-engineering trap for the toolchain file: importing numpy BEFORE
+  a pip block that resolves dependencies can half-upgrade numpy on disk
+  ("cannot import name '_center'") — do heavy imports after pip.
+
+### 2026-08-22 Branch C (dual track) status
+
+- **XL detector beats the official on the clean ruler**: recall 0.766 /
+  prec 0.736 vs 0.650 / 0.637; dim-quartile 0.73 vs 0.52 (both models
+  ZH-naive — a pure generalization duel). Its score distribution is
+  compressed; 0.15 is its calibrated operating point.
+- **Path 2 (verbatim 0.917 reproduction)**: validated on the visible 4
+  (patches active, ~86 s/dataset) and SUBMITTED as ref 55690436 —
+  expected ~0.917; also tests badge reproducibility.
+- **Path 1 (chimera: XL detect -> official edge head -> our ILP + v2
+  patch)**: v1 died of a double-downsample clamp (open_dataset returns
+  already-downsampled shapes); v2 ran clean but LOST locally — adj_J
+  0.9118 vs 0.9337, composite 0.9204 vs 0.9401. Caveat: the holdout is
+  the official detector's HOME turf (possibly its training data), i.e.
+  this filter is structurally biased against foreign detectors, plus the
+  edge head faces a coordinate-distribution shift. Decision rule: if
+  55690436 lands ~0.917 on the LB (an xl-family pipeline winning away
+  from home), the chimera earns an LB slot despite the local reading;
+  if the reproduction also flops, the xl family is suspect and the
+  chimera is buried.
+
+**Measurement doctrine (user's, adopted):** the only ruler is the LB —
+strictly the private 71%, of which the public LB is the closest readable
+proxy (+-0.03, 29%). Every local score (Zebrahub bench, holdout, val
+losses) is a FILTER, not a ruler: it may only decide what earns a
+submission slot, never declare improvement. "Better" is a word the LB
+says.
+
+**LB history (from the submissions API):** 0.681 (08-17, classical) ->
+0.876 (08-19, ILP+A) -> 0.881 (08-20, thr 0.35 / disapp 2.5) -> 0.764
+(08-21, fine-tune — REJECTED) -> 0.889 -> 0.898 (08-22, orphan patch
+v1 -> v2) -> **0.917 (08-23, ref 55690436: verbatim reproduction of the
+kunaldesale/xiaoleilian pipeline — the current best, badge reproduced
+digit-for-digit)**. Gap to LB top-20 (0.935): 0.018.
+
+**FAMILY-CALIBRATION DISCOVERY (2026-08-23):** local-to-LB offsets are
+family-specific — official-weights family: local 0.9401 -> LB 0.898
+(-0.042); xl family: local 0.9318 -> LB 0.917 (-0.015). Local rankings
+INVERT on the LB. Hardest evidence yet that the holdout inflates the
+official weights (memorization). Rule: absolute local scores must never
+be compared across detector families; only within-family paired deltas
+are valid. **Chimera buried** by this rule: within-family it trails the
+repro by 0.011 (0.9204 vs 0.9318), predicted LB ~0.906 < 0.917 — the
+official edge head is the weak link for foreign coordinates, no slot
+spent. Main line: evolve the 0.917 xl pipeline with post-processing
+upgrades, each a within-family paired delta against holdout baseline
+0.9318 (its div line: div_J 0.1333, TP/FP/FN 4/18/8).
+
+- **LB 0.876** (submitted 2026-08-19: official pipeline + pilkwang weights +
+  `--use-ilp --ilp-appearance-weight 0.0 --ilp-disappearance-weight 1.5`,
+  `det-threshold 0.99`). Public 0.916 notebook is the bar; its badge is
+  pre-patch, so the honest gap is unknown but of order +0.04.
+- **Local best on the 12-dataset `6bba` holdout: 0.9387** (cached replay,
+  edge threshold 0.40, disappearance 3.5) vs 0.9269 for the submitted
+  config. Local is optimistic vs LB by ~0.05; use it for paired deltas only.
+- **Converged levers:** edge threshold x disappearance (done), det-threshold
+  (done — not a lever; the detection ceiling is the model). **The open line
+  is a better detector, trained on Zebrahub.**
+- **Zebrahub crops extracted: 41 crops, 7.5 GB**, all five movies, in
+  `biohub-zebrahub-extract` v4 output under `crops/` (entry below).
+- **Clean detection ruler built and read**: public detector = recall 0.65 /
+  prec 0.64 on Zebrahub dense GT (entry below). All training reads there.
+- **Closed today:** sigmoid edge activation (best 0.9314 vs softmax's
+  0.9387 on the holdout — no reason to pursue); NMS-merge division
+  hypothesis (sisters are born ~10.6 um apart; entry below).
+- **Fine-tune v3 trained** (augmented, two-domain): ZH val loss 1.307 ->
+  0.194, but competition-domain val loss 0.018 -> 0.047 — the drift guard
+  fired. Weights saved; verdict pends the clean-ruler re-bench.
+- **Orphan forks v3: div_J moved for the first time** — cap 15 -> 0.080
+  (2 TP / 13 FP). adj_J came out NaN (n_total read at the wrong nesting;
+  it lives at gt["extra"]), so the net edge-cost verdict pends the
+  rescore.
+- **Fine-tuned weights passed the filter**: ZH bench recall@0.99
+  0.650 -> 0.726, precision 0.637 -> 0.729 (FP -20.7k), dim-quartile
+  recall 0.52 -> 0.71. Caveat: the fine-tune TRAINED on these crops, so
+  the ZH ruler is no longer clean for this model — it only certifies
+  "learned, not broken". The real verdict is the LB.
+- **Fine-tune v3 REJECTED by the LB: 0.764** (ref 55670839, -0.112 vs
+  0.876, single-variable). The comp-domain drift warning was real and
+  decisive; every local gain (ZH recall +0.075) was paid for out of the
+  test domain. Next fine-tune iteration needs a stronger anchor: higher
+  comp fraction / lower LR / fewer steps, or post-hoc weight
+  interpolation toward the original — and the LB stays the judge.
+- **Orphan forks: NET +0.0080 at cap 15** (official metric, holdout):
+  cap0 reproduces 0.9269 digit-for-digit (harness validated); cap 15 ->
+  0.9348, div_J 0 -> 0.080, and adj_J pays only 0.0001 — the added edges
+  are effectively free, as constructed. cap 40 is worse (0.9332).
+- **Campaign session 1 LAUNCHED** (`biohub-train-campaign` v1): official
+  recipe, clean split, 4 epochs (~8.5 h), resumable (full checkpoint per
+  epoch; ferry `last_full.pth` via a ckpt dataset between sessions).
+  Measured cost: **~2.1 h/epoch on T4 x2 at any batch size** (GPU-bound,
+  ~2.4 windows/s; bs 8 hit a NaN anomaly — avoided; expandable_segments
+  cures the bs-16 OOM). Budget: 30 h/week, full tank, ~180 h to deadline;
+  no Kaggle paid tier (the one upgrade path: Colab Pro unlocks extra
+  Kaggle GPU hours). CLI trap logged in kaggle-toolchain.md: access
+  tokens expire and the CLI won't auto-refresh — inject
+  `KAGGLE_API_TOKEN` from `kaggle auth print-access-token` per call.
+- **De-risking doctrine for expensive training (user's concern: no
+  one-shot 100 h bets):** (1) session 1 buys the LEARNING CURVE — how
+  many epochs matter; (2) design variants go through a SCREENING round
+  first (max_iters-sampled epochs, ~3 h/variant, ranked on ZH bench +
+  holdout); (3) loss/data/augment changes branch WARM-STARTED from a
+  shared trunk checkpoint — only architecture changes force from-scratch;
+  (4) exactly one full-scale run, of the screened composite. AMP (absent
+  from the official script) to be validated before screening — likely
+  halves every number above. (An earlier draft here cited "pilkwang's
+  50ep pack proves a 50-epoch Kaggle run" — struck; see the epoch-402
+  correction below.)
+- **STRATEGIC PIVOT (user's call, 2026-08-22): the training campaign is
+  the main line.** Knob-tuning is provably exhausted (three days bought
+  +0.013; the 0.952 author's sweep log is flat), the +0.046 gap to the
+  top 20 lives in the edge term, which is model-bound. Plan: (0) smoke-run
+  the official recipe for real epoch timing + first clean-split checkpoint
+  — `biohub-train-smoke` in flight; (1) short reproduce on competition
+  data, our split; (2) two-domain FROM-SCRATCH train (no catastrophic-
+  forgetting frame): package Zebrahub crops as competition-format
+  zarr+geff fakes (must carry `image_statistics.quantiles` in attrs — the
+  loader raises without them) and add them to a custom splits file — zero
+  changes to official training code; (3) train the edge head on
+  Zebrahub's 20M edges. **CORRECTION (user's, 2026-08-22): the working
+  public weights carry `epoch: 402` in their checkpoint — they are a
+  ~400-epoch product, NOT 50; the pack's "50ep" name proves nothing about
+  the edge predictor's training length.** At our measured 2.1 h/epoch,
+  400 epochs ≈ 840 h — from-scratch parity may be unaffordable. Budget
+  consequences: (a) the session-1 learning curve decides whether
+  from-scratch is live at all; (b) the default trunk for improvements
+  becomes CONTINUED training from the public weights (original loss,
+  original data plus additions, low LR — unlike the rejected fine-tune,
+  which changed loss weights and fed 70% foreign data); (c) AMP and
+  max_iters sampling graduate from nice-to-have to required. Stage-2 ingredient (user's diagnosis, 2026-08-22):
+  **the loss never supervises cell COUNT** — sparse dots + neg weight 0.01
+  means counting is a training blind spot; that is why recall collapses
+  with density (corr -0.68, ZH 0.65), why N/N_true drifts 1.01-1.30
+  uncalibrated, and why ILP disappearance (a crude post-hoc counter) was
+  the biggest post-processing lever. Fix: a count-consistency loss —
+  heatmap probability mass pulled toward the known count (N_true exists
+  for all 199 train sets; Zebrahub crops have exact per-frame counts),
+  plus raised neg weight on dense crops; `cell_count.py` per-dataset
+  estimates remain the inference-side fallback (+0.155 evidence in the
+  classical era). Engineering gap: the official trainer has NO
+  resume (best-weights only, no optimizer state) — 12 h kernel cap means
+  a checkpoint-chain harness. Facts: trainer is Kaggle-native (T4 x2
+  DataParallel hint in-code; pilkwang's "50ep" pack proves a 50-epoch run
+  happened on Kaggle). Filters stay filters; every stage's verdict is
+  the LB.
+- **LB 0.889 — NEW BEST** (ref 55674219): the 0.881 config + the cap-15
+  orphan patch, ported to a no-GT in-memory pass (`dr._candidates_one` on
+  the solved graph, image feature via the zarr-free reader). The
+  division term finally earns on the LB. Follow-ups on this line: tune
+  the cap (15 was picked from a 4-point sweep), add the source-side
+  mass-balance feature (the salvaged softmax idea), and re-measure the
+  patch on top of any future linking config.
+- Uncommitted: this docs restructure, `zebrahub_extract.py` rewrite.
+
+### To do
+
+- [x] ~~Measure the public detector on the 41 Zebrahub crops~~ — done,
+      **recall 0.65 / precision 0.64** at the pipeline's det gate
+      (entry below). The ruler works, has huge dynamic range, and costs
+      6 min per full pass (`biohub-zh-detect-bench`).
+- [ ] Fine-tune on the crops, re-run the bench, and if the gain is large,
+      package weights as a dataset and SUBMIT — the LB (resolution ~0.03)
+      is the final arbiter, per the user's call.
+- [ ] Wire the 41 crops into `finetune_detect.py` (per-crop quantiles;
+      dense labels need a different neg-weight scheme than the sparse-GT
+      0.1; treat `parent_track_id < 0` OR the int64-cast NaN garbage as
+      "no parent" — see the harvest entry).
+- [ ] **Explain the 0.051 local-vs-LB offset.** Live probe: a `44b6`-only
+      holdout — every number we own is `6bba`, which has a 7.47%
+      duplicate-frame rate vs `44b6`'s zero. One inference pass.
+- [ ] **Field-of-view drift** [CPU, GT only]: per frame pair, median
+      displacement VECTOR of GT cells; coherent drift vs cancelling motion.
+      Decides whether population growth can estimate division counts, and
+      feeds appearance-based division recovery.
+- [ ] `--ilp-division-weight` between 1.0 and 0.3 (0.85 would fork only on
+      very confident second edges). Untested.
+- [ ] `6bba_7af54fde`: 97 cells/frame yet J=0.828, worst over-detection
+      (1.28). Motion suspected; one `run_gif` + displacement percentiles.
+- [ ] Deferred: `cell_count.py` on real data (only if N_true estimation
+      helps the node-count penalty).
+
+Done/dead, for the record: ILP+A confirmed 12/12 (2026-08-19, 0.9269);
+submitted (0.876); runtime budget resolved (5.2 h of 12, see reference);
+det-threshold sweep (2026-08-21, dead as a lever); re-running the 0.916
+notebook (dropped — pre-patch badge measures the closed exploit).
 
 ---
 
-## Status (2026-08-19) — LB 0.876, local 0.9269
+## 2026-08-21 — sigmoid edge activation: no win; sisters born far apart
 
-**Submitted and scored. Public LB 0.876**, up from 0.681 (the classical DoG
-pipeline). The configuration is the official repo plus pilkwang's public weights
-and two command-line flags — no DeepCenter, no second seed, none of the ~40
-`BIOHUB_*` knobs.
+**Sigmoid recache** (`biohub-cache-sigmoid`: edge_activation=sigmoid at
+dump threshold 0.05, then a 7x3 replay grid). Mechanism confirmed: with
+sigmoid, candidates above 0.5 EXCEED the target count (impossible under
+softmax) — the mass-splitting starvation is real and softmax-specific.
+But the score does not follow: grid best 0.9314 at threshold 0.70 /
+disapp 3.5 vs softmax's 0.9387 at 0.40/3.5; edge_J lower everywhere
+(0.9316 max vs 0.9363). The freed candidates are mostly the spurious pool
+the stranded audit predicted; the ILP buys FPs with them. At threshold
+0.9 the sigmoid graph collapses outright (adj_J 0.05 — probabilities
+rarely reach 0.9). Verdict: line closed. (Holdout-measured, so the
+negative carries the usual trust discount — but nothing here motivates
+spending more on it.)
 
-| | LB | local, 12 held-out `6bba` |
+**A salvageable idea from the sigmoid post-mortem** (user's): the official
+softmax normalises per TARGET (candidate parents compete), so a division
+does NOT produce a 0.5/0.5 signature — each daughter's column gives the
+shared parent ~1.0. But the transposed statistic can be built from the
+cache: renormalise each SOURCE's outgoing candidate probs; a parent whose
+top-2 outgoing shares are balanced AND whose edge lengths sit in the
+division band (3.5-11 um) is a synthetic fork signature. Pure CPU, cache
+only — a third feature for the orphan-fork scorer (existing: edge length
+AUC 0.86, parent brightness AUC 0.71) if the base pass proves out.
+
+**Sister-separation curve** (`biohub-sister-curve`, all 151 GT
+divisions): at k=0, the daughters' first frame, separation p10/p50/p90 =
+6.4 / 10.6 / 14.4 um; only 0.7% closer than the 3 um NMS kernel. The
+2026-08-19 "NMS merges newborn daughters" hypothesis is dead: daughters
+are annotated far apart from birth. Late-reporting within the +-1-frame
+window solves nothing because nothing is merged. Division losses must
+come from elsewhere (detection/linking of the second daughter — exactly
+what the orphan-fork pass targets).
+
+**Two kernel-engineering lessons** (cost: ~30 wasted GPU-min): (1) the
+pack renames `tracking_cellmot` -> `biohub_tracking` AND its
+`evaluate.py` is a different version without `evaluate_pairs`;
+`division_recovery.sweep`'s import of it had never been executed. Score
+against the official metrics API directly. (2) An ERRORed kernel's output
+files are downloadable but CANNOT be attached as a kernel_source — a
+run that dies at the last step strands its artefacts. (3) Loading all 41
+crops decompressed needs ~33 GB RAM — OOM-killed finetune v2; use
+/kaggle/tmp memmaps.
+
+## 2026-08-21 — the clean ruler's first reading: recall 0.65, not 0.99
+
+`biohub-zh-detect-bench` (v2): public weights, untouched, on all 41
+Zebrahub crops — ~206k dense GT points, every 5th frame, greedy 1:1 match
+within 5 um, NMS pool 3 um, no TTA. 6 minutes of T4.
+
+| det gate | TP | FP | FN | recall | precision |
+|---|---|---|---|---|---|
+| 0.5 | 148,656 | 99,760 | 57,304 | 0.722 | 0.598 |
+| 0.9 | 143,621 | 89,911 | 62,339 | 0.697 | 0.615 |
+| **0.99 (pipeline)** | 133,787 | 76,243 | 72,173 | **0.650** | 0.637 |
+
+Recall@0.99 by GT-point brightness quartile: Q1 (dimmest) 0.52 — partly
+Zebrahub label noise; **Q4 (brightest) 0.74** — those are unambiguous real
+cells, and the detector misses a quarter of them. Label noise cannot
+explain the gap; the holdout's node_recall 0.9974 cannot survive it
+either. Per-crop spread 0.32–0.92 (`zh_detect_bench.csv` in the kernel
+output); ZSNS004 (a dim movie) is worst, dense ZSNS003/005 crops are fine.
+
+Reading it honestly, three causes stack and this run cannot separate them:
+(1) the holdout number is inflated (memorization + duplicate frames);
+(2) genuine domain shift — Zebrahub is a different instrument setup, and
+the hidden test (a third embryo on the COMPETITION instrument) sits closer
+to the holdout than to Zebrahub, so 0.65 is a lower bound story, not the
+hidden-test number; (3) method deltas (no TTA, approximate NMS) — worth a
+few points at most.
+
+What it establishes regardless: the ruler has dynamic range (0.65 baseline,
+0.35 of visible headroom), a real fine-tune effect will be unmissable on
+it, and "detection is solved" is dead as a general claim — it was only
+ever measured where the model may have been grading its own homework.
+
+**Correction (user's, accepted): "the hidden test is on the competition
+instrument" was asserted without evidence — and (second push) so was
+"same format".** Nobody has seen the hidden data; the visible test/ files
+are train copies. And (third push, also the user's) "the pipeline read it
+fine" proves NOTHING about similarity — Zebrahub itself, a different
+instrument outright, goes through the same pipeline after resampling, as
+this very bench demonstrates. Format compatibility and runtime only pin
+format family and data volume. **The single load-bearing fact about
+hidden-test similarity: train-tuned pipelines can reach 0.93+ on it —
+LB #1 0.957 / #20 0.935, read via API 2026-08-20, post-rescore; our own
+bare config 0.876.** (NOT "the whole field scores 0.9+" — an earlier
+draft of this sentence overclaimed; most of the 2560 teams score below
+0.9.) That top-end existence proof bounds the domain shift to an
+eroding-percentage-points factor, not a new world; the public LB is 29%
+of the test, so the bound carries that caveat too. Everything beyond
+this is conjecture.
+Photometrics are free to differ per batch — the competition's own two
+batches differ 8x in brightness. Evidence the detector is photometrically brittle WITHIN one
+instrument: ZSNS004 (dim) is the worst movie on this bench (crops down to
+0.32 recall). So part of the local-vs-LB offset may be domain shift we
+have never mitigated. And (user's addition) **brightness is only the
+observed axis — sharpness/PSF width, noise character, scattering with
+depth, and axes we have not thought to look at can all differ per batch
+and are so far unmeasured.** Cheap probe if wanted: per-dataset sharpness
+proxy (e.g. Laplacian energy / gradient p95 on a mid frame) across 44b6 /
+6bba / Zebrahub, same style as the brightness survey. Consequences for
+the fine-tune: (1) augmentation must cover more than gain — random
+gain/offset/gamma/noise AND Gaussian blur of varying width (a blur-robust
+detector is insurance against a softer-imaging test set); (2) mix
+competition sparse-GT frames with Zebrahub dense crops — features that
+hold across two domains stand a better chance on a third. LB submission
+remains the only direct read on the hidden domain.
+
+## 2026-08-21 — validation trust: null results on the holdout are void
+
+User's argument, accepted: the 12-dataset `6bba` holdout is duplicate-
+frame-inflated AND possibly inside the public weights' training split, so
+a measurement of "no improvement" there is uninterpretable — a memorized
+baseline leaves no visible headroom even for real gains. Corollary: if
+0.982 detect_ceiling is memorization, the hidden-test detection is worse
+than the books say and detector training is worth MORE, not less.
+
+Trust tiers, applied from now on:
+
+- **Still valid:** LB 0.876 (real); the scorer cross-check (same-graph
+  comparison); the softmax-gate mechanism (read from code, not from the
+  holdout); all Zebrahub facts (independently verified).
+- **Discounted:** every absolute number on the holdout (0.9269, 0.9387,
+  detect_ceiling 0.9823, node_recall 0.9974).
+- **Void:** every NULL result measured on the holdout — including
+  "det-threshold is not the lever" (the direction may still be dead, but
+  the evidence is weak) and any "no effect" from the in-flight sigmoid /
+  orphan-fork runs. Positive paired deltas keep some value; zeros do not.
+
+Second, independent problem (also the user's): **no statistical power at
+saturation.** The holdout has ~10.6k GT edges and ~180 detection-missed
+endpoints; fixing 10% of the miss pool moves edge_J by ~0.0017 — the same
+order as run-to-run noise (seeds, ILP tie-breaking, TTA), whose floor has
+never even been measured. In the 0.98 regime, signal and noise are the
+same size; small deltas in either direction prove nothing.
+
+The fix for both: the 41 Zebrahub crops double as the first
+contamination-proof detection benchmark (dense GT, ~900k nodes = ~100x
+the holdout's effective sample; weights trained only on competition data
+per the official training scripts). Measure the current detector there
+before spending GPU on training; read all training experiments on that
+ruler, where a real effect has room to be visibly larger than noise.
+
+## 2026-08-21 — extraction v2 harvested: 41 crops, 7.5 GB, zero empty
+
+`biohub-zebrahub-extract` v4 (SCRIPT_VERSION 2026-08-21d) ran 94 min and
+completed cleanly. Per movie (units all detected correctly; crops with
+cells/frame at T0):
+
+| movie | units | T0 | crops | cells/frame span | divisions in full CSV |
+|---|---|---|---|---|---|
+| ZSNS001 | UM | 237 | 7 | 51-541 | 635,042 |
+| ZSNS001_tail | UM | 237 | 5 | 63-566 | 36,878 |
+| ZSNS003 | VOXEL | 154 | 9 | 43-384 | 15,869 |
+| ZSNS004 | VOXEL | 180 | 10 | 52-578 | 30,279 |
+| ZSNS005 | VOXEL | 180 | 10 | 36-672 | 46,027 |
+
+- Density now spans 36-672 cells/frame, bracketing the competition's
+  50-519, with sparse crops included — the v1 failure (3 empty, 2
+  over-dense) is fixed. _tail's slab lacked the 80-250 bins (loudly
+  degraded, accepted).
+- Displacements p50 1.32-1.58 um everywhere; ZSNS004 p99 10.13 um is
+  tail-heavy vs the competition's 6.71 — fine for detection, watch it if
+  training a linker on 004.
+- **Defect:** `ZSNS001_tail` uses NaN (not -1) for "no parent";
+  `astype(np.int64)` cast it to garbage (RuntimeWarning in the log). All
+  five tail crops carry it. Consumers must treat `parent_track_id < 0` as
+  no-parent; the next extract revision should `fillna(-1)` before the
+  cast. Division counting via "parent with >=2 children" must also drop
+  the garbage id or every root pair looks like one giant fake division.
+- Total division supervision now on disk: ~764k events across five movies
+  vs the competition's 151.
+
+## 2026-08-21 — extraction v2 (all five movies, density-bin placement)
+
+`zebrahub_extract.py` rewritten (SCRIPT_VERSION 2026-08-21d), pushed as
+`biohub-zebrahub-extract` v4. Changes, each answering a measured failure:
+
+1. All five movies in one run, per-movie try/except, 14 GB output budget.
+2. Units DETECTED per movie (coordinate max vs physical extent), columns
+   normalised — the two traps in `reference.md#zebrahub-external-data`.
+3. Placement: up to 2 crops per density bin {30-80, 80-150, 150-250,
+   250-400, 400-650 cells/frame} inside the best z-slab, replacing "densest
+   3x3 tile" which produced 3 empty crops and 2 over-dense ones (v1
+   harvest, below). Small-chunk movies (001, _tail) confine candidates to a
+   4x4-bin window so the per-frame read stays bounded; whole-plane-chunk
+   movies (003/004/005) pay for the plane anyway and are unconstrained.
+4. Fixed a silent whole-frame read: zarr 2 materialises `arr[t, 0]` (the
+   full 4.7 GB frame) before a second `[slices]` applies. v1 downloaded
+   every full frame without knowing. One-call indexing now (trap 22).
+
+Placement logic dry-run locally on sampled real data before pushing:
+4 crops covering 3 bins on the 7%-sample (bins fill at full density), bbox
+108 MB raw/frame, within budget.
+
+## 2026-08-21 — competition brightness is not uniform either
+
+Question raised by the user: is per-dataset normalisation throwing away a
+real feature, and is the competition's own brightness uniform? Measured
+(`faustine649/competition-brightness-survey`): q0.999 spans 8.8x across the
+199 train datasets — same regime as Zebrahub's 10x. The organizers store
+per-dataset quantiles in the zarr attrs and the official `io.py` normalises
+with them, so per-dataset normalisation is the designed-in policy, not a
+choice we are making. Numbers and the frame-vs-movie caveat:
+`reference.md#train-set-survey-199-datasets`.
+
+Absolute brightness is instrument+expression+bleaching, not biology;
+a linear per-dataset rescale preserves all within-image contrast and
+ordering. `cell_count.py` had already excluded absolute-intensity features
+for exactly this reason (kept only as a LOGO control).
+
+## 2026-08-21 — first extraction run harvested (v1, ZSNS001 only)
+
+`biohub-zebrahub-extract` SCRIPT_VERSION 2026-08-21a completed ~11:35 and
+sat unread until evening (lesson: COMPLETE is not harvested). Results:
+
+- Full CSV: 21,697,591 nodes, 635,042 divisions; displacement p50 1.24 /
+  p99 5.19 um at t=200 — compatible with the competition's 1.82 / 6.71.
+- 9 crops, 1278 MB, `crops/*.npz` in the kernel output. Six labelled
+  (159 / 523 / 531 / 552 / 1041 / 1211 nodes per frame), **three empty**
+  (densest tile hangs off the embryo edge — predicted by the pre-read).
+- Two crops (1041, 1211/frame) are denser than anything in the competition
+  (true 50-519/frame). "Maximise density" was the wrong placement
+  objective -> replaced in v2 (entry above).
+
+## 2026-08-21 — Zebrahub verified as training data: all 5 movies PASS
+
+Re-evaluated the source bucket from the data alone, trusting no prior
+assertion (user's instruction). Local probe on ZSNS001 (60 MB CSV head +
+one zarr chunk), then `faustine649/zebrahub-align-spotcheck` ran four
+checks per movie: units, alignment (the test the `kkunizaw` mirror failed),
+displacement, density. All five PASS; full fact table and the traps now
+live in `reference.md#zebrahub-external-data`.
+
+What the check caught that assertions missed:
+
+1. ZSNS003/004/005 coordinates are **voxel indices, not um** — the naive um
+   reading fails alignment outright (v1 of the spot-check FLAGged both and
+   crashed on 005; unit detection turned them into PASSes).
+2. `ZSNS001_tail` renames columns (`ParentTrackID` etc.).
+3. First displacement measurement said p50 = 0.00 — a self-inflicted bug
+   (diffing across sampling gaps instead of dt==1 only). Corrected: 2.9%
+   exact zeros, p50 1.52.
+
+Verdict: suitable for training. Caveats that survive: machine-generated
+labels (~10% near background — weight by local brightness), per-crop
+normalisation mandatory, ZSNS002 unusable.
+
+## 2026-08-21 — det-threshold is not the lever; the ceiling is the model
+
+Scored on the cache at the converged linking optimum (threshold 0.40,
+disappearance 3.5), so only `det_threshold` varies:
+
+| det | adj_J | edge_J | detect_ceiling | link_rate | nodes |
+|---|---|---|---|---|---|
+| **0.99** | **0.9387** | 0.9363 | 0.9825 | 0.9839 | 161,649 |
+| 0.98 | 0.9375 | 0.9362 | 0.9827 | 0.9836 | 164,185 |
+| 0.95 | 0.9367 | 0.9365 | 0.9821 | 0.9842 | 166,209 |
+
+`detect_ceiling` does not move and neither does `edge_J`; the adj_J fall is
+entirely the node-count penalty on 2.8% more nodes. The extra detections
+admitted by a lower gate are NOT the missing endpoints of the ~180
+unreachable GT edges — those cells are not peaks in the heatmap at any
+threshold down to 0.95. **The detection ceiling is set by the model's
+output, not by our threshold.**
+
+Pattern worth keeping (three wrong directions argued on this one knob, two
+from stories about model internals, one sound-but-insufficient from the
+metric alone): **score the thing.** The deflation story was wrong on
+arithmetic: the negative loss term weighs ~2.4e-8 per unannotated voxel.
+
+What it leaves open: a better detector, which means training — Zebrahub
+(entries above).
+
+---
+
+## 2026-08-20 — the candidate cache, and what it measured
+
+GPU inference now runs once (`cache_candidates.py` dumps coords/edges/probs
+at threshold 0.05); every linking experiment replays on CPU
+(`link_replay.py`, Kaggle entry `run_sweep.py`). One 12-dataset pass:
+154 s CPU vs 11 min GPU. Cache verified faithful: replaying the submitted
+config reproduces TP/FP/FN 9863/318/450 and adj_J 0.9269 digit for digit.
+
+### Correction: 0.9953/0.9530 was the GREEDY decomposition
+
+| | detect_ceiling | link_rate |
 |---|---|---|
-| classical DoG pipeline | 0.681 | ~0.45 |
-| **official + ILP + app 0.0 / disapp 1.5** | **0.876** | 0.9269 |
-| the public 0.916 notebook (full stack) | 0.916 | not measured with the fixed scorer |
+| as previously recorded | 0.9953 | 0.9530 |
+| ILP+A, measured | **0.9823** | **0.9736** |
 
-### The offset: local is optimistic by 0.051
+ILP wins by giving up detection reach (solver discards nodes) to buy
+linking. Detection's share of the loss is 1.8%, not 0.5% — still
+linking-dominated, but 3.5x what the log claimed.
 
-This is the number every future decision rests on. Candidate causes, none yet
-separated:
+### 11.8% of targets have no candidate parent at all
 
-1. **Contamination.** The 12 `6bba` datasets are provably unseen by *DeepCenter*
-   (its `split_manifest.json` says so) but the **primary** U-Net's split is still
-   unknown — see `docs/holdout-split.md`. If it trained on them, 0.9269 is
-   inflated.
-2. **The hidden test is harder or differently distributed.** Density drives the
-   score hard (`corr(edge J, true density) = -0.68`), so a denser test set alone
-   would explain a large gap.
-3. **Node-count penalty.** Locally it is 0.0009 because ILP trims nodes to just
-   under `N_true`. On a test set with a different density mix the same trimming
-   could overshoot or undershoot.
+Pooled over the holdout at dump threshold 0.05: candidates above 0.5 =
+167,398 (everything the submission ever saw); above 0.05 = 338,781 (2.02x);
+targets = 189,872, of which **22,474 (11.8%) have no candidate above 0.5**
+— structural false negatives. The softmax normalises over sources, so at
+most one parent per target can exceed 0.5.
 
-**Operationally:** use local scores for **paired deltas**, never for absolute
-targets. A change worth +0.01 locally is very likely worth something on the LB;
-"local 0.93 so we are near 0.93" is false.
+Stranded fraction correlates with over-detection (`N/N_true` r=+0.79), NOT
+density (r=-0.07). Earlier "density is the primary failure axis" holds for
+the score, not for this mechanism: a spurious detection has no true parent,
+its column mass spreads, nothing clears 0.5.
 
-To pass the public 0.916 notebook we need roughly **+0.04 more on the LB**. That
-is also, to within noise, what its whole post-processing stack is worth over our
-bare configuration — so the shortest path is to find which of its ~40 knobs
-actually carry that 0.04, rather than adopting all of them.
+### Counted, not estimated (`stranded_audit.py`)
 
-## The local best: 0.9269
+1. Stranded targets are disproportionately spurious: GT-match rate 1.5% vs
+   6.1% for confident targets (ratio 0.24, holds in all 12 datasets). Most
+   of the 22,474 should stay unlinked.
+2. Yet **278 of the 450 edge FNs (62%) are real edges stuck behind the 0.5
+   gate** (27 more have an undetected target). Recovering all 278 at F new
+   FPs: +0.026 at F=0, break-even near F=300, and the pool holds 22,196
+   spurious targets — the real edges are 1.2% of it. Needle in haystack;
+   whether it pays is entirely ILP selectivity.
+3. Prediction for the 2-D sweep: the winning cell pairs a lower threshold
+   with a LOWER disappearance weight (the current bias towards linking
+   becomes a liability at a lower gate).
 
-**12 held-out `6bba_` datasets, official `scripts/evaluate.py`, official repo
-plus pilkwang's public weights. No DeepCenter, no second seed, none of the
-`BIOHUB_*` post-processing.**
+Over-detection became the higher-leverage target here — it pays the
+node-count penalty AND buries the 278 recoverable edges.
+`SUPERSEDED 2026-08-21`: the det-threshold knob was then swept and is dead
+(entry above); the over-detection problem still stands, but its fix is a
+better detector, not the threshold.
+
+## 2026-08-20 — ⭐⭐ the edge threshold is the binding constraint
+
+Read verbatim from `scripts/predict_unet_transformer.py` (defaults now in
+`reference.md#running-the-official-pipeline`): the edge-candidate gate
+`threshold=0.5` is the only limit on what the linker sees, and the softmax
+normalises over sources. A target whose column mass splits between two
+plausible parents (~0.5/0.5) gets NO candidate edge at all. This predicted,
+before measurement: the 60% `DROPPED` failure bucket, `corr(edge J, true
+density) = -0.68`, the densest movie being worst, and detect_ceiling >>
+link_rate.
+
+Arithmetic headroom estimated then: up to +0.041 if every dropped edge
+recovers and retires an FP. `SUPERSEDED 2026-08-20` (same day, audit above):
+the stranded pool is mostly spurious, so +0.041 was optimistic; the counted
+recoverable number is 278 edges, +0.026 max at zero cost.
+
+Consequences that stand:
+
+- Sweep `threshold` x `disappearance_weight` TOGETHER (parameters
+  interact; appearance 0.0 / disappearance 1.5 currently biases towards
+  linking).
+- Forks stay impossible throughout (needs edge_prob > 1.0), so the sweep is
+  safe for the division term.
+- `sweep_edge_threshold.py`'s greedy-only monotonicity argument does not
+  transfer to ILP — hence the candidate cache instead of geff replays.
+- The sweep landed at threshold 0.40 / disappearance 3.5 -> local 0.9387
+  (state block). [Recorded 2026-08-21 alongside the det sweep.]
+
+---
+
+## 2026-08-19 — submitted: LB 0.876, local 0.9269
+
+Official repo + pilkwang's public weights + two flags (`--use-ilp`,
+appearance 0.0 / disappearance 1.5), `det-threshold 0.99`. No DeepCenter,
+no second seed, none of the ~40 `BIOHUB_*` knobs. Up from 0.681 (classical
+DoG pipeline).
+
+| | LB | local (12 held-out `6bba`) |
+|---|---|---|
+| classical DoG | 0.681 | ~0.45 |
+| **official + ILP+A** | **0.876** | 0.9269 |
+| public 0.916 notebook (full stack) | 0.916 | never measured post-patch |
+
+### The 0.051 offset: local is optimistic
+
+Candidate causes, none separated yet: (1) the primary U-Net's split is
+unknown — if it trained on the holdout, 0.9269 is inflated; (2) the hidden
+test may be denser/differently distributed (density drives the score,
+r=-0.68); (3) the node-count penalty depends on the density mix.
+Operationally: **use local scores for paired deltas only** — "local 0.93 so
+we are near 0.93" is false.
+
+### Local best detail (12 datasets, official `evaluate.py`)
 
 ```
-python scripts/predict_unet_transformer.py \
-    --splits splits.json --split 0 \
-    --weights .../unet_transformer/split_0/edge_predictor_best.pth \
-    --det-threshold 0.99 --use-ilp \
-    --ilp-appearance-weight 0.0 --ilp-disappearance-weight 1.5 \
-    --evaluate
-```
-
-```
-score              0.9269
-adj_edge_jaccard   0.9269
-edge_jaccard       0.9278     (TP/FP/FN 9863 / 318 / 450)
-division_jaccard   0.0000     (TP/FP/FN    0 /   0 /  12)
+score              0.9269   (greedy default: 0.8847, improved 12 of 12)
+edge_jaccard       0.9278   (TP/FP/FN 9863 / 318 / 450)
+division_jaccard   0.0000   (0 forks emitted; 12 GT divisions all FN)
 node_recall        0.9882
-node-count penalty 0.0009     (was 0.0140)
+node-count penalty 0.0009   (was 0.0140)
 ```
 
-**+0.0422 over the greedy default, and it improved 12 of 12 datasets.**
+Gain decomposition greedy -> ILP+A: edge_J +0.0318, penalty +0.0131,
+division term -0.0027. TP +80, FP -288 (-48%), n_pred -12%.
 
-| step | score | delta |
-|---|---|---|
-| greedy (repo default) | 0.8847 | — |
-| `--use-ilp` | ~0.907 (3-dataset estimate) | +0.02 |
-| **+ appearance 0.0, disappearance 1.5** | **0.9269** | **+0.0422** |
+Per-dataset (sorted by true density; `N/N_true` from geff
+`estimated_number_of_nodes`):
 
-Where the gain came from:
-
-```
-edge_jaccard        0.8960 -> 0.9278   (+0.0318)
-node-count penalty  0.0140 -> 0.0009   (+0.0131 to the score)
-division term       0.0027 -> 0.0000   (-0.0027)
-```
-
-TP +80, **FP -288 (-48%)**, FN -80, `n_pred` 191,512 -> 168,675 (-12%).
-
-| dataset | greedy J | ILP+A J | delta |
-|---|---|---|---|
-| 6bba_268e1230 | 0.9016 | 0.9529 | +0.0514 |
-| 6bba_5c824876 | 0.9033 | 0.9447 | +0.0414 |
-| 6bba_7af54fde | 0.8280 | 0.8692 | +0.0411 |
-| 6bba_c27cba08 | 0.9107 | 0.9482 | +0.0375 |
-| 6bba_3abfe10a | 0.7705 | 0.8055 | +0.0349 |
-| 6bba_283bf9f1 | 0.9171 | 0.9519 | +0.0348 |
-| 6bba_3a1849c2 | 0.8783 | 0.9104 | +0.0321 |
-| 6bba_afb141ff | 0.9070 | 0.9330 | +0.0260 |
-| 6bba_61dd1e0d | 0.9164 | 0.9394 | +0.0230 |
-| 6bba_7b5d3b2c | 0.9596 | 0.9803 | +0.0207 |
-| 6bba_2312ac41 | 0.9611 | 0.9798 | +0.0187 |
-| 6bba_aeee7805 | 0.9680 | 0.9768 | +0.0087 |
-
-For reference the public LB of the 0.916 notebook — which stacks DeepCenter, a
-second seed and ~40 `BIOHUB_*` post-processing knobs — is **0.916**. Different
-data, so not directly comparable, but this configuration is a bare pipeline plus
-two command-line flags.
-
-### The previous baseline, for the record
-
-Greedy linking, same weights, same `--det-threshold 0.99`:
-
-```
-score              0.8847
-adj_edge_jaccard   0.8820
-edge_jaccard       0.8960     (TP/FP/FN 9783 / 606 / 530)
-division_jaccard   0.0265     (TP/FP/FN    6 / 214 /   6)
-node_recall        0.9974
-```
-
-### What this says
-
-1. **Detection is solved.** `node_recall = 0.9974`. Every point of edge loss is
-   a *linking* error, not a missed cell. Our classical DoG detector reaches
-   0.70 recall by comparison — the classical path is dead as a main line.
-2. **Divisions.** Official `evaluate.py` reported division TP/FP/FN =
-   **6 / 214 / 6**, and `division_jaccard = 0.0265` out of a possible 1.0.
-
-   **CORRECTED 2026-08-20.** This entry used to read "220 forks predicted,
-   12 real, 6 correct, 214 spurious -- 18x over-prediction". **That 220 is
-   6 + 214.** It was never counted from the graph, and no independent fork
-   count exists anywhere in this log, so "18x over-prediction" was circular.
-
-   It matters because the official metric only counts a predicted fork at
-   all when it is matched. Read from `division_metrics.py`:
-
-   ```python
-   fp_forks = (considered | evaluable_forks | invalid_forks) - tp_forks
-
-   evaluable_forks = {
-       pred_id for pred_id in pred_forks
-       if pred_id in pred_to_gt and gt_graph.out_degree(pred_to_gt[pred_id]) >= 1
-   }
-   ```
-
-   `evaluable_forks` needs a matched parent with GT out-degree >= 1;
-   `considered` only holds forks inside a GT division's local window; and
-   `invalid_forks` (cross-component, malformed) need matched descendants as
-   evidence. **A fork lying entirely among unannotated cells enters none of
-   the three and is not penalised** -- the same leniency the node and edge
-   terms already have.
-
-   So the greedy graph may well have held thousands of forks, of which 220
-   were merely the ones the metric could see. The true over-prediction
-   factor is unknown.
-
-   **Do not read this as an invitation to spam forks over unannotated
-   regions.** It gains nothing -- `div_J = TP/(TP+FP+FN)` and unmatched
-   forks add no TP -- and it is the same genre as the hub-node exploit that
-   was patched on 2026-07-17 and rescored. What the leniency legitimately
-   buys is room to run a division rule with decent recall and ordinary
-   precision, instead of needing surgical precision.
-3. The node-count penalty costs `0.8960 - 0.8820 = 0.014`.
-
-### Division head-room, computed
-
-**These are the greedy run's numbers** (division TP/FP/FN = 6/214/6). With
-`FN = 6` already lost, even perfect precision caps `division_jaccard` at 0.5
-*for that configuration*.
-
-The submitted ILP+A configuration is a different starting point: it emits **no
-forks at all**, so its division line is `0/0/12` — ceiling 1.0, worth +0.1 of
-score, but every one of the 12 has to be recovered from scratch. The realistic
-target is the orphan-fork pass's measured **+0.0129**, not either ceiling.
-
-| division FP | division_jaccard | score gain |
-|---|---|---|
-| 214 (now) | 0.0265 | — |
-| 50 | 0.0968 | +0.007 |
-| 20 | 0.1875 | **+0.016** |
-| 6 | 0.3333 | **+0.031** |
-| 0 | 0.5000 | **+0.047** |
-
-Going past +0.047 also requires recovering the 6 missed divisions.
-
-### ✅ Our local scorer is now VERIFIED against the official one
-
-Both run on the **same** 12 predicted graphs:
-
-| | official `evaluate.py` | our `run_verify` |
-|---|---|---|
-| edge TP / FP / FN | 9783 / 606 / 530 | **9783 / 606 / 530** |
-| edge_jaccard | 0.8960 | 0.89596 |
-| adj_edge_jaccard | 0.8820 | 0.88201 |
-| division TP/FP/FN | 6 / 214 / 6 | 6 / **231** / 6 |
-| score | 0.8847 | 0.8845 |
-
-**The edge term matches to the digit.** That is the licence to keep using the
-fast local scorer for paired sweeps. The 0.0002 score difference is entirely the
-division term, where our `score_divisions_simple` finds 231 spurious forks to
-the official 214 — close, but the official number is the one to quote.
-
-`edge_fp_lenient = 5`: of the 606 false positives, the old scorer would have
-seen **five**.
-
-### Per-dataset, sorted by true density
-
-`N/N_true` comes from the geff's `estimated_number_of_nodes`, so true density =
-`n_pred / 100 / (N/N_true)`.
-
-| dataset | edge J | true cells/frame | N/N_true | div FP |
+| dataset | edge J | true cells/frame | N/N_true | div FP (greedy) |
 |---|---|---|---|---|
 | 6bba_3abfe10a | **0.7705** | **519** | 1.21 | 42 |
 | 6bba_5c824876 | 0.9033 | 246 | 1.13 | 29 |
@@ -223,843 +1170,91 @@ seen **five**.
 | 6bba_268e1230 | 0.9016 | 51 | 1.30 | 15 |
 | 6bba_aeee7805 | 0.9680 | 50 | 1.09 | 8 |
 
-```
-corr(edge J, true density) = -0.68
-corr(edge J, N/N_true)     = -0.64
-```
+`corr(edge J, true density) = -0.68`, `corr(edge J, N/N_true) = -0.64`.
+Two failure modes, separately attackable: crowding, and fast movement
+(`7af54fde` is slow-density but fast-motion; the `6bba` batch's median
+displacement p99 of 7.81 um exceeds the 7 um match radius).
 
-**`3abfe10a` is genuinely dense, not broken** — 62840 nodes at `N/N_true = 1.21`
-means ~519 real cells per frame. Density is the primary failure axis.
+### Division accounting at this config
 
-`7af54fde` is the exception that names a second one: only 97 cells/frame yet
-J = 0.828, and the worst over-detection at 1.28. Something other than density
-hurts it — most likely motion (the `6bba` batch has a median displacement p99 of
-7.81 um, already above the 7 um match radius).
+Greedy emitted division TP/FP/FN 6/214/6 (div_J 0.0265); ILP+A emits no
+forks: 0/0/12, ceiling 1.0 worth +0.1, realistic target the orphan-fork
+pass's measured +0.0129. `SUPERSEDED-CORRECTION 2026-08-20`: an earlier
+"18x fork over-prediction" claim was circular (220 = 6+214, never counted
+from the graph); the metric only sees matched forks, so the true
+over-prediction factor is unknown. Fork-leniency details:
+`reference.md#the-metric`.
 
-So there are **two** failure modes to attack separately: crowding, and fast
-movement.
+Headroom table (greedy config): div FP 214 -> 0 buys +0.047; past that
+needs recovering the 6 FNs.
 
-### ⭐ ILP linking: +0.0295 over greedy (2026-08-18, evening)
+### Local scorer verified against official
 
-Paired comparison, same weights, same `--det-threshold 0.99`, on three held-out
-`6bba` datasets (`3abfe10a` 519 cells/frame, `2312ac41` 119, `aeee7805` 50):
+Same 12 predicted graphs: edge TP/FP/FN identical (9783/606/530), adj_J
+agrees to 5 decimals; division term differs slightly (ours 231 FP vs
+official 214 — lenient approximation, quote the official). Licence to use
+the fast local scorer for paired sweeps. `edge_fp_lenient = 5`: the old
+scorer saw five of the 606 FPs.
 
-| config | edge J | adj_J | node penalty | div_J | **score** |
-|---|---|---|---|---|---|
-| greedy (repo default) | 0.8956 | 0.8826 | 0.0130 | 0.0308 | 0.8857 |
-| `--use-ilp` | 0.9150 | 0.9073 | 0.0077 | 0.0000 | 0.9073 |
-| **+ app 0.0, disapp 1.5** | **0.9183** | **0.9152** | **0.0031** | 0.0000 | **0.9152** |
-| + division-weight 0.3 | 0.8999 | 0.8907 | 0.0092 | 0.0308 | 0.8937 |
-| + disapp 3.0 | 0.9097 | 0.9120 | **-0.0023** | 0.0000 | 0.9120 |
+### Divisions: negative feedback outweighs positive at the tested setting
 
-Per dataset, greedy -> ILP+A:
-
-| | TP/FP/FN greedy | TP/FP/FN ILP+A | n_pred |
-|---|---|---|---|
-| 2312ac41 | 1113/26/19 | 1116/7/16 | 13594 -> 12460 |
-| 3abfe10a | 816/124/119 | 825/126/110 | 62840 -> 54700 |
-| aeee7805 | 757/14/11 | 757/7/11 | 5493 -> 5052 |
-
-**Most of the gain is the node-count penalty, not the edge Jaccard.** edge J rose
-only 0.0033 from ILP-default to ILP+A, while the penalty fell 0.0077 -> 0.0031.
-Raising the disappearance cost makes the solver prefer long continuous tracks
-and discard scattered nodes, so `n_pred` drops sharply. `node_recall` pays a
-little (0.9952 -> 0.9900); the penalty saving more than covers it.
-
-At disappearance 3.0 the penalty goes **negative** — `n_pred` falls below
-`n_true` and the formula, which has no upper clamp, pays a bonus (`adj_J 0.9120`
-> `edge_J 0.9097`). It still loses overall because `node_recall` drops to 0.9758.
-So the optimum is near 1.5 and the curve is flat there (1.5 vs 3.0 differ by
-0.003) — not worth refining.
-
-### Divisions: with the CURRENT method, the negative feedback outweighs the positive
-
-Scope of this result: **one knob, moved one notch, on three datasets containing
-four ground-truth divisions.** That is enough to set the current default and
-nothing more. It is not a verdict on divisions as a direction.
-
-`--ilp-division-weight 0.3` produced division TP/FP/FN of exactly 2/61/2, digit
-for digit the same as greedy. Lowering the cost does not buy *selective* forks
-at this setting; it opens the floodgates. The trade:
-
-```
-division_jaccard   0 -> 0.0308        worth +0.0031 of score
-adj_edge_jaccard   0.9152 -> 0.8907   costs  -0.0245
-```
-
-**8:1 against.** So `division_weight = 1.0` (zero forks) is the right default
-for now: forfeit the division term, protect the edge term.
-
-#### Divisions also corrupt the edge term — measured
-
-A missed division is not only a lost 0.1-weighted point. The parent links to one
-daughter and the other daughter's incoming edge is lost, so edges break too:
-
-```
-GT edges leaving a dividing cell : 24, failure rate 29.2%   (greedy run)
-GT edges leaving a normal cell   : 10289, failure rate 5.1%
-```
-
-ILP currently emits **no forks at all**, so each parent keeps at most one
-daughter and **at least half of those 24 edges must fail** — about 12 of the 530
-total failures, i.e. 2.3% of them, worth roughly **+0.001** of adj_J if
-recovered. Real, but small, because divisions are rare (1 per 854 edges).
-
-#### Two suspected obstacles, one measured and one NOT
-
-1. **Sample size — measured.** 151 divisions across all 199 datasets, 1 per 854
-   edges, 56% of datasets have none. The training split ever sees ~137 division
-   events.
-2. **The NMS kernel may hide them — UNTESTED HYPOTHESIS.**
-   `pool_kernel_um = 5.0`, so two peaks closer than 5 um collapse into one
-   detection. Right after a split the daughters should be 1-2 um apart, and at
-   the median drift of 1.82 um/frame would need ~3 frames to separate past
-   5 um — outside the metric's ±1 frame tolerance. **This has not been checked
-   against the data.** `division_gif_cell.py` prints the real sister-separation
-   curve from GT and settles it in a minute of CPU.
-
-#### What has NOT been tried
-
-- any division weight other than 0.3 and 1.0, or any sweep at a sample size
-  where `division_jaccard` means anything (needs ~50+ datasets)
-- a smaller `pool_kernel_um`, globally or only near fork candidates
-- deliberately reporting the split one or two frames late, to exploit the
-  metric's ±1 frame window once the daughters are resolvable
-- the official `division_metrics.py` — every division number we have locally
-  comes from `score_divisions_simple`, a lenient approximation
-
-An earlier note here called divisions "the biggest single lever". The headroom
-is real; the price at the one setting tested is not worth paying.
-
-### The decomposition
-
-```
-detect_ceiling  0.9953     GT edges with BOTH endpoints detected
-link_rate       0.9530     of those, the fraction actually linked
-```
-
-Detection contributes 0.5% of the loss. **Linking is 95% of it.** Every hour
-spent on detection is wasted; the linker and the division logic are the targets.
-
-### ⚠️ Every local number from before 2026-08-18 is void
-
-`score_one` had the wrong false-positive rule (details below). In particular the
-previously recorded **"public 0.916 pipeline scores adj_J 0.9614 on 8 held-out
-datasets" is dead** — it came from the broken scorer and cannot be compared to
-the 0.8820 above. To learn what the post-processing pile is actually worth, the
-0.916 notebook must be re-run on **these same 12 datasets** and scored with the
-official `evaluate.py`.
-
+`--ilp-division-weight 0.3` (scope: one knob, one notch, 3 datasets, 4 GT
+divisions): div_J 0 -> 0.0308 (+0.0031) but adj_J 0.9152 -> 0.8907
+(-0.0245). 8:1 against; default stays 1.0 (zero forks). Also measured:
+missed divisions corrupt the edge term (GT edges leaving a dividing cell
+fail at 29.2% vs 5.1% baseline) — worth roughly +0.001, real but small.
+Obstacles: 151 divisions total (sample size); NMS `pool_kernel_um` may
+merge daughters for ~3 frames — UNTESTED (`division_gif_cell.py` settles it
+in a minute). Untried: weights between 0.3 and 1.0, smaller pool kernel,
+deliberately-late splits within the ±1-frame window, official
+`division_metrics.py` locally.
 
 ---
 
-## ⭐⭐ The edge threshold is the binding constraint (2026-08-20)
-
-Read verbatim from `scripts/predict_unet_transformer.py` in the official repo.
-This is the largest identified lever and it has never been touched.
-
-### Three facts, from the source
-
-**1. `threshold` defaults to 0.5 and our submission never sets it.**
-
-```python
-    det_threshold: float = 0.5
-    det_tta: bool = True                 # already ON by default
-    pool_kernel_um: float = 3.0          # NOT 5.0 as recorded earlier
-    edge_activation: str = "softmax"
-    threshold: float = 0.5               # <- the edge candidate gate
-```
-
-**2. With ILP on, the greedy capacity caps are disabled entirely.**
-
-```python
-    def __post_init__(self) -> None:
-        if not self.use_ilp:
-            if self.max_parents_per_node is None:
-                self.max_parents_per_node = 1
-            if self.max_children_per_node is None:
-                self.max_children_per_node = 2
-```
-
-Both stay `None` when `use_ilp=True`, and the greedy loop guards every cap with
-`is not None`. So the ILP does receive an unconstrained candidate set — but only
-of pairs that already cleared `threshold`:
-
-```python
-    candidates = sorted(
-        [(probs[i, j], i, j)
-         for i in range(n_src) for j in range(n_tgt)
-         if probs[i, j] > cfg.threshold],
-        reverse=True,
-    )
-```
-
-**`threshold` is therefore the ONLY thing limiting what the linker may consider.**
-
-**3. The softmax normalises over sources**, i.e. down the column: for each target
-`j`, `sum_i probs[i, j] = 1`.
-
-### Why that combination loses edges structurally
-
-A target keeps a candidate only if its best parent holds **more than half** of
-the column mass. One unambiguous parent -> p ~ 1.0, fine. Two plausible parents
--> ~0.5/0.5, and **both fall below the gate, so the target gets no candidate
-edge at all**. Three or more -> guaranteed loss.
-
-This predicts, without any new measurement, everything already in this log:
-
-| observation | explained |
-|---|---|
-| 60% of edge failures are `DROPPED` — both endpoints detected, no edge emitted | targets whose mass split below 0.5 |
-| `corr(edge J, true density) = -0.68` | more neighbours -> more competing parents -> more mass splitting |
-| `3abfe10a`, 519 cells/frame, worst J at 0.7705 | the densest movie is the most split |
-| `detect_ceiling 0.9953` but `link_rate 0.9530` | detection is fine; the gate throws away links |
-
-### The headroom, arithmetically
-
-Current 12-dataset holdout: TP/FP/FN = 9863 / 318 / 450, J = 0.9278.
-
-A missed link costs twice (an FN, and the predicted edge leaving its matched
-predecessor becomes an FP), so recovering a dropped edge moves both terms. If
-the `DROPPED` bucket is ~60% of the 450 FN and each recovery also retires one
-FP:
-
-```
-TP 10133 / FP ~150 / FN ~180  ->  J = 0.9685   (+0.041)
-```
-
-That is an upper bound, not a forecast. But it is the right order of magnitude,
-it is one config value, and the whole LB gap is +0.059.
-
-### The coupling that must be swept with it
-
-`ilp_appearance_weight = 0.0` makes starting a track free while
-`ilp_disappearance_weight = 1.5` makes ending one expensive. Lowering
-`threshold` hands the solver cheap ways to avoid that 1.5, so it will link more
-aggressively and may buy FPs. **Sweep `threshold` x `disappearance_weight`
-together** — rule 15, parameters interact.
-
-Forks stay impossible throughout: a fork needs
-`edge_prob > division_weight - appearance_weight = 1.0`. Lowering the gate
-cannot create spurious divisions, so this is safe with respect to the division
-term. Divisions remain a separate post-hoc pass.
-
-### Why this changes how we spend GPU
-
-`sweep_edge_threshold.py`'s monotonicity argument holds for **greedy only** —
-with ILP, a larger candidate set is a genuinely different optimisation, not a
-prefix of the old one. So the sweep cannot be replayed from an existing `.geff`.
-
-The fix is to cache one level earlier. `predict_video` is the only GPU stage;
-`build_graph` + `ILPSolver.solve` are pure CPU. Run inference **once** at
-`threshold=0.05`, dump `(coords, edges, probs)` per dataset, and every linking
-experiment afterwards — threshold, appearance/disappearance, orphan forks,
-component pruning, gap closing — is a CPU replay costing no quota at all.
-
-**Build the cache before running any sweep.**
----
-
-## The candidate cache, and what it measured (2026-08-20)
-
-The GPU stage now runs once and every linking experiment replays on CPU.
-`cache_candidates.py` dumps the raw candidates, `link_replay.py` re-solves
-them, `run_sweep.py` is the Kaggle entry point. Toolchain, and the five traps
-that cost a run each, in `docs/kaggle-toolchain.md`.
-
-### The cache is faithful — verified, not assumed
-
-Replaying the submitted configuration (threshold 0.50, appearance 0.0,
-disappearance 1.5) out of the cache:
-
-```
-edge TP/FP/FN    9863 / 318 / 450        <- recorded 9863 / 318 / 450
-adj_edge_jaccard 0.9269                  <- recorded 0.9269
-```
-
-Digit for digit. **So a sweep over the cache measures the real pipeline**, and
-one full 12-dataset pass costs **154 s of CPU** against 11 min of GPU.
-
-### The correction it produced: 0.9953 / 0.9530 is the GREEDY decomposition
-
-The recorded `detect_ceiling 0.9953 / link_rate 0.9530` sits in this log where
-it reads as describing the current configuration. It does not:
-
-| | detect_ceiling | link_rate |
-|---|---|---|
-| as recorded | 0.9953 | 0.9530 |
-| ILP+A, measured 2026-08-20 | **0.9823** | **0.9736** |
-
-The recorded pair reproduces exactly from the greedy run's TP of 9783
-(9783 / 0.9530 = 10265 reachable, and 10265 / 10313 GT edges = 0.9953), so it
-is greedy's, not ILP+A's.
-
-**This is how ILP actually wins**: it gives up a little detection reach
-(0.9953 -> 0.9823, because the solver discards nodes) to buy a lot of linking
-(0.9530 -> 0.9736). That trade was not visible before.
-
-Detection's share of the loss is therefore **1.8%, not 0.5%** — still small,
-still linking-dominated, but 3.5x what this log claimed.
-
-### The measurement: 11.8% of targets have no candidate parent at all
-
-Pooled over the 12 held-out `6bba` datasets, dumping at threshold 0.05:
-
-| | value |
-|---|---|
-| candidates above 0.5 — everything the 0.876 submission ever saw | 167,398 |
-| candidates above 0.05 | 338,781 |
-| **ratio** | **2.02x** |
-| targets | 189,872 |
-| **targets with NO candidate above 0.5** | **22,474 = 11.8%** |
-
-The softmax normalises over sources, so at most one parent per target can
-exceed 0.5. `above_0.5` is therefore exactly the count of targets that had any
-candidate at all, and the identity holds in the data (`above_0.5 <= targets`
-in all 12). Those 22,474 targets are **structural false negatives**: no
-linker, however good, could have connected them.
-
-### It is driven by over-detection, NOT density
-
-Per-dataset stranded fraction against the statistics already in this log:
-
-| stranded fraction vs | Pearson r |
-|---|---|
-| **`N/N_true` (over-detection)** | **+0.79** |
-| true cells/frame (density) | **-0.07** |
-| edge Jaccard | -0.53 |
-
-**Density is uncorrelated.** This log's "density is the primary failure axis"
-holds for the score, but not for the mechanism behind the largest error
-bucket. The plausible mechanism: a spurious detection has no true parent, so
-its softmax column spreads over whatever is nearby and nothing clears 0.5.
-
-### Which cuts both ways — read this before spending on it
-
-A stranded target that is a **spurious detection should stay unlinked**;
-forcing an edge into it manufactures a false positive. The +0.79 correlation
-says a substantial share of the 22,474 are exactly that. So the 2.02x is
-**not** free headroom, and the "+0.041 upper bound" in the section above is
-optimistic — it assumed every stranded target was a real cell.
-
-Separating the two is precisely what `appearance_weight` and
-`disappearance_weight` arbitrate, which is why the sweep is 2-D.
-
-### The line this opens: over-detection has never been measured
-
-`detect_ceiling = 0.9823` counts **missed** cells. It says nothing about
-**spurious** ones. `N/N_true` runs 1.01 to 1.30 across the holdout, so up to
-30% of predicted nodes are invented. They pay the node-count penalty, and they
-now appear to drive the largest edge-failure bucket as well.
-
-"Detection is solved, every hour spent on it is wasted" is therefore **half
-right**. Recall is solved. Precision was never measured. Raising
-`det-threshold` above 0.99, or tightening NMS, is live and untried.
-### Counted, not estimated: what the gate actually costs
-
-`stranded_audit.py`, run 2026-08-20 on the cache plus ground truth. Two
-measurements, and they point in opposite directions, which is the point.
-
-**1. The stranded targets are disproportionately spurious.**
-
-| | matches a GT node within 7 um |
-|---|---|
-| targets with a confident parent (167,398) | **6.1%** |
-| stranded targets (22,474) | **1.5%** |
-| ratio | **0.24** |
-
-Sparse annotation depresses both rates equally, so the ratio is the signal,
-and it holds in every one of the 12 datasets (0.11 to 0.55). Most of the
-22,474 are detections the model invented. They have no true parent and
-**should** stay unlinked.
-
-**2. And yet 278 real edges are stuck behind the gate.**
-
-```
-GT edges                       10313
-  target cell never detected      27
-  target detected but STRANDED   278
-```
-
-**278 of the recorded 450 false negatives — 62% — exist because of the 0.5
-gate.** Not an upper bound; that is the count.
-
-### The arithmetic that decides it
-
-Recovering all 278 while manufacturing F new false positives gives
-`J = 10141 / (10631 + F)` against the current 0.9278:
-
-| F | J | delta |
-|---|---|---|
-| 0 | 0.9539 | **+0.026** |
-| 278 | 0.9296 | +0.002 |
-| 500 | 0.9107 | **-0.017** |
-
-**Break-even is near F = 300**, and the pool the solver may draw from holds
-22,196 spurious stranded targets. The 278 real edges are **1.2%** of it. So
-lowering the gate is a needle-in-haystack problem, and whether it pays comes
-down entirely to how selective the ILP is.
-
-That sharpens the sweep's prediction: `appearance_weight = 0.0` makes
-starting a track free while `disappearance_weight = 1.5` penalises ending
-one, so the solver is currently biased *towards* linking. At a lower gate
-that bias is a liability. **Expect the winning cell to pair a lower
-threshold with a LOWER disappearance weight**, not the 1.5 we submitted.
-
-### Why over-detection is now the higher-leverage target
-
-Those 22,474 spurious nodes are charged twice: they pay the node-count
-penalty, and they bury the 278 recoverable edges in noise.
-
-So reducing over-detection is not merely worth its own small penalty saving
-— **it is the precondition that makes the threshold lever safe**. Halve the
-spurious pool and the needle-in-haystack ratio halves with it, moving
-break-even in our favour. The two lines multiply; they do not add.
-
-The project has never tried it, because `detect_ceiling` reads 0.98-0.99 and
-that was taken to mean detection was solved. It counts **missed** cells only.
-`N/N_true` of 1.01 to 1.30 says up to 30% of predicted nodes are invented,
-and nothing in this log has ever measured that as a cost.
-
-**Next on this line:** sweep `det-threshold` upward from 0.99 and watch the
-stranded count, not just the score. It is a cached-replay quantity for the
-threshold part, but det-threshold changes detection itself, so it needs one
-inference pass per value — about 11 minutes each.
-
----
-
-## det-threshold is not the lever, and the ceiling is the model (2026-08-21)
-
-Scored on the cache at the converged linking optimum (threshold 0.40,
-disappearance 3.5), so only `det_threshold` varies:
-
-| det | adj_J | edge_J | detect_ceiling | link_rate | nodes |
-|---|---|---|---|---|---|
-| **0.99** | **0.9387** | 0.9363 | 0.9825 | 0.9839 | 161,649 |
-| 0.98 | 0.9375 | 0.9362 | 0.9827 | 0.9836 | 164,185 |
-| 0.95 | 0.9367 | 0.9365 | 0.9821 | 0.9842 | 166,209 |
-
-**`detect_ceiling` does not move** -- 0.9825 / 0.9827 / 0.9821 -- and neither
-does `edge_J`. The fall in `adj_J` is entirely the node-count penalty on 2.8%
-more nodes.
-
-So the extra detections admitted by a lower gate are **not** the missing
-endpoints of the 180 unreachable GT edges. Those cells are not peaks in the
-heatmap at any threshold down to 0.95. The detection ceiling is set by the
-model's output, not by our threshold.
-
-### Three wrong directions on one knob
-
-For the record, because the pattern matters more than the knob:
-
-1. **Raise it** — argued from the stranded pool being 98% spurious. Counted
-   nodes, never scored.
-2. **Lower it** — argued from detection being 52% of the loss and from a
-   claim that sparse annotation deflates the sigmoid. The deflation claim was
-   wrong: the negative term carries total weight 0.1 across ~4.19M voxels, so
-   an unannotated cell is pulled toward zero with weight ~2.4e-8.
-3. **Lower it** — argued from the metric alone: over-detection costs
-   `0.1 x over-prediction` and nothing else, while a miss costs an FN plus an
-   induced FP. This reasoning is sound and the direction still lost.
-
-Reasoning (3) is the only one that did not depend on a story about the
-model's internals, and it is the only one that would have been safe to act on
-without measuring. It was still not enough. **Score the thing.**
-
-### What it leaves open
-
-The threshold/disappearance pair converged, and it only ever moved loss
-between detection and linking. `det_threshold` cannot raise the ceiling. What
-remains for the edge term is a **better detector**, which means training --
-and `docs/strategy.md` records the host permitting Zebrahub, whose ZSNS001
-carries 21,697,591 annotated nodes and 635,042 divisions against this
-competition's 133,318 and 151.
-
----
-## ⭐ The scorer bug (2026-08-18)
-
-Read from the real `tracking_cellmot/metrics.py::_evaluate_matched_graph`:
-
-```
-out_valid = the edge's SOURCE matched a GT node with out_degree > 0
-in_valid  = the edge's TARGET matched a GT node with in_degree  > 0
-the edge counts toward the denominator iff (out_valid OR in_valid)
-```
-
-**One matched endpoint is enough.** Our scorer required BOTH. Measured effect on
-24 datasets of the classical pipeline: **FP 2 -> 289**. 99.3% of false positives
-were invisible.
-
-Three more rules we also lacked, all now implemented:
-
-1. edges with `t_target != t_source + 1` are **discarded**, not penalised — so
-   gap-closing links across 2+ frames earn nothing unless intermediate nodes are
-   emitted too
-2. merges collapse: one predicted edge per matched GT edge
-3. out-degree capped at 2
-
-### The consequence nobody had spotted: a missed detection costs twice
-
-GT has `g1 -> g2`. We detect `g1` but miss `g2`. The linker connects our `g1`
-to something else:
-
-- that edge has `out_valid = True` and is not a TP -> **FP**
-- the GT edge `g1 -> g2` has no match -> **FN**
-
-The old scorer counted only the FN. Detection recall is therefore worth
-substantially more than every earlier measurement suggested — which is exactly
-why the official U-Net (recall 0.997) beats the DoG detector (0.70) by far more
-than the recall numbers alone imply.
-
-### Re-measured: over-detection survives the fix
-
-Classical pipeline, 24 datasets x 15 frames, corrected scorer:
-
-| ratio | 0.8 | 1.0 | 1.4 | 2.0 | 2.8 |
-|---|---|---|---|---|---|
-| adj_J | .328 | .350 | .413 | .447 | **.457** |
-| N_pred/N_true | .27 | .34 | .47 | .69 | .94 |
-| link_rate | .949 | .945 | .932 | .919 | .911 |
-
-Still rising at the top of the range, so `ratio=2.0` is not the optimum. The
-falling `link_rate` is the cost of over-detection finally becoming visible; the
-recall gain still beats it. `N_pred/N_true` reaching only 0.94 means the DoG
-detector is out of candidates and `nms_um` is the real lever.
-
----
-
-## What the published artefacts revealed (2026-08-18)
-
-### DeepCenter's split is a FACT, and it is a batch split
-
-`weights/full_frame_center/split_manifest.json`:
-
-```
-all:   199 datasets
-train:  71  = exactly the 44b6_ batch
-val:   128  = exactly the 6bba_ batch
-```
-
-Cause, from `train_full_frame_center_detector.py:404-419`: the author does a
-group split on `name.split("_")[0]`, which yields only **two** groups. Then
-`n_val = max(1, round(2 * 0.10)) = 1` forces one whole group into validation.
-Intent was right, execution collapsed on a two-group dataset.
-
-**Consequence:** every `6bba_` dataset is guaranteed unseen by DeepCenter. That
-is why the held-out pool is now `6bba`-only, and it does not depend on the
-19-dataset derivation being right.
-
-### DeepCenter's shipped checkpoint is the un-evaluated one
-
-| checkpoint | epoch | val_loss |
-|---|---|---|
-| `best.pt` | 2 | 0.04500 |
-| `checkpoint_last.pt` | 500 | 0.31674 |
-
-`SNAPSHOT_MANIFEST.json` says *"Gate diagnostics are computed from best.pt"* —
-so the threshold sweep, and therefore the `0.25` the 0.916 notebook uses, was
-calibrated on `best.pt`. The notebook loads `checkpoint_last.pt` and asserts
-`epoch == 500`. **The two checkpoints have no detection-level comparison
-anywhere in the artefact.**
-
-Do **not** read the 7x val_loss as "the detector got worse". The loss is
-positive-unlabeled weighted BCE with `w_ignore=0.05` on bright unlabelled
-voxels — 97% of real cells sit in that region labelled as negative, so a model
-that learns "what a cell looks like" is punished for finding them, and BCE
-punishes confident predictions hardest. Rising val_loss is consistent with a
-*better* detector. The gate sweep is the only valid evidence, and it exists for
-one checkpoint only.
-
-### The primary model's split is still unknown
-
-`unet_transformer/split_0/checkpoint_last.pth` carries `epoch: 402`,
-`best_score: 0.9835`, `fold: 0`, `model_config` — and **no file list**. See
-`docs/holdout-split.md`.
-
----
-
-## Where the code lives
-
-Local folder `D:\programming\cell tracking\`:
-
-| File | Purpose |
-|---|---|
-| `viz_cells.py` | inspect / viz / gif / survey, plus all shared I/O |
-| `cell_count.py` | features / fit / predict — estimate N_true from images |
-| `submit_baseline.py` | predict / score / sweep / verify, **and the local scorer** |
-| `check_weights.py` | inspect the published checkpoints for their training split |
-| `error_analysis.py` | classify every edge error: detection / dropped / confusion / spurious |
-| `division_features.py` | do geometry, intensity or elongation distinguish a dividing cell? |
-| `division_recovery.py` | add missed divisions back into an ILP graph, post-hoc |
-| `division_strip_cell.py` | static filmstrip of one GT division |
-| `division_gif_cell.py` | animated view of one GT division |
-| `sweep_edge_threshold.py` | sweep the linker threshold offline from one inference run |
-| `read_gate.py` | read DeepCenter's tuning files (threshold sweep, history) |
-| `make_fake_data.py` | synthetic data for smoke tests (numbers meaningless) |
-| `run_cells.md` | Kaggle cells, one fenced block per cell |
-| `submission_notebook.md` | the cells that produced the 0.876 submission |
-
-Versions as of 2026-08-20: `viz_cells`, `cell_count`, `submit_baseline`,
-`error_analysis` and `sweep_edge_threshold` at `2026-08-18f`; the three
-`division_*` files at `2026-08-19a`. Rule 3 requires the versions printed in a
-Kaggle cell to match what you just uploaded — it does not require every file to
-carry the same date. Cowork's cloud working directory is wiped
-between sessions — write finished files out immediately.
-
----
-
-## Running the official pipeline
-
-```bash
-git clone https://github.com/royerlab/kaggle-cell-tracking-competition.git
-pip install -e . ; pip install "tracksdata @ git+.../tracksdata@main" zarr tqdm
-
-python scripts/predict_unet_transformer.py \
-    --splits splits.json --split 0 \
-    --weights .../unet_transformer/split_0/edge_predictor_best.pth \
-    --det-threshold 0.99 --evaluate
-```
-
-- the package is `tracking_cellmot`; pilkwang's repackaged copy renames it
-  `biohub_tracking`
-- `--debug-video` takes a path with **no `.zarr` suffix** — `predict()` uses the
-  path's name for the output filename, and `x.zarr.geff` will not match GT
-- `predict()` **wipes every .geff in the output dir** on each call, so `--slice`
-  runs do not accumulate
-- `--use-ilp` needs `pyscipopt`; `--ilp-division-weight` is the direct knob on
-  fork creation
-- pip prints a wall of conflicts about `bigframes`, `ydata-profiling`,
-  `google-colab`, `cuml`, `cudf` — none are in the pipeline
-
----
-
-## The metric
-
-`score = adjusted_edge_jaccard + 0.1 * division_jaccard`
-
-- **`N_true`** = train geff metadata field `estimated_number_of_nodes`. Test has
-  none.
-- **Penalty** `max(0, J * (1 - 0.1 * (N_pred - N_true) / N_true))`, no upper
-  clamp, weak coefficient.
-- **Not a pure micro-average**: `adj_edge_jaccard` is per-dataset, averaged with
-  weights `w_i = TP + FP + FN`. This is exactly why a flat constant caps out.
-- **Edge FP rule**: an edge counts toward the denominator if **either** endpoint
-  matched a GT node of the right degree. See the scorer-bug section above.
-- **Division metric**: 574 lines of local-topology validation in
-  `division_metrics.py`, deliberately NOT ported. Our
-  `score_divisions_simple` is a lenient upper bound — trust the repo's number.
-
----
-
-## Full survey of the 199 train datasets
-
-| Metric | Value |
-|---|---|
-| Datasets | 199 (`44b6` 71, `6bba` 128) |
-| Shape — identical everywhere | `(100, 64, 256, 256)` uint16; voxel scale uniform |
-| GT nodes / edges | 133,318 / **128,883** |
-| Divisions | **151** (1 per 854 edges; 56% of datasets have none) |
-| N_true total | 4,725,117 -> **GT labels only 2.82% of it** |
-| True cells/frame | min 38 / median 179 / max 786 (**20x spread**) |
-| Pooled displacement | p50 1.82 / p99 6.71 / p100 60.76 um |
-
-### By imaging batch
-
-| | `44b6` (71) | `6bba` (128) |
-|---|---|---|
-| **Share of score weight** | 15% | **85%** |
-| True cells/frame (median) | 327 | **97** |
-| Annotated fraction (median) | 0.77% | 9.71% |
-| Displacement p99 (median) | 4.90 um | **7.81 um** |
-
-- `corr(annotation density, true density) = -0.20` — **negative**. N_true cannot
-  be inferred from the GT; hence `cell_count.py`
-- `corr(true density, displacement p99) = -0.39` — denser videos move less
-- **43 of 199 datasets have GT that does not span all 100 frames.** The
-  node-count penalty counts the whole movie, so **detection must run on every
-  frame**
-
----
-
-## Submission mechanics
-
-**Code Competition, hidden test set.**
-
-- Notebook submissions only; **12 h limit**; **internet disabled**; output must
-  be named exactly `submission.csv`
-- The visible `test/` holds **4 datasets that are copies of train files**
-  (`44b6_0113de3b`, `44b6_0b24845f`, `6bba_05b6850b`, `6bba_05db0fb1` —
-  quantile tables match digit for digit). Real data is swapped in at rescore
-- **Never hardcode dataset count or names**
-- Those 4 datasets have ground truth under train, so the real submission CSV can
-  be scored — `submit_baseline.py verify`
-
-### Runtime budget — RESOLVED 2026-08-20, and the margin is large
-
-Measured from the scored submission's own cell execution timestamps (notebook
-`faustine649/cell-tracking-during-development`, 4 visible datasets,
-`predict_video` + ILP, T4):
-
-```
-install wheels          26 s
-import + load model     11 s
-inference, 4 datasets  377 s   ->  94.2 s/dataset
-```
-
-Extrapolated to the ~199-volume hidden test: **~5.2 h of the 12 h limit.**
-Corroborated independently — forum reports put the visible->submission runtime
-ratio at 40-50x, and 377 s x 45 = 4.7 h.
-
-The earlier "~5 min/dataset, so 12 h allows only ~144 datasets" estimate was
-wrong by 3x. **There is roughly 2.3x of inference budget spare** — enough for
-TTA, a wider candidate-edge search, or both.
-
-One residual risk: the notebook falls back to greedy linking if `pyscipopt`
-fails to import. It warns (rule 1), but that warning only appears in the
-rescore log. Confirm ILP actually ran before reading 0.876 as the ILP+A number.
-
-### Offline dependencies
-
-The classical path needs no installs: zarr v3 chunks are read directly via
-`blosc2` (ships with the Kaggle image; `zarr` does not). Both `open_image()` and
-`read_geff()` have zarr-free fallbacks, verified byte-identical.
-
-**The official pipeline is a different problem** — it needs `torch`,
-`tracksdata`, `zarr`, `rustworkx`. Those must come from an offline wheel
-dataset; pilkwang's support pack ships 62 wheels and a
-`kaggle_dependency_install_command.txt` for exactly this.
-
----
-
-## Timeline
-
-| Date | Event | Status |
-|---|---|---|
-| **2026-09-22** | Team merger / new-entrant deadline | confirmed via the API |
-| **2026-09-29** | **Final submission** | UTC+8: 09-30 07:59 |
-
-40 days left as of 2026-08-20. Last weekend (09-26/27) is for submitting and
-writing up only.
-
----
-
-## To do
-
-### Immediate — all on the official pipeline
-
-- [x] ~~Confirm ILP+A on all 12 held-out datasets~~ — done 2026-08-19,
-      **0.9269**, improved 12 of 12.
-- [x] ~~SUBMIT~~ — done 2026-08-19, **LB 0.876**. Runtime fits comfortably
-      inside 12 h, so that risk is closed. Offline wheels work; do NOT install
-      every wheel in the support pack, it clobbers numpy (see
-      `submission_notebook.md`).
-- [ ] **Explain the 0.051 offset.** The old 0.916-notebook probe is dead — that
-      badge is pre-patch, see `docs/public-solutions-recon.md`. The live probe
-      is a **`44b6`-only holdout**: every number we own comes from `6bba`, which
-      carries a 7.47% duplicate-frame rate against `44b6`'s zero. One inference
-      pass, and it closes a real blind spot.
-- [ ] **Measure the field-of-view drift** — [CPU, GT only]. The movies visibly
-      pan, so cells enter and leave the volume. Per frame pair, take the MEDIAN
-      DISPLACEMENT VECTOR of GT cells (not the scalar): coherent drift gives a
-      large vector, independent motion cancels to ~0. Cumulative drift over 99
-      frames against the 104 um box decides whether population growth can
-      estimate the division count at all, and gives the appearance-based
-      division recovery its sharpest feature.
-- [ ] **`--ilp-division-weight` between 1.0 and 0.3.** A fork is taken iff
-      `edge_prob > division_weight - appearance_weight`, so 1.0/0.0 forbids all
-      forks and 0.3/0.0 floods. 0.85 would fork only on very confident second
-      edges. Untested.
-- [ ] **`--det-threshold` sweep** `{0.99, 0.995, 0.999}`. More predicted nodes
-      correlates with lower edge J and more spurious forks; the node-count
-      penalty alone costs 0.014.
-- [ ] **Look at `6bba_7af54fde`** — only 97 cells/frame yet J=0.828 and the
-      worst over-detection (1.28). Density does not explain it; motion probably
-      does. One `run_gif` plus its displacement percentiles would say.
-- [x] ~~Re-run the 0.916 notebook on these same 12 datasets~~ — **dropped
-      2026-08-20**: the badge is pre-patch, so that comparison measures the
-      closed exploit, not the post-processing stack.
-- [x] ~~Settle the hidden test size / runtime budget~~ — done 2026-08-20:
-      ~199-200 volumes, ~5.2 h of 12 h. See the runtime section above.
-
-### Deferred
-
-- [ ] `cell_count.py` on real data — only matters if the classical path revives,
-      or if N_true estimation helps the official pipeline's node-count penalty
-- [ ] Train the U-Net ourselves, with a split we choose
-
----
-
-## Historical: the classical DoG pipeline
-
-Superseded, kept because the reasoning still applies to the node-count penalty.
-
-**Submitted config (public LB 0.681, rank 1940/2470, 2026-08-17):**
-
-```
-sigma_um=2.0  sigma_ratio=1.6  nms_um=3.0  gate_um=10.0
-per_frame=100  ratio=2.0  max_gap=1  prune_isolated=True  truncate=3.0
-```
-
-Runtime 92 s/dataset, single core, 100 frames.
-
-Findings that still hold:
-
-1. **Under-detecting is catastrophic, over-detecting is cheap.** One dataset at
-   2.92x N_true scored J=0.84; another at 0.28x scored J=0.18.
-2. **Unlinked nodes are pure cost** — they consume the node-count penalty and
-   can never make a TP. Pruning raised adj_J 0.6743 -> 0.6890 and TP went *up*,
-   because one-to-one matching freed GT nodes for linked predictions.
-3. **`node_recall` is a misleading target** — pruning lowered it while raising
-   the score. Watch TP.
-4. **`ratio` and `nms_um` are coupled.** `nms_um=3.5` merged neighbouring nuclei
-   (they sit ~7 um apart), saturating the candidate set, so `ratio` could not
-   deliver what it asked for.
-5. **A per-dataset count estimate is worth +0.155** over the best flat constant.
-   A flat `per_frame=300` produced essentially the same edges as oracle counts
-   (TP 1470 vs 1468) but scored 0.4926 vs 0.6890 — the whole gap is the
-   node-count penalty being mis-distributed across datasets.
-
-All adj_J numbers in this section were produced by the pre-2026-08-18 scorer and
-are **optimistic**. Only the directions are reliable.
-
----
-
-## Traps already hit
-
-1. **napari is unusable** — desktop GUI, Kaggle is headless. Use matplotlib MIP.
-2. **Kaggle has no zarr**, and submissions have no internet.
-3. **OME-Zarr is a multiscale pyramid** — `zarr.open()` returns a group.
-4. **argparse dies in notebooks** — use `parse_known_args()`.
-5. **matplotlib's default interpolation blurs microscopy** — `nearest`.
-6. **Full-Z projection is mush** — 64 planes x 1.625 um is ~15 nuclei deep.
-7. **matplotlib's default font has no CJK glyphs** — figure text in English.
-8. **Cowork's cloud working directory does not persist across sessions.**
-9. **Folder access is fixed at session start.**
-10. **`--limit` taking the first N covers one imaging batch only** — use a
-    stride. Runs with different `limit` are NOT comparable.
-11. **Kaggle Dataset caching plus `sys.modules` caching** runs stale code
-    **without raising**. Hence `SCRIPT_VERSION` in every file.
-12. **Cross-file imports of private helpers** break when the Dataset copy is a
-    version behind.
-13. **Too much output kills a Kaggle cell** — never print per dataset in a loop.
-14. **Recomputing detection inside a sweep** — caching it made sweeps 4.5x
-    faster with byte-identical results.
-15. **Parameters interact** — `ratio` had to be re-swept after `nms_um` changed.
-16. **`!pip install` with internet disabled spins for ~10 minutes** retrying
-    before failing.
-17. **A `.geff` IS a zarr store.** "The geff *library* is optional" is not the
-    same as "zarr is optional".
-18. **`node_recall` is a misleading target.**
-19. **Reimplementing an official metric is a liability.** Ours was wrong for
-    weeks in the flattering direction, and every tuning decision rode on it.
-    Fixed and then cross-checked against the official scorer on the same 12
-    predicted graphs: edge TP/FP/FN identical, adj_J agreeing to 5 decimals.
-    Do that cross-check after every scorer change; it is cheap and it is the
-    only thing standing between a fast local sweep and weeks of wasted work.
-20. **`Path("/kaggle/input").rglob("*")` appears to hang** — the competition
-    mount holds millions of zarr chunk files. Prune `.zarr` trees.
-21. **A silent cell is not a hung cell.** Some scripts print once at the start
-    and once at the end; check the GPU meter before killing anything.
-
----
-
-*Last updated: 2026-08-19 (KL), after the 0.876 submission*
+## 2026-08-18 — ⭐ ILP linking: +0.0295 over greedy (3-dataset pilot)
+
+Paired, same weights, det 0.99, on `3abfe10a`/`2312ac41`/`aeee7805`:
+
+| config | edge J | adj_J | penalty | score |
+|---|---|---|---|---|
+| greedy | 0.8956 | 0.8826 | 0.0130 | 0.8857 |
+| `--use-ilp` | 0.9150 | 0.9073 | 0.0077 | 0.9073 |
+| **+ app 0.0, disapp 1.5** | 0.9183 | **0.9152** | 0.0031 | **0.9152** |
+| + division-weight 0.3 | 0.8999 | 0.8907 | 0.0092 | 0.8937 |
+| + disapp 3.0 | 0.9097 | 0.9120 | -0.0023 | 0.9120 |
+
+Most of the gain is the node-count penalty, not edge J: high disappearance
+cost makes the solver prefer long tracks and discard scattered nodes
+(n_pred -12%). At disapp 3.0 the penalty goes NEGATIVE (n_pred < n_true;
+the formula has no upper clamp) but node_recall pays more. Optimum near
+1.5, curve flat.
+
+## 2026-08-18 — ⭐ the scorer bug
+
+Real rule (`tracking_cellmot/metrics.py::_evaluate_matched_graph`): an edge
+counts toward the denominator iff **either** endpoint matched a GT node of
+the right degree. Ours required BOTH. Measured on 24 classical-pipeline
+datasets: FP 2 -> 289; 99.3% of false positives were invisible. Also
+implemented from the real scorer: t+1-only edges, merge collapse,
+out-degree cap 2. Full metric rules: `reference.md#the-metric`.
+
+Consequence: a missed detection costs twice (FN + induced FP), so detection
+recall is worth far more than pre-fix measurements implied — exactly why
+the official U-Net (recall 0.997) beats DoG (0.70) by more than recall
+alone suggests.
+
+**Every local number from before 2026-08-18 is void** (produced by the
+broken scorer). In particular the old "0.916 pipeline scores 0.9614
+locally" is dead.
+
+Re-measured on the classical pipeline with the corrected scorer:
+over-detection still wins (adj_J rising through ratio 2.8 at N_pred/N_true
+0.94 — the DoG detector runs out of candidates; `nms_um` is its real
+lever).
+
+## 2026-08-18 — published artefacts read
+
+DeepCenter's split, its two checkpoints, and the primary model's unknown
+split — moved to `reference.md#published-artefact-facts-read-2026-08-18`.
+Actionable consequence: the local holdout is `6bba`-only because DeepCenter
+provably never saw `6bba`.
