@@ -75,7 +75,7 @@ number.**
 |---|---|---|---|
 | `kaiwalyaatulraut/biohub-cell-tracking-solution` | 0.966 | **2026-07-22** | **distrust — pre-rescore** |
 | `boristown/dark-agi-...-solution` (fork of above) | 0.952 | 2026-07-19 | distrust — pre-rescore |
-| `kunaldesale2408/biohub-cell-tracking` | 0.917 | 2026-08-18 | trustworthy |
+| `kunaldesale2408/biohub-cell-tracking` | 0.917 | 2026-08-18 | trustworthy — **full source read 2026-08-22, see addendum at end** |
 | `yusuketogashi/no-hack-...-3rd` | 0.915 | 2026-08-05 | trustworthy |
 
 Both "leaders" carry the hub. Estimated exploit contribution to the 0.966:
@@ -257,3 +257,69 @@ Jaccard on the hidden test**, with no ablation needed.
 *Written 2026-08-20. Sources are Kaggle discussion IDs under
 `https://www.kaggle.com/competitions/biohub-cell-tracking-during-development/discussion/`
 and public notebook source read via the Kaggle connector.*
+
+---
+
+## Addendum 2026-08-22 — kunaldesale2408 (0.917) full-source anatomy
+
+The first complete recipe read from the trustworthy tier — and it does NOT
+use the official pipeline at all:
+
+- **Self-trained detector**: classic 3D UNet (base 24), weights from
+  `xiaoleilian/biohub-unet3d-weights` with `val_recall` stored in the
+  checkpoint. Input: 4x-pooled Y/X, percentile-normalised (p50..p99.5),
+  optional top-hat preprocessing per model. 2-3 model ensemble, heatmaps
+  AVERAGED (their comment: unioning detections measured 0.661 — the
+  node-count penalty punishes it). Flip-quartet TTA on logits. Peak
+  threshold 0.15, centroid refinement at full resolution, physical NMS
+  4.0 um. **Confirms the 0.9+ tier trains its own models.**
+- **Linker**: Hungarian, two-stage gate (6 um tight then 10 um), cost =
+  distance to a VELOCITY-EXTRAPOLATED position (0.5 x previous velocity)
+  plus an APPEARANCE term (2.0 x |logit(det score) diff|).
+- **Post patches, VAL-24 with the official metric**: base 0.8387 ->
+  +safe divisions 0.8516 (+0.013) -> +1-frame gap closing (snap-only)
+  0.8518. Their division patch stacks filters ours lacks: orphan must be
+  the sister's MUTUAL nearest orphan, both children must continue at t+2,
+  and sisters must DIVERGE (d(t+2) - d(t+1) >= 2.25 um); per-frame and
+  global caps. Gap closing never synthesises a midpoint — it only snaps
+  to an unused low-score (0.10..0.15) detection candidate within 3.2 um.
+- **5-frame linefit smoothing** (LINEFIT_WINDOW=2, weight 0.8) of node
+  coordinates along single-child chains — pure post-processing.
+
+Transplant candidates for OUR pipeline, cheapest first: (1) add
+mutual-nearest + divergence filters to the orphan-fork patch (could cut
+the 13 visible div FPs); (2) velocity extrapolation in the ILP/linker
+cost; (3) appearance term from detection confidence; (4) linefit
+smoothing (helps the 7 um match radius on fast movers).
+
+## Addendum 2026-08-22b — yusuketogashi (0.915) post-processing anatomy
+
+Read from the full source (function skeleton + key segments; 225 KB
+notebook). Its stack, in pipeline order:
+
+1. **Learned edge re-ranker** (`motion_relink_edges` + a preloaded
+   LOCAL_ASSOCIATION_RANKER artifact): candidate edges scored by ~25
+   engineered features — primary edge_prob, raw vs motion-extrapolated
+   distance and their difference ("motion gain"), per-axis deltas,
+   **7 um local density at both endpoints**, in/out degrees, frame cell
+   counts, candidate rank/count, velocity magnitude, t_norm — fed to an
+   offline-trained ranker, then gated Hungarian assignment passes.
+2. **Two-tier gap closing**: 1-frame and strict 2-frame, with SYNTHETIC
+   midpoints refined by local intensity (`refine_synthetic_midpoint`) —
+   the opposite of kunaldesale's snap-only, but insured by:
+3. **DeepCenter as a veto detector**: synthetic/repair points must pass a
+   second independent detector's heatmap
+   (`deepcenter_accept_repair_point`) before entering the graph.
+4. **Acceleration lookahead** in motion prediction (bonus for consistent
+   acceleration), not just velocity.
+5. Safe divisions post-link, short-track component filter, linefit
+   smoothing (same family as kunaldesale's).
+6. **Edge TTA, 4 views** (BIOHUB_EDGE_TTA_VIEWS=4) — TTA on the edge
+   head, not only detection.
+
+For US: vel-sweep and orphan-v2 (in flight) are the entry-level versions
+of items 1 and 5. The learned re-ranker is the standout transplant: our
+cache already holds probs/coords, the other features are computable, GT
+edges outside the holdout supply labels, and a gradient-boosted ranker
+trains on CPU. Synthetic-midpoint gap closing becomes viable when paired
+with a second-detector veto (we have DeepCenter in the pack, unused).

@@ -231,6 +231,15 @@ of a pipeline whose main leak may still be open.
   direction. The orphan-fork pass is the right one.
 - **Elongation as a division feature.** Measured AUC 0.54. Dead.
 - **Frame striding to fit the runtime.** Structurally scores 0.0.
+- **Exploiting 6bba's duplicate frames** (detect identical frames, copy
+  links). Rejected 2026-08-21: the hidden test is a third embryo with no
+  evidence of frozen frames, so the upside is a gamble on an unknown
+  distribution — while the one certain effect of duplicate frames is
+  inflating OUR local numbers (7.47% free links in the 6bba-only holdout,
+  a known suspect in the 0.051 local-vs-LB offset). Corollary that DOES
+  matter: when validating any new linking algorithm locally, remember the
+  holdout is duplicate-inflated — the `44b6` probe or dedupe-aware scoring
+  guards against fooling ourselves.
 
 ---
 
