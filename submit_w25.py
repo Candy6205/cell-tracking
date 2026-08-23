@@ -32,7 +32,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 from skimage.feature import peak_local_max
 
-SCRIPT_VERSION = "2026-08-23n-submit-w25"
+SCRIPT_VERSION = "2026-08-24e-submit-w25-seam"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 DEVICE = "cpu"
@@ -661,6 +661,17 @@ def solve_edges(coords, cand_edges, T, div_w, window_size):
     out = []
     dropped = 0
     empty_win = 0
+    # Continuity across the seam. ultrack feeds an already-solved
+    # window's segments into the next one AS CONSTRAINTS; sharing a
+    # frame only guarantees the edge sets do not collide -- it does
+    # not stop window k+1 from treating a node window k REFUSED as a
+    # fresh track start, since appearance costs 0. Measured cost of
+    # the omission: on the HIDDEN test w25 emitted 289.6 MB against
+    # the global solve's 262.6 MB (+10% output, score 0.920 vs 0.921),
+    # where on the visible 4 it had been 2% SMALLER. Only REFUSALS are
+    # propagated, never acceptances, so a cell genuinely appearing at
+    # the seam (no incoming candidate at all) is not killed.
+    refused = set()
     for (a, b) in bounds:
         keep_n = np.where((tcol >= a) & (tcol <= b))[0]
         if len(keep_n) == 0:
@@ -668,11 +679,18 @@ def solve_edges(coords, cand_edges, T, div_w, window_size):
         local_of_g = {int(g): i for i, g in enumerate(keep_n)}
         sub_coords = coords[keep_n]
         sub_edges = []
+        n_cut = 0
         for t in range(a, b):
             for (s, tg, p, d) in by_t.get(t, ()):
+                if int(s) in refused:
+                    n_cut += 1
+                    continue
                 ls, lt = local_of_g.get(int(s)), local_of_g.get(int(tg))
                 if ls is not None and lt is not None:
                     sub_edges.append((ls, lt, p, d))
+        if n_cut:
+            print(f"    seam: cut {n_cut} candidate edges whose source "
+                  f"the previous window refused", flush=True)
         if not sub_edges:
             empty_win += 1
             continue
@@ -706,6 +724,7 @@ def solve_edges(coords, cand_edges, T, div_w, window_size):
             empty_win += 1
             continue
         ea = graph.edge_attrs(attr_keys=["source_id", "target_id"])
+        win_start = len(out)
         for s_, t_ in zip(ea["source_id"].to_list(),
                           ea["target_id"].to_list()):
             gs, gt = g_of_nid.get(int(s_)), g_of_nid.get(int(t_))
@@ -713,6 +732,12 @@ def solve_edges(coords, cand_edges, T, div_w, window_size):
                 dropped += 1
                 continue
             out.append((gs, gt))
+        cand_at_b = {int(tg) for t in range(a, b)
+                     for (s, tg, p, d) in by_t.get(t, ())
+                     if int(tcol[int(tg)]) == b}
+        kept_at_b = {int(g2) for _g1, g2 in out[win_start:]
+                     if int(tcol[int(g2)]) == b}
+        refused = cand_at_b - kept_at_b
     if dropped:
         print(f"    WARN {dropped} solved edges unmatched by coordinate "
               f"-- this movie is a LOWER BOUND", flush=True)

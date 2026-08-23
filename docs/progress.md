@@ -8,25 +8,86 @@
 > Engineering conventions: `engineering-rules.md` (rule 1: degradation is
 > never silent).
 
-## Current state (2026-08-23, session handoff)
+## HANDOFF (2026-08-24, written at the end of a very long session)
 
-**FIRST ACTION: read BOTH pending submissions**
-(`py -m kaggle competitions submissions biohub-cell-tracking-during-development`).
+**LB 0.921, rank ~155 / 2658.** The best submission is **ref 55707206**:
+xl detect + learned edge re-ranker + capacity-2 tracksdata ILP at
+div_w 0.55, **solved GLOBALLY (no windowing)**.
 
-- **55709347 -- the one that matters**: xl detect + ranker + capacity-2
-  ILP at div_w 0.55, solved in 25-frame windows. Best on every ruler
-  built so far.
-- **55707206 -- the same thing with one global solve.** Lower locally
-  and projected at 11.8 h against a 12 h cap, so it may time out. If it
-  does, that is information, not a loss: slots are not the scarce
-  resource (user's call, 2026-08-23).
+### Read these first
 
-Reading the pair: if both land, 55709347 - 55707206 is the LB's own
-verdict on windowing, and 55709347 - 0.917 is the verdict on the whole
-linker line. If only 55707206 times out, the runtime fix is vindicated.
+1. **`biohub-div-train` v3 was running when the session ended.** Its two
+   predecessors were invalid -- see the div-train entry below for the bug
+   and what v3 changed. What to look for: whether "zebrahub only" beats
+   "44b6 only (18 pos)" on the held-out 6bba AUC. If Zebrahub cannot
+   carry training on its own, the external-data line stops there.
+2. **Windowing is REVERTED. Use the global solve.** Three LB points:
+   global 0.921, windowed 0.920, windowed-with-seam-constraint 0.920.
+   The runtime worry that motivated windowing never materialised -- the
+   global solve COMPLETED on the hidden test. Do not re-introduce it
+   without evidence that the 12 h cap actually binds.
+3. **`total_bytes` in the submission metadata is the only measurement of
+   behaviour on the HIDDEN test.** Check it on every submission. It is
+   what revealed that the windowed run emitted 10% more output there
+   while emitting 2% LESS on the visible 4.
 
-After that, the open lever is `GATE_UM` -- see the forensics entry.
-`biohub-gate-sweep` was in flight when this was written.
+### The three big facts this session established
+
+- **Divisions cannot be learned from competition data.** 151 GT
+  divisions in the entire 199-dataset train split, from only 2 embryos
+  (26 in 44b6, 125 in 6bba). **124 of them land on detections.**
+- **The linker is finished.** The solver already takes every division
+  the candidate set contains; widening the gate (isotropic and
+  z-anisotropic, both properly swept) only moves divisions from
+  "outside gate" to "below floor" and never raises REACHABLE past 5.
+- **Zebrahub is another embryo domain, not another problem.** Every
+  geometric gap between it and the competition is the size of a
+  gap between two embryos within either dataset.
+
+### Assets now in place
+
+| what | where |
+|---|---|
+| xl detections, ALL 199 train datasets | `biohub-cache-train` (65 MB, 65 s/dataset) |
+| xl detections, 41 Zebrahub crops + labels | `biohub-zh-detect` (26 MB) |
+| 468,617 validated Zebrahub divisions | `biohub-zh-divisions` (counts only) |
+| trained edge ranker | `biohub-ranker-fine` -> `edge_ranker.pkl` |
+
+### Open, in rough order of expected value
+
+1. Finish the division model (v3 running). Gate: in-domain AUC.
+2. **Explain the 10% output gap** between global and windowed on the
+   hidden test. The seam hypothesis is DISPROVEN (below). One untested
+   idea: windowing charges `disappearance_weight` once per window per
+   track instead of once per track, biasing toward over-linking.
+3. `biohub-zh-pipeline` died of OOM after 10 of 41 crops and its
+   `div_J` came out nan. Its 9 completed crops already answered the
+   transfer question; finishing it is optional.
+4. Untried and unblocked: **scale-invariant features for the EDGE
+   ranker**. `corr(edge J, density) = -0.68` and every distance feature
+   it uses is absolute micrometres. adj_J carries ten times the weight
+   div_J does.
+
+### Process notes, each from something that went wrong today
+
+- **A static undefined-name pass catches real bugs. Do not push when it
+  is dirty.** It flagged `gc` as undefined; the push went out anyway and
+  wasted a run. It had earlier caught `class UNet3D` and `_dist_um`
+  missing from an assembled script -- both would have died at runtime.
+- **Holdout deltas below ~0.003 are not resolvable on the LB.** Measured:
+  two submissions whose holdout differed by +0.0014 scored -0.001 apart.
+  Much of this session's fine tuning (the div_w peak at 0.55 was 0.0018
+  above its neighbours) sits under that floor and should be treated as
+  noise.
+- **The family-offset rule predicts to about +-0.003, not +-0.001.** Two
+  points now: -0.0158 and -0.0182. The first prediction landing on the
+  nose was luck.
+- Kernel assembly by slicing one script's head off another accumulates
+  dead code -- `div_train.py` carries `GATE_SWEEP`, `train_at_gate`,
+  `funnel` and two copies of `GATE_XY/GATE_Z` that nothing calls.
+  Rebuild it from minimal parts before extending it further.
+
+
 
 - **LB best 0.917** (ref 55690436, verbatim xl reproduction). Holdout
   baseline for the xl family: 0.9318 (adj 0.9185 / div 0.1333);
@@ -54,6 +115,239 @@ After that, the open lever is `GATE_UM` -- see the forensics entry.
 - Uncommitted: two days of docs + scripts (progress/reference/recon
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
+
+## 2026-08-24 -- windowing reverted; the seam hypothesis is disproven
+
+Three LB points on the same pipeline, one variable:
+
+| ref | solve | LB | total_bytes (hidden test) |
+|---|---|---|---|
+| 55707206 | global | **0.921** | 262.6 MB |
+| 55709347 | 25-frame windows | 0.920 | 289.6 MB |
+| 55716291 | windows + seam constraint | 0.920 | 289.3 MB |
+
+The windowed runs emit **10% more output on the hidden test** while
+emitting 2% LESS on the visible 4 -- the visible 4 do not reproduce the
+behaviour, so they could not have caught this.
+
+The seam fix propagated the previous window's REFUSALS across the shared
+frame (the half of ultrack's scheme the first version omitted, since
+sharing a frame stops edge sets colliding but does not stop window k+1
+treating a node window k rejected as a fresh track start). It fired --
+25 to 170 candidate edges cut per movie -- and changed **nothing**:
+bytes 289.6 -> 289.3, score unchanged. **The hypothesis is disproven.**
+
+Untested alternative worth trying if anyone revisits this: the ILP
+charges `disappearance_weight` 1.5 at every track end, and under
+windowing every track appears to END at each seam, so the penalty is
+paid W times instead of once. That biases the solver toward linking
+more aggressively, which fits +10% output.
+
+**The decision, though, is simpler than the diagnosis.** Windowing
+existed to buy margin against the 12 h cap. The global solve
+COMPLETED on the hidden test at 0.921. The risk never materialised, so
+the 0.001 windowing costs buys nothing. Reverted.
+
+## 2026-08-24 -- div-train v1/v2 INVALID: a time compared against a row index
+
+Two runs produced numbers that must not be used. The Zebrahub division
+extraction was broken by:
+
+```python
+if kk not in first or tt < first[kk]:     # tt is a TIME
+    first[kk] = r                          # first[kk] is a ROW INDEX
+```
+
+so "each track's earliest node" resolved to arbitrary rows and
+parent-child pairing collapsed. Result: **26 of 41 crops reported no
+division at all, and Zebrahub yielded 68 positives** where hundreds of
+thousands were expected. Every AUC printed by those runs (0.2255,
+0.2161, 0.4332, 0.3417, 0.3145) is meaningless -- and AUC below 0.5 was
+itself the tell.
+
+Two further design faults found at the same time:
+
+- **4,632,084 competition triples for 101 positives.** A 0.002% positive
+  rate; the model sees nothing. v3 keeps every positive and thins
+  negatives to 1%.
+- **The split was unusable.** Training on 44b6 alone gives **18
+  positives**. v3 asks the question that actually matters -- can
+  Zebrahub carry training by itself? -- and validates on 6bba (83
+  positives), which enters no training set.
+
+The one solid number from the run: **124 of the 151 GT divisions land on
+detections** once all 199 datasets are cached, confirming the earlier
+projection of ~127.
+
+## 2026-08-24 -- the division data question, measured end to end
+
+The linker is finished (forensics entry below): the solver already takes
+every division the candidate set contains. Two rounds then tried to widen
+the candidate set and both failed -- but not for the reason they looked
+like they failed for.
+
+### `GATE_UM`: two rounds, and the first one was confounded
+
+Round 1 (`biohub-gate-sweep`) held div_w at 0.55 while widening the gate,
+and divTP COLLAPSED 5 -> 2. That looked like the gate failing. It was
+not: a wider gate floods training with distant negatives (positives
+46.8% -> 21.2% -> 11.4%), which drags the whole probability scale down --
+median probability fell **90x**, 0.1196 -> 0.0013. div_w and ILP_FLOOR
+are absolute thresholds ON that scale, so holding them fixed made them
+far stricter. **The gate was never tested.** Recorded as untested, not
+disproven, precisely so nobody closes the line on 0.9301.
+
+Round 2 (`biohub-gate2`) trained once per gate and swept div_w on the
+cached probabilities. Now it is a fair test, and the gate still loses:
+best at gate 14 is 0.9357 (floor 0.03, div_w 0.25) against 0.9382 at
+gate 10. The funnel says why: gate 14 closes stage 2 (gate 3 -> 0) but
+those divisions land in stage 3 (floor 2 -> 4) and REACHABLE only moves
+5 -> 6. At floor 0.03 divTP does reach **6** -- one more than gate 10
+ever managed -- but it costs **+31 division FPs for that one TP**,
+against a budget of ~7 (the marginal rate the metric allows).
+
+Round 3 (`biohub-zgate`) loosened Z ONLY, an ellipsoid instead of a
+sphere, because the missed divisions were z-dominated: volume grows as
+GZ/GYX = 1.4 instead of (14/10)^3 = 2.74. The isotropic control
+reproduced 0.9382 exactly, so the implementation is sound. It still
+fails, and the funnel is decisive: gate 3 -> 2 -> 1 as GZ rises, floor
+2 -> 3 -> 4, **REACHABLE never leaves 5**. Widening the gate moves a
+division from "outside gate" to "below floor". The ranker scores those
+long-z edges low -- and it is RIGHT to: hengck23 verified independently
+on the host baseline that "long links are almost wrong". The binding
+constraint is not the gate, it is that the model has no way to recognise
+the rare configuration where a long edge IS a second daughter, because
+it scores each edge independently and a division is a property of the
+TRIPLE (parent, d1, d2).
+
+### Why it cannot learn that: 151 divisions, from 2 embryos
+
+`biohub-div-census`: **151 GT divisions in the whole 199-dataset train
+split**, 87 datasets have any, median 1, max 5. Only 31 sit in the 44
+cached datasets; 26 of those are fully detected. Caching the rest yields
+~127. A forum comment pins the structure: the training set is **2
+embryos**, split **26 (44b6) + 125 (6bba)** -- which matches our census
+exactly. So the data is not merely scarce, it has no independent
+replication.
+
+For scale: the same forum thread offers a free CC0 synthetic set with
+**165,267 divisions**, and Zebrahub has far more.
+
+### Zebrahub divisions are real: 468,617 of them
+
+`biohub-zh-divisions` validated every candidate (daughters born on the
+same frame, both surviving >= 3 frames, non-zero separation):
+
+| movie | raw | validated | sisterSep | z share | angle |
+|---|---|---|---|---|---|
+| ZSNS001 | 635,041 | 358,314 (56%) | 7.37 | 0.84 | 138 |
+| ZSNS001_tail | 36,878 | 36,246 (98%) | 6.87 | 0.78 | 149 |
+| ZSNS003 | 15,868 | 12,719 (80%) | 6.03 | 0.67 | 148 |
+| ZSNS004 | 30,278 | 24,866 (82%) | 7.78 | 0.65 | 150 |
+| ZSNS005 | 46,026 | 36,472 (79%) | 7.60 | 0.82 | 154 |
+
+**Fragmentation is ruled out**: across 764k candidates, every single
+parent has exactly 2 children -- a re-numbered broken track would give
+3 and 4 as well. ZSNS001's 2.9% rate was the original suspicion; it is
+simply a longer, denser movie.
+
+### Transfer, measured feature by feature (not argued)
+
+`biohub-zshare` computed competition geometry from GT alone -- no
+detector, so no survivorship -- over all 151 divisions, split by embryo:
+
+| | n | sisterSep | z share | angle |
+|---|---|---|---|---|
+| 44b6 | 26 | 8.98 | 0.43 | 135 |
+| 6bba | 125 | 11.47 | 0.55 | 140 |
+| ALL | 151 | **10.57** | **0.53** | 138 |
+
+**CORRECTION.** An earlier entry called sister separation a match
+(Zebrahub 7.37 vs "competition 7.24"). That 7.24 was the synthetic
+dataset author's calibration, not our measurement. Ours is **10.57 um**.
+Zebrahub is ~30% SMALLER, not matching.
+
+`biohub-density` then explained that gap, testing the user's hypothesis
+that Zebrahub is simply denser. Normalising each separation by the local
+cell spacing (median distance to the 5 nearest detections/nodes):
+
+**sisterSep / local spacing: competition 0.68-0.85, Zebrahub
+0.62-0.79 -- the distributions overlap heavily.**
+
+`SUPERSEDED 2026-08-24`: an earlier version of this entry claimed the
+two agree "to 2%" (0.72 vs 0.71). That number came from pairing the
+competition's COUNT-weighted value against Zebrahub's
+EQUAL-PER-MOVIE value -- the Zebrahub side was capped at 4000 divisions
+per movie, so ZSNS001's 358k of the 469k total counted the same as
+ZSNS003's 13k. Weighted consistently the two sides cross over:
+
+| | count-weighted | equal per unit |
+|---|---|---|
+| competition (0.85 / 0.68) | 0.71 | 0.77 |
+| Zebrahub (0.79/0.72/0.62/0.72/0.69) | 0.77 | 0.71 |
+
+Either way the gap is 7-8%, not 2%. **The defensible claim is overlap,
+not equality** -- and 7-8% still sits inside the competition's own
+between-embryo spread (0.68 to 0.85 is 20%), so the conclusion that
+Zebrahub is another embryo domain rather than another problem survives;
+only its precision was overstated.
+
+Note the per-movie cap is not itself a flaw: **how much of each movie
+enters training is a free parameter**, so equal sampling is a legitimate
+design. The error was using a training-design weighting to make a
+DESCRIPTIVE claim about the domains. Consequence for the build: do not
+try to derive the right mixture analytically -- **sweep it** (per-movie
+sampling, and the Zebrahub:competition weight ratio, currently 3700:1)
+and let AUC on the 127 in-domain divisions choose.
+
+"Daughters are born roughly 0.7 nearest-neighbour distances apart" holds
+as an order-of-magnitude invariant on both sides. The 30% raw gap was
+scale, not geometry. Caveat: the WITHIN-dataset correlation of spacing
+against separation is ~0 (+0.11, +0.04), so this is a between-dataset
+scaling, not a per-division crowding force.
+
+**A second CORRECTION**: an isotropic direction gives median
+|dz|/||d|| = **0.5** exactly (|cos theta| is uniform on [0,1]); an
+earlier entry said 0.58, which is the RMS. So competition at 0.53 is
+essentially ISOTROPIC and Zebrahub at 0.65-0.84 is genuinely z-biased.
+
+Per-axis normalisation was tried next and **did not** reconcile them,
+against expectation:
+
+| | packing sz/sxy | \|dz\|/sz | \|dxy\|/sxy |
+|---|---|---|---|
+| 44b6 | 0.55 | 0.32 | 0.61 |
+| 6bba | 0.70 | 0.54 | 0.56 |
+| competition | 0.64 | 0.51 | 0.56 |
+| Zebrahub | 0.52 | **0.75** | **0.33** |
+
+Packing anisotropy is comparable (0.64 is exactly the isotropic
+expectation, since E|dz| = r/2 and E||dxy|| = pi*r/4). But the division
+AXIS differs and survives normalisation. Note the competition's own two
+embryos disagree -- 44b6 is xy-dominated, 6bba balanced, Zebrahub
+z-dominated: **a feature that is unstable between the two training
+embryos has no claim to stability on unseen ones**, and train/test are
+embryo-disjoint by the rules.
+
+### The variance decomposition that answers "is Zebrahub another world"
+
+| quantity | between competition embryos | between Zebrahub embryos | across datasets |
+|---|---|---|---|
+| z share | 0.12 | 0.19 | 0.22 |
+| sister separation | 2.5 um | 1.75 um | ~3 um (scale; normalises away) |
+| daughter angle | 5 deg | 16 deg | ~5 deg |
+
+Every cross-dataset gap is the size of an embryo-to-embryo gap. Zebrahub
+is one more embryo domain, not a different problem -- and we are required
+to generalise across embryos regardless.
+
+**On the local-to-LB gap**, the user's reading was that we score better
+on sparse data (true: `corr(edge J, density) = -0.68`, 0.968 at 50
+cells/frame vs 0.771 at 519) so the hidden test must be denser. Partly:
+the two families show -0.042 and -0.015 against the SAME hidden test, so
+most of the larger gap is holdout memorisation by the official weights,
+not density. The xl family's -0.015 is the part density can explain, and
+it just predicted 0.921 correctly.
 
 ## 2026-08-23 -- SUBMITTED ref 55709347: windowed ILP. Better on both rulers, and it fits the clock.
 

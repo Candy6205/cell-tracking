@@ -143,13 +143,17 @@ Batch experiments into one kernel where they share a mount and a wheel
 install, rather than pushing three that each spend 30 s installing the same
 54 wheels and each send mail.
 
-### 7. Only TWO batch GPU sessions at a time (2026-08-23)
+### 7. Only TWO batch sessions at a time -- GPU OR CPU (2026-08-23)
 
 A third `kernels push` on a GPU kernel is refused outright:
 
 ```
 Kernel push error: Maximum batch GPU session count of 2 reached.
 ```
+
+`CORRECTED 2026-08-24`: the cap is on batch sessions, not on GPU ones.
+A CPU kernel (`enable_gpu: false`) occupies a slot just the same -- a
+push was refused with one GPU and one CPU kernel running.
 
 The push does NOT queue -- it fails, and if the metadata was already
 edited you can end up having pushed an earlier version of the script by
