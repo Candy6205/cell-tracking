@@ -226,6 +226,69 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐ morphology is OURS, and real cells are 28% bigger than spurious ones
+
+`morph_probe.py` -> `biohub-morph-probe` v2, 6 min on CPU. The user
+objected to testing morphology the fast way -- computing it a NEW way
+while asking a NEW question means a negative result cannot be attributed
+-- so the run is gated: step 2 is SUPPRESSED unless step 1 proves our
+extractor reproduces HOCT's node for node.
+
+### Step 1: MATCH, and v1's mismatch was worth having
+
+v2: all five columns agree at **0.000e+00** over 770/770 nodes paired by
+centroid. **`skimage.regionprops` on the cached masks IS `create_graph`.**
+hoct can be dropped entirely -- no 25 MB weights, no offline packaging.
+
+v1 MISMATCHED, and the shape of it named the cause in one step:
+`equivalent_diameter_area` agreed to 0.000e+00 while all four intensity
+columns differed (worst 9.4e-01). Same masks, same 770 nodes, so it had
+to be the intensity IMAGE, not the regions. It was: `create_graph`
+defaults to `normalize_images=True` and we passed images `_norm` had
+already normalised, so HOCT normalised twice. Ours read i_mean median
+0.6807 against its 0.4948.
+
+**That is the fourth inherited default this session that nobody had
+checked** -- after "the metric needs a GPU" (really `load_image=True`),
+the ranker's 18 transplanted features, and its 32-dataset pool. Without
+the gate we would have carried ~40% wrong intensities into the
+hypothesis and been unable to attribute the answer.
+
+### Step 2a: the over-detection problem finally has a signal
+
+127 of 770 detections matched GT; the other 643 are what the node-count
+penalty pays for. Medians, with [p10, p90]:
+
+| | matched | unmatched | ratio |
+|---|---|---|---|
+| `diam` | **8.83** [7.08, 10.22] | **6.87** [5.35, 8.02] | **1.28** |
+| `i_mean` | **0.856** [0.413, 1.117] | **0.654** [0.305, 0.979] | **1.31** |
+| `i_max` | 1.405 | 1.266 | 1.11 |
+| `i_std` | 0.216 | 0.233 | 0.92 |
+
+**Real cells are 28% bigger and 31% brighter than spurious detections.**
+The distributions overlap -- this is not a clean cut -- but `N/N_true`
+running to 1.30 has been on record for days with no tool able to touch
+it, because every feature this project owns is a coordinate or a
+detection score. Size and brightness are a new channel.
+
+### Step 2b: UNUSABLE, my design error, same one as the HOCT gates
+
+114 candidate pairs, 111 true -- **3 negatives**. The printed ratios (0.58
+and 0.38) are computed on three samples and mean nothing.
+
+Cause: the pairing required BOTH endpoints to be GT-matched. GT is
+sparsely annotated, so within 15 um of a matched cell the only other
+matched cell is nearly always its own successor. The negative class is
+filtered out by construction -- **exactly what produced the "109 of 109"
+in every HOCT gate**. Fix: draw negatives as "matched parent + any
+candidate that is not its GT successor", without requiring the candidate
+to be matched.
+
+⚠ **1 division in this dataset's 30 frames.** "Does the mother shrink
+before dividing" needs orders of magnitude more; size that run against
+this number.
+
 ## 2026-08-25 -- HOCT: gate CLOSED, negative. Its FEATURE EXTRACTOR is the keeper.
 
 `hoct_score.py` -> `biohub-hoct-score` v4, 7 min on CPU. Candidate graph
