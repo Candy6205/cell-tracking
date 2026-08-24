@@ -59,7 +59,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 from skimage.feature import peak_local_max
 
-SCRIPT_VERSION = "2026-08-24f-hoct-gate"
+SCRIPT_VERSION = "2026-08-24m-hoct-gate4"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 DEVICE = "cpu"
@@ -431,6 +431,19 @@ labels = np.stack(labels_t)
 print(f"  labels {labels.shape} {labels.dtype}, "
       f"{time.time() - t0:.0f}s", flush=True)
 
+# THE POINT OF THIS RUN. Three GPU attempts have now gone into an
+# unfamiliar API without producing a gate number. The detector is the only
+# GPU-bound step, so persist its output: attach this kernel as a source
+# and every further HOCT experiment is a free CPU kernel.
+_c = np.concatenate([c for c in centres_t]) if centres_t else     np.zeros((0, 3))
+_off = np.cumsum([0] + [len(c) for c in centres_t])
+np.savez_compressed("/kaggle/working/hoct_masks.npz", labels=labels,
+                    centres=_c, offsets=_off,
+                    pooled=np.asarray(POOLED), name=np.array([NAME]))
+print(f"  saved hoct_masks.npz -- {labels.nbytes / 2**20:.1f} MB of "
+      f"labels; attach this kernel and skip the GPU next time",
+      flush=True)
+
 print("\n=== RUNNING HOCT ===", flush=True)
 graph = None
 try:
@@ -453,11 +466,39 @@ try:
     #   scale                  -> v1 passed nothing, so distances were in
     #                             voxels and distance_threshold=300 meant
     #                             487 um, absurdly permissive
+    # v3: return_solution=False returned None. predict() takes `graph=`,
+    # so the scores land on a graph the CALLER owns -- build it here, hold
+    # the reference, and read the edge attributes afterwards.
+    cand_graph = None
+    try:
+        from hoct.features.graph import create_graph
+        print(f"  create_graph{inspect.signature(create_graph)}",
+              flush=True)
+        cand_graph = create_graph(
+            labels=labels,
+            scale=(1.0,) + tuple(float(v) for v in POOLED))
+        print(f"  candidate graph built: {type(cand_graph)}", flush=True)
+    except Exception as exc:
+        print(f"  create_graph route unavailable ({exc!r}) -- falling "
+              f"back to letting predict build it, which means "
+              f"return_solution=False will again return None and the "
+              f"solved graph is all this run can report", flush=True)
+
     kw = dict(return_solution=False,
-              scale=tuple(float(v) for v in POOLED),
+              # FOUR elements: (t, z, y, x). v2 passed three and
+              # tripped `assert len(scale) == 4` in
+              # hoct/features/graph.py:162. One frame = 1.0.
+              scale=(1.0,) + tuple(float(v) for v in POOLED),
               distance_threshold=DIST_UM)
     print(f"  calling predict with {kw}", flush=True)
-    graph = hoct.predict(model, labels=labels, **kw)
+    if cand_graph is not None:
+        kw.pop("scale", None)          # already baked into the graph
+        kw.pop("distance_threshold", None)
+        hoct.predict(model, graph=cand_graph, **kw)
+        graph = cand_graph             # scores are ON it now
+        print("  predicted onto the caller-owned graph", flush=True)
+    else:
+        graph = hoct.predict(model, labels=labels, **kw)
     if graph is None:
         # the signature says `-> RustWorkXGraph | None`. If withholding the
         # solve also withholds the graph, fall back to the solved one so
@@ -524,9 +565,9 @@ def extract(g):
     # tracksdata graph first: to_geff drops the edge scores, and scores
     # are the entire point of this run.
     try:
-        ek = list(g.edge_attr_keys)
+        ek = list(g.edge_attr_keys())
         print(f"  edge_attr_keys: {ek}", flush=True)
-        print(f"  node_attr_keys: {list(g.node_attr_keys)}", flush=True)
+        print(f"  node_attr_keys: {list(g.node_attr_keys())}", flush=True)
         score_key = next((k for k in ("edge_prob", "prob", "score",
                                       "weight", "logit") if k in ek), None)
         na_ = g.node_attrs(attr_keys=["node_id", "t", "z", "y", "x"])

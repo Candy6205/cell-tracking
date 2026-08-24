@@ -38,7 +38,7 @@ got smaller just before dividing" is not expressible anywhere in our
 code and is sitting right there in this graph.
 """
 
-SCRIPT_VERSION = "2026-08-25b-hoct-score"
+SCRIPT_VERSION = "2026-08-25c-hoct-score"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 import glob
@@ -108,10 +108,70 @@ print(f"  dataset {NAME}, {T} frames, pooled spacing {tuple(POOLED)} um",
       flush=True)
 
 
+# ---- the images v2 forgot -----------------------------------------------
+# v2 passed labels ONLY, and the node features came back with
+# intensity_min/max/mean/std all exactly 0.0. HOCT ran blind to image
+# content, so "loses to a distance baseline by 0.24 AUC" described a
+# blinded model, not the model. create_graph takes `images` the same shape
+# as `labels`; pool the raw volumes onto the same grid. Pure numpy.
+POOL = 4
+
+
+def _pool_xy(vol, f=POOL):
+    Z, Y, X = vol.shape
+    Y2, X2 = (Y // f) * f, (X // f) * f
+    v = vol[:, :Y2, :X2].astype(np.float32, copy=False)
+    return v.reshape(Z, Y2 // f, f, X2 // f, f).mean(axis=(2, 4))
+
+
+def _norm(p):
+    lo = float(np.percentile(p, 50))
+    hi = float(np.percentile(p, 99.5))
+    return np.clip((p - lo) / (hi - lo + 1e-6), -0.5, 6.0).astype(np.float32)
+
+
+def _read_meta(zp):
+    import json as _j
+    with open(Path(zp) / "0" / "zarr.json") as f:
+        m = _j.load(f)
+    return dict(shape=tuple(m["shape"]), dtype=np.dtype(m["data_type"]))
+
+
+def _load_volume(zp, t, meta):
+    try:
+        import zarr
+        return np.asarray(zarr.open(str(zp), mode="r")["0"][t])
+    except Exception:
+        import blosc2
+        buf = blosc2.decompress(
+            open(Path(zp) / "0" / "c" / str(t) / "0" / "0" / "0",
+                 "rb").read())
+        return np.frombuffer(buf, dtype=meta["dtype"]).reshape(
+            meta["shape"][1:])
+
+
+images = None
+try:
+    _zp = Path(ROOT) / "train" / f"{NAME}.zarr"
+    _meta = _read_meta(_zp)
+    images = np.stack([_norm(_pool_xy(_load_volume(_zp, t, _meta)))
+                       for t in range(T)])
+    assert images.shape == labels.shape, \
+        f"images {images.shape} != labels {labels.shape}"
+    print(f"  images {images.shape} pooled and normalised, range "
+          f"[{images.min():.3f}, {images.max():.3f}]", flush=True)
+except Exception:
+    images = None
+    print("  WARNING could not build images -> running BLIND again, which "
+          "reproduces v2 rather than testing anything:", flush=True)
+    traceback.print_exc()
+
+
 # ---- build the candidate graph, then score it ---------------------------
 print("\n=== HOCT on CPU ===", flush=True)
 model = hoct.load_model(device="cpu")
 graph = create_graph(labels,
+                     images=images,
                      distance_threshold=DIST_UM,
                      n_neighbors=N_NEIGH,
                      delta_t=DELTA_T,
