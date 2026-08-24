@@ -16,11 +16,10 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
 
 ### Read these first
 
-1. **`biohub-div-train` v3 was running when the session ended.** Its two
-   predecessors were invalid -- see the div-train entry below for the bug
-   and what v3 changed. What to look for: whether "zebrahub only" beats
-   "44b6 only (18 pos)" on the held-out 6bba AUC. If Zebrahub cannot
-   carry training on its own, the external-data line stops there.
+1. **`biohub-div-train` v3 ANSWERED (2026-08-24): yes.** Zebrahub only
+   0.8083 on held-out 6bba, 44b6 only (18 pos) 0.4295. The external-data
+   line is open. Details and the caveat about the mixture sweep are in
+   open item 1 below.
 2. **Windowing is REVERTED. Use the global solve.** Three LB points:
    global 0.921, windowed 0.920, windowed-with-seam-constraint 0.920.
    The runtime worry that motivated windowing never materialised -- the
@@ -55,7 +54,36 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
 
 ### Open, in rough order of expected value
 
-1. Finish the division model (v3 running). Gate: in-domain AUC.
+1. **PARKED 2026-08-24, user's call. Every CHEAP route is spent; the
+   remaining ones all need pixels.** Do not re-run the light experiments.
+
+   What was settled, in order: div-train (Zebrahub alone carries it,
+   held-out 6bba AUC 0.808 vs 0.430 for 44b6's 18 positives, below
+   chance); div-kinematics (the DAUGHTERS' future is real signal --
+   `sep_slope` 1.155 vs 0.082 um/frame, a 14x gap -- while the mother's
+   pre-division slow-down does NOT exist in this data, `decel` 0.905 vs
+   0.934); div-gate (cannot audit already-selected forks; pruning is
+   monotonically worse than doing nothing); div-forks (cannot select
+   them either -- rerank buys 1 of 23 removable FPs, generate is worse).
+
+   **Not "unreachable" -- "the model is not good enough".** ~+0.027 sits
+   in the rerank direction and the model captured 1/23 of it.
+
+   Why the rest is expensive: **every feature ever built for this reads
+   `detcache_*.npz`, i.e. coordinates and detection scores. Nothing reads
+   pixels.** So "the mother got smaller / rounder / brighter just before
+   dividing" -- the obvious remaining signal, and the one mitotic
+   rounding actually produces -- is not expressible at all. Getting it
+   means re-reading the raw zarr volumes per candidate, the `det_ablate`
+   cost profile (minutes per dataset), not a cheap CPU pass over caches.
+   `division_features.py` exists for exactly this question and **has no
+   recorded result anywhere** -- written, never run, or run unlogged.
+
+   The other untested lever is data volume: `biohub-zh-divisions`
+   validated **468,617** divisions; training uses **2001**, because only
+   41 crops were extracted. `PER_CROP = 400` is not binding, the crop
+   COUNT is. That one IS cheap -- `zebrahub_extract.py` already exists --
+   but nobody has measured whether AP scales with it.
 2. **Explain the 10% output gap** between global and windowed on the
    hidden test. The seam hypothesis is DISPROVEN (below). One untested
    idea: windowing charges `disappearance_weight` once per window per
@@ -63,10 +91,92 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
 3. `biohub-zh-pipeline` died of OOM after 10 of 41 crops and its
    `div_J` came out nan. Its 9 completed crops already answered the
    transfer question; finishing it is optional.
-4. Untried and unblocked: **scale-invariant features for the EDGE
-   ranker**. `corr(edge J, density) = -0.68` and every distance feature
-   it uses is absolute micrometres. adj_J carries ten times the weight
-   div_J does.
+4. **CLOSED, negative**: scale-invariant features for the edge ranker do
+   nothing (entry below). The -0.73 density penalty is NOT in the
+   ranker's feature space -- per-dataset AUC is flat against density
+   while adj_J is not.
+
+## ⭐ PRIORITY as of 2026-08-24 (user's call): detection and linking, not divisions
+
+Divisions are parked (item 1). The loss budget says why -- decomposed
+from the det-threshold table below:
+
+| where the score leaks | size |
+|---|---|
+| detection recall: a GT edge's endpoint was never detected | ~1.75% |
+| linking: a reachable edge linked wrong | ~1.6% |
+| false edges: predicted where GT has none | ~3.3% |
+
+**The last two together are about 3x the first**, and adj_J carries 10x
+div_J's weight. Concrete leads, cheapest first:
+
+- **A. Which of the xl detector's 12 forward passes earn their place.**
+  `biohub-det-ablate` RUNNING. Three branches x four flip views, never
+  ablated. Branches 1 and 2 get PIXEL-IDENTICAL input (both top-hat), so
+  their errors should correlate; branch 0 is the only different view of
+  the data and has the worst solo `val_recall` -- which is not what earns
+  a place in an ensemble. One inference pass covers 11 configurations.
+- **B. The ranker never sees `edge_prob`.** The transplant dropped
+  yusuketogashi's first-listed feature because `detcache_*.npz` carries
+  only coords and detection scores (full entry below). NOT free: the
+  cached probs index the OFFICIAL detector's nodes, the pipeline runs xl
+  nodes, so it needs the official edge head re-run over the xl node set.
+- **C. Multi-frame trajectory in LINKING.** The official edge head is
+  `window_size = 2` and "structurally cannot use velocity"; our ranker
+  has one speed scalar greedily estimated from a single transition. The
+  same shape of gap the division work just proved real.
+
+  Two public references, both already on the table and neither pursued:
+
+  - **Togashi's item 4, acceleration lookahead in motion prediction, was
+    never transplanted** (`public-solutions-recon.md:313`). Pure CPU,
+    existing caches, and it is a 0.915 solution's own component. Cheapest
+    thing on this list.
+  - **HOCT -- higher-order cell tracking**, forum /726521, posted by
+    **Jordão Bragantini as HOST**: he is a co-author and it is the Royer
+    lab, i.e. the lab that made this data. Paper arxiv 2607.11754, code
+    and PRETRAINED MODEL at `github.com/royerlab/hoct`. "Higher-order" is
+    exactly the multi-frame motion constraint this item is about, and he
+    says plainly "we haven't tried it on the competition dataset yet".
+    **Training code is withheld (under peer review), so it is
+    inference-only.**
+
+    The one recorded attempt is NEGATIVE and its reason is instructive: a
+    rank-24 competitor fed it **uniform-ball masks** and it over-linked
+    into spurious forks (/728551, via `strategy.md`). Bragantini's own
+    caveat is "results depend on the quality of the segmentation mask" --
+    and our pipeline emits CENTROIDS, not masks. Uniform balls are the
+    worst possible mask. **Untested idea: watershed the xl detection
+    heatmap seeded at the detected peaks, which respects real cell shape
+    and is strictly better input than spheres.** Submission is offline,
+    so the weights would need packaging as a dataset.
+- **D. The ASSIGNMENT step, not the scoring.** `ranker_scale` measured
+  per-dataset ranker AUC FLAT against density while adj_J slides hard --
+  so crowding damages the pick, not the score. Untouched.
+
+Discipline, from two failures today: an offline AUC/AP win is not an
+adj_J. Everything here gets re-measured through the full pipeline before
+it is believed.
+
+### Why this ordering is structural, not a preference (user, 2026-08-24)
+
+Divisions sit DOWNSTREAM of both. The forensics funnel says it exactly:
+of the 12 holdout GT divisions, **1 parent undetected + 1 daughter
+undetected + 3 outside `GATE_UM` + 2 below `ILP_FLOOR` = 7 are lost
+before the division mechanism gets a say**, and it already takes all 5
+that reach it. No division model can recover what detection and linking
+threw away first.
+
+The orphan patch is the sharper case: it feeds on the LINKER'S FAILURES.
+A second daughter becomes adoptable only if it was detected AND the 1:1
+assignment left it unclaimed. That is why improving the ranker backfired
+once already -- "1:1 Hungarian steals second daughters into wrong
+continuations, **draining the orphan pool the division patch mines**"
+(`ranker_fine.py` header). A linker that gets more confident without
+getting more correct starves the mechanism downstream of it.
+
+So detection and linking are not merely higher-value targets. They are
+the precondition for the division term to be worth anything at all.
 
 ### Process notes, each from something that went wrong today
 
@@ -115,6 +225,349 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
 - Uncommitted: two days of docs + scripts (progress/reference/recon
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
+
+## 2026-08-24 -- ⭐⭐⭐ div-forks: the division line is CLOSED. Three uses, all null.
+
+`div_forks.py` -> `biohub-div-forks`, 38 min. div-gate showed the model
+could not AUDIT forks; the objection was that pruning was the wrong shape
+of intervention, since the model was measured on SELECTION over the full
+candidate space. This kernel gave it selection. It still fails.
+
+All three arms start from the same pre-patch graph and the same quotas.
+
+| arm | forks added | score | adj_J | div_J | TP/FP/FN |
+|---|---|---|---|---|---|
+| BASELINE nearest-first | 442 | 0.9363 | 0.9220 | 0.1429 | 5/23/7 |
+| RERANK by `p_div` | 442 | 0.9369 | 0.9222 | 0.1471 | 5/**22**/7 |
+| GENERATE, filters off | 595 | 0.9342 | 0.9226 | 0.1163 | 5/**31**/7 |
+
+BASELINE reproduces div-gate's prune-0% row exactly. RERANK buys **one**
+fewer false division, +0.0006, an order of magnitude under the resolution
+floor. GENERATE is worse. **TP is 5 in all three** -- no arm found a
+division another missed.
+
+Per fork added the FP rate is identical: 23/442, 22/442, 31/595 = 5.2%,
+5.0%, 5.2%. The model is not separating anything.
+
+### Why -- and it closes the whole thread
+
+The filter stack cuts **14,159 loose proposals to 769**, an 18x
+reduction. The quota then takes **442 of those 769**. So the RANKING step
+chooses 442 from 769: a 1.7x selection with almost no leverage, and it
+cannot decline to fill the quota no matter how bad the remaining
+candidates are.
+
+And the filters already contain the model's best feature in crude form:
+`DIV_DIVERGE_UM >= 2.25 um` is one-frame divergence, the hand-set ancestor
+of `sep_slope` (true 1.155 vs random 0.082 um/frame). **The 18x cut is
+done by a rough version of exactly what the model learned, so by the time
+the model is consulted the discriminating work is already finished.**
+
+### CORRECTION, same day, after the user pushed back
+
+The first draft of this entry said the division line was exhausted and
+that the ranking step had "almost no leverage". **That was wrong, and the
+arithmetic says so.** RERANK chooses 442 of 769, so it may EXCLUDE 327.
+Only 23 forks are counted FPs. If those 23 sit inside the 769 and can go
+without costing a TP, div_J runs 5/35 = 0.143 -> 5/12 = 0.417, worth
+**+0.027**. The model removed **one of the 23**.
+
+That is not an absent lever. That is a lever the model failed to pull.
+(Discount it for replacements drawn from the remaining 327 being counted
+FPs themselves -- the true ceiling is lower than +0.027, but nowhere near
+zero.)
+
+So the honest status is **the division MODEL is not good enough**, not
+"divisions are unreachable". Two candidate causes, neither tested:
+
+1. **Features.** What the model has that the filter stack does not is
+   thin: the filters already encode one-frame divergence, which is the
+   crude ancestor of `sep_slope`.
+2. **Training data -- and this one is quantitative.** `biohub-zh-divisions`
+   validated **468,617** Zebrahub divisions. div-train and div-kinematics
+   train on **2001**, because only 41 crops were ever extracted
+   (`zebrahub_extract.py`, 7.5 GB) and ~51 of each crop's divisions land
+   on detections. `PER_CROP = 400` is NOT binding; the crop COUNT is.
+   **We are training on 0.43% of the divisions we have already
+   validated.**
+
+Extracting more crops is a known, already-written path. Nobody has
+measured whether the division model's AP scales with it.
+
+What IS still established: the funnel's FN 7 (2 detection, 3 gate, 2
+floor) and divTP never leaving 5 across every configuration tried.
+
+⚠ Same caveat as every division row: five true divisions on the holdout.
+
+## 2026-08-24 -- ⭐⭐⭐ the edge ranker never sees `edge_prob`, and "window" means two opposite things
+
+Found while answering the user's question "doesn't linking already use
+multiple frames -- didn't the edge detector use a window?".
+
+### Two `window_size`s, opposite meanings. Do not confuse them again.
+
+| where | what it is | status |
+|---|---|---|
+| `window_size = 2`, the official edge head | how many frames the MODEL SEES = two, the minimum. `competition-brief.md:179`: it "structurally **cannot use velocity**" | architectural, not a knob |
+| `window_size = 25`, `solve_edges` | ILP time-chunking for SPEED | REVERTED; the global solve is what runs |
+
+Multi-frame evidence has never entered linking. The reverted windowing was
+about how the ILP is chunked, nothing more.
+
+### ⭐ The transplant dropped the first-listed feature
+
+`public-solutions-recon.md:300` describes yusuketogashi's ranker as "~25
+engineered features -- **primary edge_prob**, raw vs motion-extrapolated
+distance and their difference...". Ours has 18 and **`edge_prob` is not
+among them**. Its `ps[i]` / `cs[j]` are DETECTION scores from `seeds_of`,
+not the edge head's opinion of the edge.
+
+The cause is which cache the ranker reads:
+
+| cache | keys | read by |
+|---|---|---|
+| `cache_candidates.py` -> `{name}.npz` | coords, src, tgt, **prob**, dist | the old replay line |
+| `cache_train.py` -> `detcache_*.npz` | `c{t}`, `s{t}` only | **ranker_fine, div_train, everything current** |
+
+So the current best pipeline feeds the ILP a gradient-boosted tree over 18
+hand-made geometric numbers and **discards the end-to-end-trained edge
+head entirely** (`edge_weight = -EdgeAttr("edge_prob")` where edge_prob is
+the ranker's output). That replacement was a net win -- 0.876 -> 0.921 --
+but "geometry alone beats the edge head alone" is not "the edge head has
+nothing to add".
+
+**NOT free.** The cached probs in `{name}.npz` are indexed to the OFFICIAL
+detector's nodes; the pipeline now runs xl detections, which are different
+nodes. Using `edge_prob` as a ranker feature needs the official edge head
+re-run over the xl node set -- a GPU inference pass, and the head needs
+image features at node locations, so it is not a pure cache join. Size the
+pass before committing to it.
+
+## 2026-08-24 -- ⭐⭐ div-gate: the offline AP gain does NOT survive contact with the pipeline
+
+`div_gate.py` -> `biohub-div-gate`, 53 min on a T4. Solve each holdout
+dataset exactly as the recorded pipeline does (div_w 0.55, global), score
+every resulting fork with the FULL division model from
+biohub-div-kinematics, sweep a prune threshold, rescore.
+
+**Anchor reproduces.** prune 0% gives TP/FP/FN 5/23/7, div_J 0.1429,
+adj_J 0.9220, score 0.9363, against the recorded 5/26/7 / 0.1316 / 0.9214
+/ 0.9345 at div_w 0.50 -- identical TP and FN, three fewer FP, which is
+the direction a higher div_w should move. The wiring is correct.
+
+| prune | forks cut | TP | FP | FN | div_J | adj_J | score |
+|---|---|---|---|---|---|---|---|
+| **0%** | 0 | **5** | 23 | 7 | **0.1429** | 0.9220 | **0.9363** |
+| 25% | 138 | 4 | 22 | 8 | 0.1176 | 0.9222 | 0.9340 |
+| 50% | 276 | 2 | 10 | 10 | 0.0909 | 0.9226 | 0.9317 |
+| 75% | 414 | 1 | 4 | 11 | 0.0625 | 0.9230 | 0.9292 |
+| 90% | 497 | 1 | 3 | 11 | 0.0667 | 0.9229 | 0.9296 |
+
+**Monotone downhill. Doing nothing wins.** Pruning removes true divisions
+at least as fast as false ones: the bottom 25% of forks by `p_div` holds
+20% of the TPs but only 4% of the FPs -- *anti*-informative. By the 50%
+cut it is 60% of TPs against 57% of FPs, i.e. indistinguishable from
+cutting at random.
+
+### Why the offline number did not transfer -- the lesson
+
+div-kinematics measured AP 0.0812 and 1.8 FP per TP **over every candidate
+triple `build()` emits** -- every neighbour pair of every parent, which is
+overwhelmingly obvious non-divisions. This kernel scores **only the 553
+forks the pipeline already chose**, which have passed the ILP's division
+weight or the orphan patch's strict geometric filters. Those are the hard
+cases; the easy negatives were gone before the model ever saw them.
+
+**The offline gain was the model re-separating negatives the pipeline had
+already excluded.** Measure a classifier on the population the
+intervention will actually act on, not on the population it was trained
+on. This is now the second time an offline win evaporated in the pipeline
+(the first: scale-invariant edge features).
+
+### What survives and what does not
+
+- STILL TRUE: forward features carry real signal on the full candidate
+  set. `sep_slope` 1.155 vs 0.082 is a measurement, not a model artefact.
+- DEAD: `p_div` as a post-hoc filter on selected forks.
+- DISCOURAGED, not disproven: re-ranking the orphan patch's *proposals*
+  by `p_div` instead of by `d_pq + 0.15*d_s`. That acts on a larger pool
+  than the accepted forks, so it is not strictly the same population --
+  but the model showing zero separation on the accepted subset is weak
+  evidence it would separate the pool either.
+- Ceiling unchanged: FN 7 is 2 lost to detection, 3 outside `GATE_UM`, 2
+  below `ILP_FLOOR`. Even perfect FP removal caps div_J at 5/12 = 0.417,
+  worth +0.027. **That ceiling needs a model that can separate; this one
+  cannot.**
+
+⚠ **Five true divisions.** Every row rests on TP counts of 1-5, far under
+anything resolvable alone. The monotone trend across five points is the
+evidence here, not any single delta.
+
+**This is more weight behind the conclusion already on record below: the
+divisions are lost upstream, and the division line is close to exhausted.**
+
+## 2026-08-24 -- ⭐⭐ division kinematics: the DAUGHTERS' future works, the mother's past does not
+
+`div_kinematics.py` -> `biohub-div-kinematics` v2, ~23 min on a T4. One
+feature build, four column views. Extends the diagnosis already on record
+in the gate-round-3 entry below: "the model has no way to recognise the
+rare configuration where a long edge IS a second daughter, because it
+scores each edge independently and a division is a property of the
+triple". The triple model was the first half; **time is the second.**
+
+Trained on Zebrahub only (2001 pos), validated on held-out 6bba (83 pos),
+same protocol as div-train v3.
+
+| arm | cols | AUC | AP | FP per TP @ 10% recall |
+|---|---|---|---|---|
+| BASE (div_train's 25) | 25 | 0.8275 | 0.0486 | **6.9** |
+| + mother's PAST | 35 | 0.8289 | 0.0375 | 8.8 |
+| + daughters' FUTURE | 35 | 0.8365 | **0.0812** | **2.5** |
+| FULL | 49 | 0.8198 | 0.0747 | **1.8** |
+
+**The user's call, and it was right against mine.** The session had
+front-loaded the backward half because it is cheap (before t the mother
+is ONE cell, no chicken-and-egg). The user pushed back -- "what if the
+daughters' behaviour is the more suspicious one" -- and the data agrees:
+backward does NOTHING (AP gets *worse*, 0.0486 -> 0.0375), forward nearly
+doubles AP and cuts the false-division price 2.8x.
+
+**Read AP and FP/TP, never AUC, on this problem.** Positives are 0.25%.
+AUC moves 0.83 -> 0.84 across every arm while AP doubles, and FULL has
+the WORST AUC of the four yet the BEST FP/TP. An AUC-only report would
+have picked the wrong arm.
+
+### The physics, checked with no model in the way (medians, 6bba)
+
+| column | true div | other | ratio |
+|---|---|---|---|
+| **fwd `sep_slope`** (um/frame) | 1.155 | 0.082 | **14.1** |
+| fwd `sep_end/0` | 1.431 | 1.031 | 1.39 |
+| fwd `score_min` | 0.396 | 0.289 | 1.37 |
+| **coup `cent_resid`** (um) | 2.872 | 5.053 | **0.57** |
+| back `decel` | 0.905 | 0.934 | 0.97 |
+| back `v_last` | 2.254 | 1.861 | 1.21 |
+
+- **Real daughters separate at 1.16 um/frame; random pairs at 0.08.** A
+  14x gap, and the single cleanest division signal this project has
+  found.
+- **The centroid-momentum claim holds**: at a true division the pair's
+  centroid lands 2.87 um off the mother's extrapolated position, against
+  5.05 um for a spurious pair. `cent_resid` is also the top permutation
+  column (+0.0058, 4x the next).
+- **The mitotic slow-down does not exist in this data.** `decel` is 0.905
+  vs 0.934 -- indistinguishable, and `v_last` runs the WRONG way (dividing
+  mothers are slightly *faster*). Most likely mitotic rounding is short
+  against the frame interval and simply is not sampled. That hypothesis
+  is DISPROVEN, not untested.
+- Two predictions that failed: `sep_min/0` ("two cells merely passing each
+  other converge first") ratio 1.05 and NEGATIVE permutation importance;
+  `surv_both`/`surv_gap` ("one member vanishes") are 5.0/0.0 in both
+  classes at FWD_K=5 -- nothing vanishes, so survival discriminates
+  nothing.
+
+Low permutation importance here means REDUNDANT, not useless: `sep_slope`
+scores +0.0002 despite the 14x raw separation, because `sep_end/0` carries
+the same information inside the FULL model.
+
+### Where this cashes out
+
+The metric's marginal budget is ~7 FP per TP. **BASE sits at 6.9 -- right
+on the edge, which is why divisions have never been worth taking.** FWD
+buys them at 2.5 and FULL at 1.8, roughly 4x cheaper. Against the
+forensics funnel below (12 GT divisions: 2 lost to detection, 3 outside
+the gate, 2 below the floor, 5 taken), the 2 below-floor ones are the
+direct target, and the 3 gate ones become reachable if the gate widens
+AND the classifier can now hold them above the floor -- which is exactly
+the combination round 3 lacked.
+
+**Not yet done: this is offline AUC/AP, not div_J.** Wiring the FULL model
+into the pipeline and scoring div_J on the holdout is the real test.
+
+### ⚠ `hash(name)` makes the negative sampling irreproducible across runs
+
+`build()` seeds its negative thinning with
+`np.random.default_rng(hash(name) % 2**31)`. Python randomises `hash()`
+per process unless `PYTHONHASHSEED` is set, so every run keeps a
+different negative sample: this run got 49586 zebrahub / 46770 competition
+triples where div-train v3 got 49735 / 46631, and BASE scored 0.8275 here
+against v3's recorded 0.8083. **Arm-to-arm comparisons inside one run are
+valid (all arms see identical rows); any cross-run AUC comparison in this
+project carries ~0.02 of pure sampling noise.** Fix with a stable seed
+(`zlib.crc32(name.encode())`).
+
+## 2026-08-24 -- scale-invariant edge features: NO EFFECT, and the -0.73 is not in the ranker
+
+`ranker_scale.py` -> `biohub-ranker-scale`, 8.6 min on a T4. One feature
+build, three column views, so the arms can differ ONLY in which columns
+the model is allowed to see. The 18 base columns are a transplant of
+yusuketogashi's public 0.915 ranker (`public-solutions-recon.md`,
+addendum 2026-08-22b) -- nobody here chose them.
+
+| arm | cols | what |
+|---|---|---|
+| BASE | 18 | the transplant, unchanged |
+| EXT | 28 | + local spacing, `d/sp`, `md/sp`, `gain/sp`, `xy/sp`, `z/sp`, `vel/sp`, and density at an adaptive 2x-spacing radius instead of the hardcoded 7 um |
+| PURE | 17 | scale-free only: no absolute um, no fixed radius, not even the spacing itself |
+
+Local scale = median distance to the 5 nearest neighbours. Verified
+before the push: a 6 um lattice gives 6.0, the same lattice at half size
+gives 3.0, coincident detections do not collapse it to zero.
+
+**Every measurement says the feature set does not matter.**
+
+| | BASE | EXT | PURE |
+|---|---|---|---|
+| AUC, `ranker_fine`'s own split | **0.9884** | 0.9886 | 0.9875 |
+| corr(per-dataset AUC, density) | +0.053 | +0.021 | -0.083 |
+| sparse-60% -> dense-40% AUC drop (bigger = worse) | 0.0213 | 0.0229 | 0.0258 |
+| holdout linker-only adj_J | **0.9293** | 0.9286 | 0.9269 |
+| corr(adj_J, density) | **-0.733** | -0.736 | -0.739 |
+
+BASE reproduced the recorded 0.9884 **exactly**, so the reproduction is
+faithful and the comparison is trustworthy. The adj_J spread across arms
+is 0.0024, below the ~0.003 resolvable floor. Scale-invariant features
+are if anything very slightly WORSE, and PURE is worst on every single
+line -- dropping absolute micrometres costs a little and buys nothing.
+
+### The useful part: where the -0.73 is NOT
+
+`corr(adj_J, density) = -0.733` reproduces the recorded -0.68 closely, so
+the penalty is real and it survives every reparametrisation tried here.
+But `corr(AUC, density)` is **+0.05, i.e. flat**. The ranker scores edges
+just as well when crowded.
+
+The clearest single case is `6bba_3abfe10a`, 692 cells/frame, the densest
+holdout dataset by 3x:
+
+- AUC 0.9773 -- mid-pack, indistinguishable from the sparse datasets
+- adj_J 0.7788 -- worst of the twelve by 0.15
+
+**So the density penalty is downstream of edge scoring.** AUC ranks all
+pairs; adj_J depends on the top-1 choice per cell. As candidates per cell
+grow, a good ranking still leaves many near-ties for 1:1 Hungarian at a
+fixed `p_min` to break. Detection is the other suspect and the more
+likely one -- `corr(edge J, N/N_true) = -0.64` is already on record.
+
+**Do not re-try this by adding more geometry to the ranker.** Two things
+that follow instead:
+
+- the assignment step rather than the score: candidate count per cell, or
+  a density-dependent `p_min`
+- detection under crowding, which adj_J is bounded by
+
+### Why the reparametrisation was nearly a no-op
+
+Density spans 15x across this train set (46 -> 692 cells/frame) but local
+spacing spans only 2.1x (10.03 -> 21.23 um) -- as it must, since spacing
+goes as density^(-1/3) and 15^(1/3) = 2.47. Dividing by a quantity that
+moves 2.1x cannot undo a 15x change in the thing that actually matters.
+The premise "every distance feature is absolute micrometres" was true;
+the inference that this is what costs us was not.
+
+Artefacts: `edge_ranker_{base,ext,pure}.pkl` in the kernel output. BASE is
+equivalent to the shipped `edge_ranker.pkl`; the other two are not worth
+keeping.
 
 ## 2026-08-24 -- windowing reverted; the seam hypothesis is disproven
 
