@@ -1,21 +1,20 @@
 {
-  "id": "faustine649/biohub-hoct-gate",
-  "title": "Biohub hoct gate",
-  "code_file": "hoct_gate.py",
+  "id": "faustine649/biohub-hoct-score",
+  "title": "Biohub hoct score",
+  "code_file": "hoct_score.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": true,
+  "enable_gpu": false,
   "enable_internet": true,
   "dataset_sources": [
-    "xiaoleilian/biohub-unet3d-weights",
-    "xiaoleilian/biohub-unet3d-weights-v2models",
     "faustine649/cell-tracking"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
-  "kernel_sources": [],
-  "model_sources": [],
-  "machine_shape": "NvidiaTeslaT4"
+  "kernel_sources": [
+    "faustine649/biohub-hoct-gate"
+  ],
+  "model_sources": []
 }

@@ -226,6 +226,57 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ THE RANKER TRAINS ON 32 DATASETS. 187 ARE CACHED. +0.0073.
+
+`poolsize.py` -> `biohub-poolsize`, 39 min on **CPU**. Both arms use the
+same 18 columns, the same code, the same protocol and the same holdout.
+The ONLY difference is how many datasets the edge ranker saw. Rows are
+built once over all 187 and each arm selects its subset by which mount
+the cache came from, so D32 is `ranker_fine`'s pool exactly, not a random
+32.
+
+| arm | datasets | pairs | edge AUC | score | adj_J | div_J | div TP/FP/FN |
+|---|---|---|---|---|---|---|---|
+| D32 | 32 | 39,792 | **0.9884** | 0.9313 | 0.9222 | 0.0909 | 3/21/9 |
+| **D187** | **187** | **225,861** | 0.9864 | **0.9386** | **0.9254** | **0.1316** | **5/26/7** |
+
+**adj_J +0.0032, score +0.0073.** Both anchors hold: D32's edge AUC is
+**0.9884**, the exact figure `ranker_fine` recorded, and D32's adj_J
+0.9222 sits 0.0002 from div-gate's 0.9220 with the saved pkl. So the
+delta is the pool and nothing else.
+
+### Where the unused data came from
+
+`ranker_fine` learned on `biohub-edge-ranker`'s 44 caches minus the 12
+holdout = 32. `biohub-cache-train` cached the other 155 on 2026-08-23 for
+the DIVISION census, and its own header lists "the edge ranker's training
+pool goes from 32 datasets to 187" as payoff #2. **Nobody ever spent it.**
+Every ranker since has loaded the 32-dataset pkl.
+
+**This is free. No new idea, no new dependency, no pixels.** It needs the
+submission kernel to train the ranker on all 187 (or to load a pkl that
+was), and biohub-cpu-probe2 already proved that whole line runs on CPU.
+
+### Edge AUC anti-predicted the pipeline for the THIRD time today
+
+D187's edge AUC is LOWER (0.9864 vs 0.9884) while its adj_J is higher.
+Same inversion as scale-invariant features and as the division model's
+four arms. **Stop reading edge AUC.** (Its own drop is partly mechanical
+-- a bigger pool means a bigger, harder validation split -- but that is
+exactly why it cannot be compared across configurations.)
+
+### A worry that did not materialise
+
+div_J ALSO improved, 0.0909 -> 0.1316, divTP 3 -> 5. The `ranker_fine`
+header warned that a more confident 1:1 linker "steals second daughters
+into wrong continuations, draining the orphan pool the division patch
+mines". A ranker that is more CORRECT, rather than merely more
+confident, feeds that mechanism instead of starving it.
+
+⚠ The run ERRORed at the very end on two lines that still said
+`res["ACC"]`, arm names left over from `accel.py` -- **after** printing
+every number. Fixed. A summary line is not worth a 39-minute run.
+
 ## 2026-08-24 -- ⭐⭐⭐ div-forks: the division line is CLOSED. Three uses, all null.
 
 `div_forks.py` -> `biohub-div-forks`, 38 min. div-gate showed the model
