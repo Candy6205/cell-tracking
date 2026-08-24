@@ -226,6 +226,60 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- HOCT: gate CLOSED, negative. Its FEATURE EXTRACTOR is the keeper.
+
+`hoct_score.py` -> `biohub-hoct-score` v4, 7 min on CPU. Candidate graph
+with scores, 364 edges whose endpoints both matched GT, 111 real
+(30.5% positive) -- so unlike the four earlier attempts there are
+negatives and the AUC means something.
+
+| | AUC |
+|---|---|
+| HOCT `similarity`, blind (v2, no images) | 0.6673 |
+| HOCT `similarity`, with images (v4) | **0.7012** |
+| **negative distance, same edges** | **0.9091** |
+
+**It loses to "closer is better" by 0.21.** Images helped 0.034 and did
+not come close to closing it. There is no fine-tuning path -- the
+training code is withheld -- so the line is closed.
+
+The domain gap was the stated risk and it landed: `general_v0` was
+trained on Cell Tracking Challenge plus a bacteria benchmark, not
+light-sheet embryos. Bounds worth keeping: one dataset, 30 frames, and
+our masks are WATERSHED ON A DETECTION HEATMAP, not real segmentation --
+Bragantini's own caveat is that results depend on mask quality. Better
+than the rank-24 competitor's uniform balls, still synthetic.
+
+### ⭐ What to keep: create_graph is a morphology extractor
+
+`create_graph` computes per-node features from the masks, on CPU, in
+under a second per frame. All live and non-degenerate on our data:
+
+| column | median | p10 | p90 |
+|---|---|---|---|
+| `equivalent_diameter_area` | 7.08 | 5.41 | 8.95 |
+| `intensity_mean` | 0.4948 | 0.2347 | 0.7242 |
+| `border_dist` | 0.4812 | 0.0000 | 0.6102 |
+| `orphan_prob` | 0.0775 | 0.0455 | 0.2609 |
+
+plus `inertia_tensor` and `intensity_min/max/std`.
+
+**Every feature this project owns is a coordinate or a detection score.**
+Cell SIZE, SHAPE and BRIGHTNESS have never been available to any model
+here. `division_features.py` was written to ask whether they separate a
+dividing cell and has no recorded result anywhere.
+
+**This reopens what the division entry above parked.** That entry says
+the remaining division routes "need pixels" and are therefore expensive,
+because reading morphology meant re-reading raw zarr per candidate. It is
+a CPU function call over masks we already know how to build -- the same
+watershed, on the pooled heatmap, which is isotropic for free. The
+"too expensive" filing was wrong and should be revisited before the
+division line is called finished.
+
+⚠ The masks cost one GPU pass and `biohub-hoct-gate` v4 has them cached
+(123 KB npz). Everything downstream is free.
+
 ## 2026-08-25 -- ⭐⭐⭐ THE RANKER TRAINS ON 32 DATASETS. 187 ARE CACHED. +0.0073.
 
 `poolsize.py` -> `biohub-poolsize`, 39 min on **CPU**. Both arms use the
