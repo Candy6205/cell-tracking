@@ -193,6 +193,7 @@ mid-competition — Kaggle pushes and cross-file imports depend on paths):
 
 | File | Purpose |
 |---|---|
+| `kag.py` | the Kaggle CLI with its OAuth token kept fresh — use for every CLI call |
 | `viz_cells.py` | inspect / viz / gif / survey, plus all shared I/O |
 | `cell_count.py` | features / fit / predict — estimate N_true from images |
 | `submit_baseline.py` | predict / score / sweep / verify, and the local scorer |
@@ -208,6 +209,7 @@ mid-competition — Kaggle pushes and cross-file imports depend on paths):
 | `division_recovery.py` | add missed divisions back into an ILP graph, post-hoc |
 | `division_strip_cell.py` / `division_gif_cell.py` | filmstrip / gif of one GT division |
 | `sweep_edge_threshold.py` | greedy-only offline threshold sweep (superseded by the cache) |
+| `ranker_scale.py` | BASE/EXT/PURE column views of the edge features — proved scale-invariance changes nothing |
 | `finetune_detect.py` | fine-tune the detection head (per-crop quantile normalisation lives here) |
 | `zebrahub_extract.py` | cut competition-shaped crops out of Zebrahub (see its header) |
 | `error_analysis.py` | classify every edge error: detection / dropped / confusion / spurious |

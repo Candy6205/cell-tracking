@@ -7,7 +7,7 @@ Two separate channels, and each is only good at one half of the job.
 | | Kaggle MCP connector | official `kaggle` CLI |
 |---|---|---|
 | endpoint | `www.kaggle.com/mcp` | `www.kaggle.com/api/v1` |
-| auth | the `KGAT_…` bearer token in the Claude connector config | `kaggle auth login` (OAuth, cached locally) |
+| auth | the `KGAT_…` bearer token in the Claude connector config | `kaggle auth login` once, then `kag.py` keeps it fresh (trap 1b) |
 | read competitions / leaderboard / forums / notebooks | **yes** | partly |
 | read a finished run's **stdout log** | **yes** | no |
 | list and fetch a run's **output files** | **yes**, with signed URLs | no |
@@ -17,12 +17,15 @@ Two separate channels, and each is only good at one half of the job.
 **The working loop is: push with the CLI, read with the connector.**
 
 ```powershell
-py -m kaggle kernels push -p "D:\programming\cell tracking"
+py kag.py kernels push -p "D:\programming\cell tracking"
 ```
 
 then poll `get_notebook_session_status` and read
 `list_notebook_session_output`, which returns the whole stdout log inline plus
 a signed URL per output file. `curl` fetches those URLs directly.
+
+`kag.py` is the CLI with its OAuth token kept fresh — same arguments, same
+output as `py -m kaggle`. Use it for **every** CLI call; trap 1b says why.
 
 ---
 
@@ -41,26 +44,50 @@ Kaggle's version history.
 
 **Never push a data-dependent kernel through the connector.** Use the CLI.
 
-### 1b. The CLI's access token expires and it does NOT auto-refresh (2026-08-22)
-
-Some hours after `kaggle auth login`, every CLI call starts failing with
-"Authentication required" — or, on `kernels status`, a MISLEADING
-"Permission 'kernels.get' was denied / wrong slug / private notebook". The
-refresh token in `~/.kaggle/credentials.json` is still good; the CLI just
-never uses it on the API path. Fix: mint a fresh token and inject it per
-invocation:
+### 1b. Call the CLI through `kag.py`, never `py -m kaggle` directly
 
 ```powershell
-$env:KAGGLE_API_TOKEN = (py -m kaggle auth print-access-token 2>$null | Out-String).Trim()
-py -m kaggle <whatever>
+py kag.py kernels push -p "D:\programming\cell tracking"
+py kag.py kernels status faustine649/<slug>
+py kag.py --token-status     # how long the token has left, no network call
+py kag.py --refresh          # force a mint now
 ```
 
-```bash
-export KAGGLE_API_TOKEN=$(py -m kaggle auth print-access-token 2>/dev/null)
-```
+`kag.py` refreshes the OAuth access token when, and only when, it is close to
+expiring, then hands the command straight to `py -m kaggle`. Same arguments,
+same output. It exists because of two bugs stacked on each other.
 
-Shell state does not persist between tool calls — prepend this to EVERY
-CLI invocation, including background waiter loops.
+**SUPERSEDED 2026-08-24: the earlier text here said the CLI "does NOT
+auto-refresh" and told you to prepend `KAGGLE_API_TOKEN=$(py -m kaggle auth
+print-access-token)` to every invocation. Both halves were wrong, and the
+recipe is what broke the account's minting.**
+
+What is actually true, read out of kagglesdk 0.1.37:
+
+- **The CLI does auto-refresh — 30 minutes too late.**
+  `KaggleCredentials.access_token_has_expired` computes
+  `expiration < now - timedelta(minutes=30)`, subtracting a safety margin that
+  should be added. So the token is presented as valid for the first half hour
+  *past* its expiry. Every call in that window fails with "Authentication
+  required", or — on `kernels status` — the MISLEADING "Permission
+  'kernels.get' was denied / wrong slug / private notebook". Thirty minutes
+  later it recovers by itself. The old entry only ever saw the dead window.
+- **`auth print-access-token` mints a brand new 12-hour token every time and
+  never saves it.** It calls `generate_access_token` unconditionally; only
+  `refresh_access_token` writes the result back to `credentials.json`. So the
+  old recipe, prepended to a 60-second waiter loop as instructed, minted 60
+  tokens an hour. On 2026-08-24 the endpoint answered
+  `429 Too Many Requests for .../GenerateAccessToken` and the CLI could not
+  mint at all for a while. It cleared within the hour, but do not go back.
+
+`kag.py` uses `refresh_access_token()` — which mints **and** saves — under a
+30-minute margin. Steady state is one mint per 12 hours regardless of how many
+commands or waiter iterations run. Because it writes `credentials.json`, a
+plain `py -m kaggle` also works for the rest of that window; `kag.py` is what
+keeps the window from ever closing.
+
+If it reports `429`, stop: do not retry in a loop. The stored token keeps
+working until its own expiry, and `--token-status` says how long that is.
 
 ### 2. The connector's token does not work for the REST API
 
@@ -125,7 +152,7 @@ progress to read either. Start one background waiter and let it notify:
 
 ```bash
 while true; do
-  s=$(py -m kaggle kernels status faustine649/<slug> 2>&1)
+  s=$(py kag.py kernels status faustine649/<slug> 2>&1)
   if echo "$s" | grep -qiE "complete|error|cancel"; then echo "$s"; break; fi
   sleep 60
 done
@@ -160,7 +187,7 @@ edited you can end up having pushed an earlier version of the script by
 accident. Check what is running before pushing:
 
 ```bash
-py -m kaggle kernels status faustine649/<slug>
+py kag.py kernels status faustine649/<slug>
 ```
 
 ### 8. Backslashes are eaten one layer before Python sees them
@@ -186,10 +213,82 @@ script.
 | cache size per dataset | 0.1–1.0 MB |
 | the whole 199-dataset train set, extrapolated | ~3.3 h GPU, ~30 MB |
 
-GPU quota is 30 h/week and does not accumulate, but across the remaining weeks
-that is well over 100 h. **A 12-dataset validation pass costs about 11 minutes.
-Quota is not the scarce resource; wall-clock attention is.**
+`SUPERSEDED 2026-08-24`: this section used to end "Quota is not the scarce
+resource; wall-clock attention is." **That is now false and acting on it is
+expensive.** See below.
 
 ---
 
-*Last updated: 2026-08-23*
+## 9. Quota mechanics, measured 2026-08-24
+
+On 2026-08-24 the weekly GPU quota stood at **102,089 s of 108,000 s (28.4 of
+30 h) with five days to refresh** — about 98 minutes left. Read it before
+planning a session:
+
+```bash
+# MCP connector: get_accelerator_quota
+```
+
+### What the quota charges for
+
+Measured by reading `time_used` around known events:
+
+| | charged? |
+|---|---|
+| sitting in the QUEUE | **no** — `biohub-hoct-gate` queued 67 min of its 88 and only ~10 min of quota moved |
+| a session that STARTS, from container-up | **yes, all of it** |
+| **mounting data sources** | **yes** — and this is the trap |
+| a CPU kernel (`enable_gpu: false`) | **no** — separate pool |
+
+**A kernel that dies instantly still pays the full mount.** `biohub-det-ablate2`
+v1 hit an `assert` **7.7 seconds** into the script and burned **~4.7 minutes**
+of quota. Nearly all of it was mounting the 87.6 GB competition data and the
+7.5 GB Zebrahub crops — which that script never read. It was attached only to
+satisfy an `assert ROOT is not None` inherited from `cache_train.py`'s preamble.
+
+**So: never attach a data source the script does not read.** The competition
+data alone is 87.6 GB across 21,494 files.
+
+### Queue time is not free, it is just not quota
+
+Near the cap Kaggle deprioritises: the same day, GPU kernels queued **18 to 67
+minutes** while CPU kernels started in **under 2 minutes**. That costs the
+session's wall clock, not the weekly budget. Both are real; do not confuse them.
+
+Note the batch-session cap is separate again (trap 7): two at a time, and a CPU
+kernel occupies a slot exactly like a GPU one.
+
+### Most of this project's GPU spend never needed a GPU
+
+Of ~234 GPU-minutes spent on 2026-08-24, roughly **140 went to kernels whose
+entire input was under 100 MB of cached detections** — div-gate, div-forks,
+div-kinematics, div-train, ranker-scale. None ran a detector. `pyscipopt` is
+CPU, sklearn's GBM is CPU.
+
+`biohub-cpu-probe` established where the real boundary is. On a CPU machine the
+environment builds, caches load, the ranker predicts, **the capacity-2 ILP
+solves in 7 seconds**, and forks score. Only the official metric fails, on one
+line:
+
+```
+tracking_cellmot/io.py:199, in _process_on_gpu
+    torch.from_numpy(image).pin_memory().to(torch_device, non_blocking=True)
+RuntimeError: Cannot access accelerator device when none is available.
+```
+
+The old note "official metric needs a GPU machine even to score" is true as
+written and much narrower than it sounds: **the metric never touches the
+image.** `score_dir` uses `dset.tracks` and `dset.scale` and nothing else; the
+GPU was demanded only to load and normalise an array that is then ignored.
+`open_dataset` takes `load_image: bool = True` — pass **`load_image=False`** and
+the transfer is skipped.
+
+`biohub-cpu-probe2` is testing whether that reproduces div-gate's unpruned row
+(score 0.9363, adj_J 0.9220, div_J 0.1429, TP/FP/FN 5/23/7) on a CPU machine.
+One thing to watch if the numbers move: `_process_on_gpu` can update `scale`
+when it resamples, and the metric takes `scale=dset.scale`. With
+`target_scale=None` it does not resample, so it should be untouched.
+
+---
+
+*Last updated: 2026-08-24 (quota mechanics, section 9)*
