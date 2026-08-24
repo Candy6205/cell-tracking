@@ -283,11 +283,34 @@ GPU was demanded only to load and normalise an array that is then ignored.
 `open_dataset` takes `load_image: bool = True` — pass **`load_image=False`** and
 the transfer is skipped.
 
-`biohub-cpu-probe2` is testing whether that reproduces div-gate's unpruned row
-(score 0.9363, adj_J 0.9220, div_J 0.1429, TP/FP/FN 5/23/7) on a CPU machine.
-One thing to watch if the numbers move: `_process_on_gpu` can update `scale`
-when it resamples, and the metric takes `scale=dset.scale`. With
-`target_scale=None` it does not resample, so it should be untouched.
+### CONFIRMED 2026-08-24: the ILP and the scorer run on CPU, bit for bit
+
+`biohub-cpu-probe2` reproduced div-gate's unpruned row EXACTLY on a CPU
+machine:
+
+| | GPU (biohub-div-gate) | CPU (biohub-cpu-probe2) |
+|---|---|---|
+| score | 0.9363 | **0.9363** |
+| adj_J | 0.9220 | **0.9220** |
+| div_J | 0.1429 | **0.1429** |
+| div TP/FP/FN | 5/23/7 | **5/23/7** |
+| scorable forks | 553 | **553** |
+| p_div median / p90 | 0.1812 / 0.7484 | **0.1812 / 0.7484** |
+
+Every figure identical. `load_image=False` is equivalent, not an
+approximation. The 12-dataset global solve costs 623 s on CPU against 419 s on
+GPU — about 1.5x slower, for **zero quota and no queue**.
+
+**So: any kernel that starts from cached detections belongs on a CPU machine.**
+That is the ranker, the ILP, every sweep, and all scoring. Reserve GPU strictly
+for work that touches raw pixels — detector inference, mask building, training.
+
+The pattern this came from is worth keeping: "official metric needs a GPU
+machine even to score" sat in a handoff bullet list for days with no entry
+behind it, and every kernel since inherited `enable_gpu: true` from
+`ranker_fine` without anyone testing it. **An unverified constraint copied
+forward is as expensive as a bug.** The same day, the edge ranker's 18 features
+turned out to be a wholesale transplant nobody here had chosen either.
 
 ---
 

@@ -378,6 +378,7 @@ NAME = "6bba_268e1230"       # one dataset; this is recon, not measurement
 N_FRAMES = 30
 MASK_FLOOR = 0.05            # heatmap value bounding a cell's region
 MATCH_UM = 5.0
+DIST_UM = 15.0    # our linking gate is 10 um; 300 was 487 um
 POOLED = np.array([SCALE[0], SCALE[1] * POOL, SCALE[2] * POOL])
 print(f"\n  pooled voxel spacing {tuple(POOLED)} um -- isotropic: "
       f"{np.allclose(POOLED, POOLED[0])}", flush=True)
@@ -444,14 +445,29 @@ try:
           flush=True)
     print("   ", (r2.stdout or "(none found)").strip()[:600], flush=True)
 
-    sig = inspect.signature(hoct.predict)
-    print(f"  predict{sig}", flush=True)
-    kw = {}
-    for cand in ("full_graph", "return_candidates", "solve", "full"):
-        if cand in sig.parameters:
-            kw[cand] = (False if cand == "solve" else True)
-    print(f"  calling predict with extra kwargs {kw}", flush=True)
+    # v1 guessed the parameter names and got all of them wrong, so it ran
+    # with defaults and returned the SOLVED graph -- solved edges carry no
+    # score, so there were no negatives and the AUC was undefined. The
+    # real names, read off the signature v1 printed:
+    #   return_solution=False  -> the full candidate graph WITH scores
+    #   scale                  -> v1 passed nothing, so distances were in
+    #                             voxels and distance_threshold=300 meant
+    #                             487 um, absurdly permissive
+    kw = dict(return_solution=False,
+              scale=tuple(float(v) for v in POOLED),
+              distance_threshold=DIST_UM)
+    print(f"  calling predict with {kw}", flush=True)
     graph = hoct.predict(model, labels=labels, **kw)
+    if graph is None:
+        # the signature says `-> RustWorkXGraph | None`. If withholding the
+        # solve also withholds the graph, fall back to the solved one so
+        # the run still lands v1's reproduction instead of nothing.
+        print("  return_solution=False gave None -> retrying WITH the "
+              "solve; the AUC will then have no negatives again, which is "
+              "itself the answer about how to reach the scores",
+              flush=True)
+        kw["return_solution"] = True
+        graph = hoct.predict(model, labels=labels, **kw)
     print(f"  returned {type(graph)}", flush=True)
     print("  attributes:", [n for n in dir(graph)
                             if not n.startswith("_")][:40], flush=True)
@@ -505,6 +521,38 @@ def extract(g):
     The README documents only `to_geff`, so try that first -- it lands in
     a format read_geff already handles -- then fall back to networkx and
     tracksdata shapes. Every attempt says what it tried."""
+    # tracksdata graph first: to_geff drops the edge scores, and scores
+    # are the entire point of this run.
+    try:
+        ek = list(g.edge_attr_keys)
+        print(f"  edge_attr_keys: {ek}", flush=True)
+        print(f"  node_attr_keys: {list(g.node_attr_keys)}", flush=True)
+        score_key = next((k for k in ("edge_prob", "prob", "score",
+                                      "weight", "logit") if k in ek), None)
+        na_ = g.node_attrs(attr_keys=["node_id", "t", "z", "y", "x"])
+        nid = [int(v) for v in na_["node_id"].to_list()]
+        order = {v: i for i, v in enumerate(nid)}
+        nodes = np.stack([np.asarray(na_[c].to_list(), float)
+                          for c in ("t", "z", "y", "x")], axis=1)
+        keys = ["source_id", "target_id"] + ([score_key] if score_key
+                                             else [])
+        ea_ = g.edge_attrs(attr_keys=keys)
+        ed, sc = [], []
+        for k2 in range(len(ea_["source_id"])):
+            a = order.get(int(ea_["source_id"].to_list()[k2]))
+            b = order.get(int(ea_["target_id"].to_list()[k2]))
+            if a is None or b is None:
+                continue
+            ed.append((a, b))
+            if score_key:
+                sc.append(float(ea_[score_key].to_list()[k2]))
+        print(f"  tracksdata route: {len(nodes)} nodes, {len(ed)} edges, "
+              f"score key {score_key!r}", flush=True)
+        if ed:
+            return nodes, ed, (np.asarray(sc, float) if score_key
+                               else None)
+    except Exception as exc:
+        print(f"  tracksdata route failed: {exc!r}", flush=True)
     try:
         p = "/kaggle/working/hoct_out.geff"
         g.to_geff(p)
