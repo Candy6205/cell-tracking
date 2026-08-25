@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-nms4",
-  "title": "Biohub nms4",
-  "code_file": "nms4.py",
+  "id": "faustine649/biohub-render6",
+  "title": "Biohub render6",
+  "code_file": "render6.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -15,10 +15,7 @@
     "biohub-cell-tracking-during-development"
   ],
   "kernel_sources": [
-    "faustine649/biohub-edge-ranker",
-    "faustine649/biohub-cache-train",
-    "faustine649/biohub-prenms-cache",
-    "faustine649/biohub-prenms2"
+    "faustine649/biohub-edge-ranker"
   ],
   "model_sources": []
 }
