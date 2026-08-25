@@ -108,3 +108,48 @@ step.
 
 **An offline AUC is not a score.** On 2026-08-24 edge AUC anti-predicted
 the pipeline three times running. Measure adj_J.
+
+## Three domains, or it does not count (2026-08-25)
+
+**The 12-dataset holdout is 0 for 2 against the leaderboard.** Windowing
+measured +0.0019 locally and scored -0.001; the ranker pool measured
+**+0.0073**, reproduced bit for bit by two runs with both anchors
+holding, and scored -0.001 with hidden-test output within 0.07%. Both
+positive local deltas simply were not there.
+
+The boundary is a MAGNITUDE, not a direction. It is tempting to say the
+holdout "rejects reliably but selects unreliably" -- **there is no
+evidence for that asymmetry** (the user's correction). If it inverts on
+a +0.007 it has no claim on a -0.002 either. What it can still do is
+reject an effect far outside the ~0.007 inversion scale: `node_filter`'s
+-0.03 and `div_gate`'s monotone prune curve are safe rejections.
+
+**So every pipeline evaluation runs in three domains and a change counts
+only if its adj_J delta has the SAME SIGN in all of them:**
+
+| domain | why it is there |
+|---|---|
+| `6bba` (12 holdout) | the recorded anchor lives here |
+| `44b6` (12, outside the ranker's pool) | the OTHER imaging batch -- 327 cells/frame against 97, displacement p99 4.90 um against 7.81 |
+| Zebrahub (6-8 crops) | a different instrument, and **no public model has seen it** -- which `6bba` cannot claim, since DeepCenter validated on 6bba and the xl detector's split is unknown |
+
+Zebrahub is a TEST domain here, not a training one. Those are different
+requirements and conflating them is a mistake already made once: a
+Zebrahub-TRAINED node filter lost 0.03 adj_J on competition data
+(`biohub-node-filter`), which says nothing about whether a difference
+MEASURED there reproduces. Training transfer needs learned parameters to
+stay valid across domains; test-domain use needs only the ORDERING to
+survive.
+
+Machinery: `post_sweep.py` and `thr3.py` carry all three, including
+`zh_load` (from `zh_pipeline.py`) which builds a GT graph from Zebrahub's
+own arrays and scores it with the OFFICIAL metric. Reuse them rather
+than rebuilding.
+
+**Watch the ranker leak when choosing which model to load.** D187 trained
+on 187 of 199, so every `44b6` dataset is in its pool and its edge
+probabilities there favour whatever configuration produced its training
+candidates. Sweeps that change the DETECTIONS must use D32 and exclude
+its 32 datasets from the 44b6 arm. Sweeps that only touch post-link
+constants may use either, because the same ranker, detections and ILP
+solution appear in both arms and the bias cancels in the delta.

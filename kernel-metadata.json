@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-post-sweep",
-  "title": "Biohub post sweep",
-  "code_file": "post_sweep.py",
+  "id": "faustine649/biohub-thr3",
+  "title": "Biohub thr3",
+  "code_file": "thr3.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
