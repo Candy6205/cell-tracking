@@ -481,15 +481,32 @@ This matters because the estimate has already been used to block work —
 risky to submit on its own", and 11.8 h is the entire reason. That
 verdict rests on an unverified extrapolation and should be revisited.
 
-**A measurement is available and costs nothing:** the visible run emits
-`submission.csv` for 4 movies, and the submission record carries
-`total_bytes` for the hidden run (262,623,879 for ref 55707206).
-Dividing gives the hidden movie count directly, which is the weaker of
-the two assumptions. Do that instead of repeating the estimate.
+**The broken factor is the 210 s, not the ~200.** The user pointed this
+out too: the community's own estimate of the hidden split is also about
+200, so that half is probably fine. The 210 s/dataset is the problem,
+and the reason is visible in this project's own logs — **per-dataset
+cost varies by more than an order of magnitude**:
 
-Until then, treat 11.8 h as what it is: **arithmetic, not a
-measurement.** It is a reason to watch the margin, not a budget charge,
-and not a fact.
+| 6bba dataset | nodes | solve time |
+|---|---|---|
+| `6bba_3abfe10a` | 53,504 | **495 s** |
+| `6bba_aeee7805` | 4,809 | **8 s** |
+
+11x the nodes, 60x the time, because linking cost runs about `n^1.5` in
+candidate pairs. **A mean over 4 arbitrary movies is not an estimator of
+the mean over 200** when the distribution is that skewed — and the 4
+visible movies were chosen by the competition, not sampled by us.
+
+Same error as everything else in this section: **a number measured on
+one population applied to another.**
+
+### The practical rule
+
+**Stop pricing submissions with this number.** The observed fact is that
+no submission has ever failed to finish, over many runs. Until a run
+actually times out, the 12 h cap is not a binding constraint and must
+not be used to block a change. If the margin ever needs checking, check
+it by looking at whether a run timed out — not by re-deriving 11.8 h.
 
 **A kernel that dies instantly still pays the full mount.** `biohub-det-ablate2`
 v1 hit an `assert` **7.7 seconds** into the script and burned **~4.7 minutes**
