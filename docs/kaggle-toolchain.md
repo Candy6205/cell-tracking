@@ -317,6 +317,49 @@ did not create — `colab sessions` shows the user's own work alongside
 ours, and taking over the wrong one interferes with a job you cannot
 see.
 
+### ⚠ "Session appears to be lost (404/401). Cleaning up." IS A FALSE NEGATIVE
+
+Observed three times, and the third with direct proof. **The VM does not
+die. The CLI deletes its own local name → session record on one
+transient error**, and after that every command taking `-s <name>` —
+including `stop` — cannot reach a machine that is still running and
+still being billed.
+
+The proof, when `ct3` went "lost":
+
+| | |
+|---|---|
+| keep-alive daemon | **still running**, PID 1205, 3.1 hours |
+| the assignment | **still listed** by the server |
+| `sessions.json` | the name was **gone** |
+
+Two earlier write-ups in this file blamed idle-pruning and then a dead
+keep-alive daemon. **Both were wrong**, and both were built on the
+assumption that the VM had died — which was never checked. `colab
+sessions` prints `[?]` for exactly this state: a server-side assignment
+with no local record.
+
+**The fix is `heal()` in `tools/colab/cx.sh`**, which runs before every
+command that touches a live session: if the name is missing and exactly
+one orphaned assignment exists, `tools/colab/adopt.py` rebuilds the
+record from the live assignment using the CLI's own client, so the proxy
+token is fetched by the library and never handled by us. It refuses to
+guess when more than one orphan exists, because one of them could be the
+user's.
+
+`adopt.py --list` shows which assignments have names and which do not.
+Recovering a stranded VM to stop it is the same two commands.
+
+Two smaller traps found alongside:
+
+- `colab status -s <missing>` prints "not found" and **exits 0**, so an
+  `|| new` guard never fires. Read `sessions.json` instead.
+- `colab keep-alive` takes **positional** `{endpoint} {session_name}`,
+  not `-s`, and terminates itself after 24 h.
+- Scripts written by the Windows-side file tools get **CRLF** endings and
+  bash rejects them (`$'\r': command not found`). Convert to LF before
+  running anything through wsl.
+
 ### Everything below still holds
 
 Established 2026-08-25 on the user's WSL install of `google-colab-cli`.
