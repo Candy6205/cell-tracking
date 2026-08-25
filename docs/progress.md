@@ -8,11 +8,49 @@
 > Engineering conventions: `engineering-rules.md` (rule 1: degradation is
 > never silent).
 
-## HANDOFF (2026-08-24, written at the end of a very long session)
+## HANDOFF (2026-08-26, replacing the 2026-08-24 one below)
 
-**LB 0.921, rank ~155 / 2658.** The best submission is **ref 55707206**:
-xl detect + learned edge re-ranker + capacity-2 tracksdata ILP at
-div_w 0.55, **solved GLOBALLY (no windowing)**.
+**Best confirmed LB is still 0.921, ref 55707206** (D32 ranker).
+**Ref 55772253 is PENDING** — `SHORT_MIN` 6 → 4, one non-comment line
+different from ref 55757064, so its control is **0.920**, not 0.921.
+
+### The single most important open question
+
+**Does a three-domain-agreeing result appear on the leaderboard?**
+
+The 12-dataset holdout is 0 for 2 against the LB (windowing +0.0019 →
+−0.001; ranker pool +0.0073 → −0.001), and both failures were `6bba`
+alone. The pre-registered rule — same sign in `6bba`, `44b6` and
+Zebrahub — was built to fix that, and `SHORT_MIN` 6 → 4 is the first
+candidate it has ever produced (+0.0025 / +0.0054 / +0.0045). Ref
+55772253 tests the RULE, not the constant. Either answer is worth more
+than the constant:
+
+- **it appears** → three-domain agreement buys what a single-domain
+  holdout does not, and the rule earns its cost;
+- **it does not** → the rule is not sufficient either, and no local
+  measurement at this scale should drive a submission again.
+
+### What 2026-08-25/26 closed, and what it opened
+
+| line | verdict |
+|---|---|
+| post-link constants (14 changes) | **one survivor**: `SHORT_MIN` 6 → 4 |
+| `SHORT_MIN` curve, 1→7 | a curve, not a spike; deleting length-4 and length-5 tracks loses in **all three** domains |
+| NMS radius / density | **closed.** 2 of 3 domains, none significant |
+| detector depth | **closed.** signs disagree, nothing significant |
+| gap closing (span, interpolation) | **closed.** all arms fail the rule; the span never mattered |
+| detection gate 0.15 → 0.12 | **contested.** 6bba +0.0021 and Zebrahub +0.0080 against 44b6 −0.0006. Discarded by the rule; the user's call |
+| morphology | closed 2026-08-25 (`MASS_ratio` median 0.994) |
+
+**The one thing OPENED and not yet acted on**: `flicker.py` found that
+**no annotated cell is permanently invisible** — 0.0% of 379 GT tracks
+are never detected, 28.8% are intermittent, and **48% of dropouts are
+longer than the one frame `_gap_close` can bridge**. `gap2` then showed
+the obvious repairs do not work, because at 79.8% of missed frames the
+heatmap response *vanishes* rather than dipping below threshold. So the
+losses are real, identified, and currently unaddressed by anything that
+has been tried.
 
 ### Read these first
 
