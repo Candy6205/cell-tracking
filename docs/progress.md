@@ -306,6 +306,79 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- NMS costs 0.9% and the radius is already right. Line closed.
+
+`nms_loss.py` -> `biohub-nms-loss` v1, **9 min on CPU**, on
+`biohub-prenms-cache`'s pre-suppression peaks for the 12 `6bba` holdout
+datasets.
+
+| | |
+|---|---|
+| GT reachable BEFORE suppression | **0.9652** |
+| GT reachable AFTER suppression | **0.9561** |
+| **cost of NMS** | **0.0091** |
+
+Per dataset the loss runs 0.0% to 3.8%, mostly under 1%.
+
+### The radius sweep has nothing in it
+
+| rule | recall | detections kept |
+|---|---|---|
+| fixed 2.0 um | 0.9564 | 168,240 |
+| fixed 3.0 um | 0.9564 | 168,220 |
+| **fixed 4.0 um (shipped)** | **0.9561** | 167,575 |
+| fixed 5.0 um | 0.9554 | 166,609 |
+| fixed 6.0 um | 0.9519 | 163,411 |
+| adaptive, beta 0.30 | 0.9564 | 168,205 |
+| adaptive, beta 0.45 | 0.9561 | 167,657 |
+| adaptive, beta 0.80 | 0.9320 | 155,454 |
+
+Halving the radius buys **+0.0003 recall for 665 more detections**, and
+the adaptive rule -- radius = beta x the frame's median
+nearest-neighbour distance, which was meant to remove the tuned
+constant -- does not beat the fixed one anywhere. **`NMS_UM` 4.0 is
+already right. Closed.**
+
+### ⚠ Two errors of mine this run exposes
+
+**1. The density correlation is computed against the wrong quantity.**
+The `cells/fr` column reads 5-13, which is ANNOTATION density, not true
+cell density -- `reference.md` records `corr(annotation density, true
+density) = -0.20`, i.e. **negative**, and "N_true cannot be inferred
+from the GT". So `corr(fraction lost to NMS, cells per frame) = +0.0041`
+says nothing about true density and must not be quoted as if it did.
+
+The conclusion survives anyway, by MAGNITUDE rather than by
+correlation: NMS removes 0.91% of reachable GT in total, so even if
+every bit of it landed on the densest datasets it could not produce
+`corr(adj_J, density) = -0.733`. **The recorded explanation -- that the
+density penalty sits downstream of edge scoring, in near-ties among many
+candidates -- still stands, and the NMS hypothesis is refuted.**
+
+**2. `det_floor`'s "13.1% of cells have no peak at any threshold" is a
+ZEBRAHUB number and I generalised it.** On competition data the same
+measurement is far better:
+
+| | detector reaches |
+|---|---|
+| Zebrahub | 0.8688 |
+| **6bba (competition)** | **0.9652** |
+
+I had called the 9.5% "has a peak but is discarded" the largest
+recoverable loss on the board and pointed NMS at it. On the data that
+is actually scored, the detector reaches 96.5% of GT before suppression
+and 95.6% after. **That reframing was a domain-gap number applied to the
+competition, and the lead it motivated is now measured and empty.**
+
+### What this leaves
+
+Detection on competition data is not where the loss is: 96.5% reachable
+before NMS, 95.6% after, and the shipped gate and radius are both at or
+near their best. The remaining gap between 95.6% reachable and the
+pipeline's actual performance is downstream -- in which candidate the
+linker picks, which is where `corr(adj_J, density) = -0.733` already
+pointed.
+
 ## 2026-08-25 -- the GT is 212 KB, and the 44b6 arm is 2x noisier than the 6bba one
 
 `gt_export.py` -> `biohub-gt-export` v1, **1 min on CPU**. Writes what

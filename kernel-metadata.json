@@ -1,20 +1,23 @@
 {
-  "id": "faustine649/biohub-gt-export",
-  "title": "Biohub gt export",
-  "code_file": "gt_export.py",
+  "id": "faustine649/biohub-nms-loss",
+  "title": "Biohub nms loss",
+  "code_file": "nms_loss.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
   "enable_gpu": false,
-  "enable_internet": false,
+  "enable_internet": true,
   "dataset_sources": [
+    "pilkwang/biohub-tracking-support-pack-50ep-v1",
     "faustine649/cell-tracking"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
   "kernel_sources": [
-    "faustine649/biohub-poolsize"
+    "faustine649/biohub-edge-ranker",
+    "faustine649/biohub-cache-train",
+    "faustine649/biohub-prenms-cache"
   ],
   "model_sources": []
 }
