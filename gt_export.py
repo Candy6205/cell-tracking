@@ -108,6 +108,25 @@ for name in NAMES:
               f"dataset will be ABSENT and any consumer must skip it",
               flush=True)
         continue
+    # estimated_number_of_nodes is the organisers' TRUE cell count for
+    # the dataset, and the official metric divides by it:
+    #
+    #   J_adj = max(0, J * (1 - 0.1 * (N_pred - n_total) / n_total))
+    #
+    # v1 omitted it, so `colab_check` had nothing to pass and used the
+    # ANNOTATED node count instead -- 997 where the true count is about
+    # 52100 for 6bba_3abfe10a. That drove the ratio to 52.7, clamped
+    # that dataset's adj_J to zero, and made Colab look like it computed
+    # a different answer from Kaggle (0.1736 against 0.9254) when the
+    # pipeline was in fact identical, division TP/FP/FN and all.
+    #
+    # Saved as a 0-d array so a consumer reads it with .item().
+    _est = gt.get("extra", {}).get("estimated_number_of_nodes")
+    if _est is None:
+        print(f"  WARN {name}: no estimated_number_of_nodes in the geff "
+              f"metadata. A consumer CANNOT compute adj_edge_jaccard for "
+              f"this dataset and must skip it rather than substitute the "
+              f"annotated count.", flush=True)
     out = {
         "t": np.asarray(gt["t"], np.int32),
         "z": np.asarray(gt["z"], np.float32),
@@ -116,6 +135,7 @@ for name in NAMES:
         "node_ids": np.asarray(gt["node_ids"], np.int64),
         "edges": np.asarray(gt["edges"], np.int64),
         "name": np.array([name]),
+        "n_total": np.array(float(_est) if _est is not None else np.nan),
     }
     np.savez_compressed(OUT / f"gt_{name}.npz", **out)
     n_n = len(out["t"])

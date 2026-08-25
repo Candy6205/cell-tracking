@@ -104,7 +104,31 @@ def load_gt_graph(name):
     gp = gdir / f"{name}.geff"
     dr._save(str(gp), arr, edges)
     r = td.graph.IndexedRXGraph.from_geff(str(gp))
-    return (r[0] if isinstance(r, tuple) else r), len(arr)
+
+    # `n_total` is the organisers' TRUE cell count, NOT len(arr).
+    #
+    # v1 returned len(arr) -- the number of ANNOTATED nodes -- and the
+    # caller passed it to per_sample_metrics as n_total. 6bba is 9.71%
+    # annotated, so for 6bba_3abfe10a that was 997 against a true 52100.
+    # The metric's penalty
+    #     J_adj = max(0, J * (1 - 0.1 * (N_pred - n_total) / n_total))
+    # then saw a ratio of 52.7 and clamped that dataset to zero, which
+    # dragged the run to adj_J 0.1736 against Kaggle's 0.9254 and looked
+    # exactly like a platform difference. It was not: division_jaccard
+    # has no such penalty and reproduced 0.1316 with TP/FP/FN 5/26/7
+    # identical, which is what gave the bug away.
+    #
+    # The eighth time in this session that the ANNOTATED subset was used
+    # where the FULL population belongs. See working-agreement.md,
+    # "Say the DENOMINATOR out loud".
+    n_total = float(z["n_total"]) if "n_total" in z.files else float("nan")
+    if not np.isfinite(n_total):
+        raise RuntimeError(
+            f"{name}: the exported GT carries no n_total "
+            f"(estimated_number_of_nodes). Re-run biohub-gt-export with "
+            f"the fixed script. Substituting the annotated node count "
+            f"here is what produced the bogus 0.1736.")
+    return (r[0] if isinstance(r, tuple) else r), n_total
 
 
 SCALE = np.array([1.625, 0.40625, 0.40625])
@@ -811,11 +835,14 @@ for k, name in enumerate(NAMES):
     dr._save(str(pdir / f"{name}.geff"), arr, e3)
     r_ = td.graph.IndexedRXGraph.from_geff(str(pdir / f"{name}.geff"))
     g = r_[0] if isinstance(r_, tuple) else r_
-    gtg, n_gt = load_gt_graph(name)
+    # n_total, NOT n_gt: the organisers' TRUE cell count. Calling it
+    # n_gt is what made passing the ANNOTATED count look reasonable, and
+    # that substitution is the whole of the bogus 0.1736.
+    gtg, n_total = load_gt_graph(name)
     er = compute_metric(g, gtg, scale=tuple(SCALE))
     rec = (node_recall(g, gtg) if g.num_edges() > 0 and g.num_nodes() > 0
            else 0.0)
-    rows.append(per_sample_metrics(er, float(n_gt), rec))
+    rows.append(per_sample_metrics(er, float(n_total), rec))
     print(f"  {k+1}/{len(NAMES)} {name}: nodes {len(ids)} edges {len(e3)} "
           f"({time.time()-t0:.0f}s)", flush=True)
     del dets, feats, probs, graph

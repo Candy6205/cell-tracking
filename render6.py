@@ -74,41 +74,94 @@ TARGET_W = 900              # output width in pixels; height follows aspect
 FPS = 10
 CRF = 23                    # H.264 quality; lower is bigger and better
 
-# ---- environment -------------------------------------------------------
-PACK = pathlib.Path("/kaggle/input/datasets/pilkwang/"
-                    "biohub-tracking-support-pack-50ep-v1")
-if not PACK.exists():
-    PACK = pathlib.Path("/kaggle/input/biohub-tracking-support-pack-50ep-v1")
-
-r = subprocess.run(["git", "clone", "--depth", "1",
-                    "https://github.com/royerlab/"
-                    "kaggle-cell-tracking-competition.git",
-                    "/kaggle/working/repo"], capture_output=True, text=True)
-print("git clone exit", r.returncode, flush=True)
-
-WH = pathlib.Path("/kaggle/working/wheelhouse")
-WH.mkdir(parents=True, exist_ok=True)
-for w in sorted(PACK.rglob("*.whl")):
-    (WH / w.name).write_bytes(w.read_bytes())
-r = subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                    "--no-index", "--no-deps"]
-                   + [str(w) for w in sorted(WH.glob("*.whl"))],
-                   capture_output=True, text=True)
-print("pip wheels exit", r.returncode, flush=True)
-
-sys.path.insert(0, "/kaggle/working/repo/src")
-sys.path.insert(0, "/kaggle/working/repo/scripts")
+# ---- environment: DELIBERATELY does not install the support pack -------
+# v1 installed every wheel in biohub-tracking-support-pack and died on
+#
+#   AttributeError: 'numpy.ufunc' object has no attribute '__qualname__'
+#
+# raised from numpy.ma while matplotlib was reading its own rc file. The
+# pack ships a numpy that Kaggle's matplotlib cannot use. `--no-deps`
+# does not help: it stops pip resolving EXTRA packages, it does not stop
+# it installing a numpy that is sitting right there in the wheel list.
+#
+# nms3/nms4 installed the same pack and were fine because they never
+# import matplotlib. This script does, so the conflict surfaces.
+#
+# The pack exists for tracksdata and pyscipopt -- the ILP -- and for the
+# official scorer. **This script uses neither.** It reads a zarr volume,
+# projects it, draws circles, and encodes a video. Kaggle's own
+# environment already has numpy, scipy, matplotlib and imageio, and they
+# agree with each other. So install nothing, and only fall back to pip
+# for a reader that is genuinely absent.
 sys.path.insert(0, "/kaggle/input")
 for p in pathlib.Path("/kaggle/input").glob("*/cell-tracking*"):
     sys.path.insert(0, str(p))
 for p in pathlib.Path("/kaggle/input").glob("*/*/cell-tracking*"):
     sys.path.insert(0, str(p))
 
+def _need(mod, pkg=None):
+    """Import, and pip-install ONLY if genuinely missing.
+
+    v2 passed --no-deps here, to keep numpy from moving. That installed
+    zarr without `donfig` and the import failed anyway. **--no-deps is
+    the wrong tool**: the goal is not "install nothing else", it is
+    "install everything except a different numpy".
+
+    So pin numpy to the version already imported and let pip resolve the
+    rest normally. pip cannot satisfy a request to change numpy when the
+    current version is also demanded, so it leaves it alone.
+    """
+    try:
+        return __import__(mod)
+    except ImportError:
+        pass
+    pin = f"numpy=={np.__version__}"
+    r = subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                        pkg or mod, pin],
+                       capture_output=True, text=True)
+    tail = [x for x in (r.stdout + r.stderr).strip().split("\n") if x]
+    print(f"  pip install {pkg or mod} (with {pin}) -> rc {r.returncode}"
+          f"  {tail[-1][:100] if tail else ''}", flush=True)
+    return __import__(mod)
+
+
 import matplotlib                                                # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt                                  # noqa: E402
 import imageio.v2 as imageio                                     # noqa: E402
 from scipy.spatial import cKDTree                                # noqa: E402
+
+print("versions:", flush=True)
+for _m in ("numpy", "scipy", "matplotlib", "imageio"):
+    try:
+        print(f"  {_m:<12} {__import__(_m).__version__}", flush=True)
+    except Exception as _e:
+        print(f"  {_m:<12} {_e}", flush=True)
+
+# The volumes and the .geff are both zarr stores. viz_cells falls back to
+# a zarr-free filesystem reader if zarr is absent, but that path skips
+# the geff metadata `extra` where estimated_number_of_nodes lives, so
+# ask for zarr properly. geff itself is optional metadata sugar.
+_HAVE_ZARR = True
+try:
+    _need("zarr")
+except Exception as _e:
+    _HAVE_ZARR = False
+    print(f"  zarr unavailable ({type(_e).__name__}: {_e}); "
+          f"load_volume falls back to blosc2 and read_geff to its "
+          f"zarr-free filesystem reader", flush=True)
+    try:
+        _need("blosc2")
+    except Exception as _e2:
+        print(f"  blosc2 ALSO unavailable ({_e2}) -- no way to read the "
+              f"volumes, this run cannot work", flush=True)
+try:
+    _need("geff")
+except Exception as _e:
+    print(f"  geff unavailable ({type(_e).__name__}); falling back to "
+          f"raw zattrs. estimated_number_of_nodes may be absent, which "
+          f"only affects a printed line.", flush=True)
+
 from viz_cells import (find_root, geff_path, zarr_path,          # noqa: E402
                        read_geff)
 
