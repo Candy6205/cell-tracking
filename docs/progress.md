@@ -306,6 +306,77 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ the detection ceiling: 13.1% of cells have NO peak at any threshold, and 9.5% are thrown away after having one
+
+`det_floor.py` -> `biohub-det-floor` v1, **16 min on a T4**, 41 crops,
+every 20th frame, 50,897 GT points. Two questions in one pass.
+
+**Anchor holds:** FULL at floor 0.05, gate 0.15 reads F1 0.7554 against
+`det_ablate3` v3's 0.7539 (that run used every 10th frame).
+
+### 1. The peak-finding floor is NOT a lever. Closed.
+
+"Recall ceiling" = the fraction of GT points with ANY peak within 5 um,
+before NMS and before any gate. Nothing downstream can exceed it.
+
+| config | floor | peaks | ceiling |
+|---|---|---|---|
+| FULL | 0.05 | 64,584 | **0.8688** |
+| FULL | 0.01 | 68,026 | **0.8690** (+0.0002) |
+| B0 | 0.05 | 61,144 | 0.8610 |
+| B0 | 0.01 | 63,405 | 0.8627 (+0.0017) |
+| B2 | 0.05 | 51,282 | 0.7005 |
+| B2 | 0.01 | 61,604 | 0.7712 (**+0.0707**) |
+
+**Dropping the floor from 0.05 to 0.01 buys FULL +0.0002.** The F1
+curves are IDENTICAL for every gate at or above 0.05 and strictly WORSE
+below it -- the extra peaks are junk.
+
+**The cells under 0.05 are not there.** They are not "below the
+threshold", the detector produces no response for them at all. Do not
+re-open this by lowering the floor further; `cache_train.py`'s 0.05 is
+already the right choice and the caches need no rebuild.
+
+### 2. ⭐ The number that matters: where the missing recall actually is
+
+| | share of GT | recoverable by parameters? |
+|---|---|---|
+| detected today (FULL, gate 0.15) | **0.7738** | -- |
+| **has a peak but is discarded** | **0.0950** | **YES** |
+| no peak at any threshold | **0.1312** | **NO -- needs a better detector** |
+
+**9.5 percentage points of recall sit in peaks that EXIST and are then
+thrown away**, by `_physical_nms` (`NMS_UM` 4.0) or by the gate
+(`UNET_THRESH` 0.15). That is five times the size of what
+`biohub-thr-sweep` moved by touching the gate, and **`NMS_UM` has never
+been swept.**
+
+It points the same way as an unexplained number already on record:
+`biohub-div-mass` found **44.7% of divisions had BOTH daughters inside
+one watershed label** -- one peak serving two cells. NMS merging nearby
+cells would produce exactly that.
+
+⚠ **The ceiling is OPTIMISTIC and by the same mechanism.**
+`ceiling_hits` counts a GT point as reachable if any peak lies within
+5 um, with **no 1:1 constraint**, so two adjacent cells sharing one peak
+are both counted as reachable. The true 1:1 ceiling is lower than
+0.8688, and the gap between the two is itself a measure of how much NMS
+merges. Worth computing directly.
+
+### 3. B2 settled: genuinely the weakest, now measured rather than assumed
+
+The user objected to `det_ablate3` v2's "B2 is nearly useless" and was
+right that it was censored -- v3's sweep bottomed out at the
+peak-finding floor with B2's curve still rising. At floor 0.01 the curve
+**turns over inside the range**: 0.6712, **0.6744 (gate 0.02)**, 0.6741,
+0.6693 ...
+
+**B2's true best F1 is 0.6744**, against B0's 0.7536 and FULL's 0.7554 --
+still last by about 0.08. Its recall ceiling also rises +0.0707 when the
+floor drops, confirming the calibration diagnosis: B2's probabilities
+really are systematically lower. The objection was correct, the
+correction is now complete, and the ordering survives it.
+
 ## 2026-08-25 -- ⭐⭐⭐ flip-and-average: same F1, an 11% DIFFERENT detection set. The reverse proof falsified my claim.
 
 `tta_probe.py` -> `biohub-tta-probe` v1, **17 min on a T4**. The user
