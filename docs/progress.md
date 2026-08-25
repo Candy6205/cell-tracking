@@ -356,19 +356,44 @@ density penalty sits downstream of edge scoring, in near-ties among many
 candidates -- still stands, and the NMS hypothesis is refuted.**
 
 **2. `det_floor`'s "13.1% of cells have no peak at any threshold" is a
-ZEBRAHUB number and I generalised it.** On competition data the same
-measurement is far better:
+ZEBRAHUB number and I generalised it.** I had called the 9.5%
+"has a peak but is discarded" the largest recoverable loss on the board
+and pointed NMS at it. That reframing applied a domain-gap number to the
+competition, and the lead it motivated is now measured and empty.
 
-| | detector reaches |
-|---|---|
-| Zebrahub | 0.8688 |
-| **6bba (competition)** | **0.9652** |
+**3. And the correction in (2) was ITSELF a bad comparison** -- the
+user asked which dataset the NMS recall came from, which exposed it:
 
-I had called the 9.5% "has a peak but is discarded" the largest
-recoverable loss on the board and pointed NMS at it. On the data that
-is actually scored, the detector reaches 96.5% of GT before suppression
-and 95.6% after. **That reframing was a domain-gap number applied to the
-competition, and the lead it motivated is now measured and empty.**
+| | value | what the percentage MEANS |
+|---|---|---|
+| Zebrahub | 0.8688 | **dense GT: 86.9% of ALL cells have a peak** |
+| 6bba (competition) | 0.9652 | **sparse GT: 96.5% of the 9.71% that are ANNOTATED** |
+
+**These are not the same measurement.** The 6bba figure says nothing
+about the ~90% of cells nobody labelled, and there is reason to suspect
+the labelled ones are easier: the Zebrahub bench measured recall by GT
+brightness quartile at **0.52 for the dimmest quartile against 0.74 for
+the brightest**. If competition annotation skews bright, 96.5% is
+optimistic by an unknown amount.
+
+So the honest statement is: **among annotated cells on 6bba, 96.5% have
+a peak.** Whether detection is "not where the loss is" on the full cell
+population is UNMEASURED, and cannot be measured where the GT is sparse.
+
+### Which dataset each 2026-08-25 experiment actually ran on
+
+Written down because this session has repeatedly compared numbers from
+different populations, and every instance was caught by the user rather
+than by me.
+
+| experiment | data | GT |
+|---|---|---|
+| `nms_loss`, `thr_sweep`, `poolsize`, `node_filter`, `div_gate` | 12 `6bba` holdout | **sparse** |
+| `post_sweep` | 12 `6bba` + 12 `44b6` + 8 Zebrahub | mixed |
+| `det_floor`, `det_ablate3`, `tta_probe`, `node_bright`, `morph_*`, `div_mass` | Zebrahub crops | **dense** |
+
+**A percentage measured against sparse GT is not comparable to one
+measured against dense GT**, even when both are called "recall".
 
 ### What this leaves
 
