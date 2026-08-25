@@ -254,6 +254,93 @@ Weights are resolved by `glob("/kaggle/input/**/<name>")`, so a wrong
 mount is invisible until the assert fires minutes into the run.
 
 
+## 11. Colab as a third worker: what is established, and what blocks it
+
+Established 2026-08-25 on the user's WSL install of `google-colab-cli`.
+The user's laptop itself is NOT usable -- it runs at 70-80% memory with
+about 3 GB free, and the pipeline would be killed. Colab's VM has
+12.7 GB.
+
+### The CLI
+
+- **Always pass `--auth=adc`.** `colab --help` says the default is
+  `oauth2` while the bundled `colab skill` says `adc`; they contradict,
+  and the bare command launches a browser consent flow that an agent
+  cannot complete. `colab --auth=adc sessions` verifies auth read-only.
+- Call the binary by ABSOLUTE PATH (`/home/<user>/.local/bin/colab`).
+  Exporting `$PATH` through Windows -> wsl -> bash expands the WINDOWS
+  path, which contains `Program Files (x86)`, and the unquoted
+  parentheses break the inner shell.
+- From Git Bash, prefix `MSYS_NO_PATHCONV=1` or `/mnt/c/...` is rewritten
+  into a Windows path with the Git install prefix glued on.
+- Put multi-line python in a FILE and pass it with `exec -f`. A heredoc
+  through the Windows shell AND wsl loses a quoting level twice; it ate
+  the quotes inside an f-string and produced a SyntaxError on the VM.
+- `colab upload <local> <remote>` needs a full remote FILENAME, not a
+  directory; a trailing-slash destination 500s. Upload wheels under a
+  short name, then rename on the VM -- pip rejects a wheel whose
+  filename is not PEP 427, so `td.whl` must be restored to its real
+  name before installing.
+- `colab run script.py` = new + exec + stop, and its own chatter goes to
+  stderr while the script's output goes to stdout. That is the shape a
+  waiter wants. But it destroys the VM, so anything needing uploaded
+  data should use a long-lived `colab new` session instead.
+- **A session burns compute units until `colab stop`.** Stop it whenever
+  the work is blocked, not just when it is finished.
+
+### The VM, measured
+
+| | Kaggle CPU | Colab | user's WSL |
+|---|---|---|---|
+| cores | 4 | **2** | 16 |
+| RAM | 30 GB | 12.7 GB | 7 GB (3 GB free on the host) |
+| Python | 3.12 | **3.13.15** | 3.12.3 |
+
+Colab is SLOWER per job than Kaggle, not faster. Its value is being a
+third slot outside Kaggle's two-at-a-time cap.
+
+### ⭐ Version-matching the ILP stack on Python 3.13 -- SOLVED
+
+The support pack's wheels are `cp312` and mostly will not install on
+3.13. Three of them decide ILP behaviour and all three can be matched:
+
+| | support pack | how to get it on 3.13 |
+|---|---|---|
+| `tracksdata` | `0.1.0rc6.dev3+g980c2d30a`, **py3-none-any** | NOT on PyPI (a git build). Install `tracksdata==0.1.0rc8` first so the DEPENDENCIES resolve, then `pip install --force-reinstall --no-deps` the support pack wheel over it. |
+| `ilpy` | `0.6.0`, py3-none-any | PyPI has it |
+| `pyscipopt` | `6.2.1`, cp312 | **PyPI publishes a cp313 wheel of the same version** |
+
+Verified: `tracksdata 0.1.0rc6.dev3+g980c2d30a` imports, `ILPSolver` is
+present, `pyscipopt 6.2.1` is present. Matching these three matters
+because a different MIP backend breaks ties differently, and this
+project's linking problems are full of near-ties -- a Colab number
+computed on a different solver could not be compared to any recorded
+anchor.
+
+⚠ **Version matching is not the test.** The test is whether a dataset
+the pipeline has already scored reproduces its recorded adj_J on the
+VM. Matching versions only raises the odds. That check has NOT been run.
+
+### What still blocks it
+
+The pipeline's preamble needs, beyond the three packages above:
+
+1. `git clone royerlab/kaggle-cell-tracking-competition` for
+   `tracking_cellmot` -- fine, the VM has internet;
+2. the support pack's `repo/src` and `repo/scripts` on `sys.path` for
+   `predict_unet_transformer` -- 209 KB, uploadable;
+3. `division_recovery.py` and `viz_cells.py` -- both are in THIS repo,
+   uploadable;
+4. `detcache_*.npz` -- 65 MB for all 199, uploadable;
+5. **the GT.** `geff_path(root, "train", name)` reads the competition
+   data, which is 87.6 GB and whose geffs are directories of many small
+   files. Downloading them one API call at a time is impractical.
+
+**(5) is the blocker and it is circular:** exporting the GT cleanly as
+one small npz per dataset needs a Kaggle kernel, and Kaggle's two slots
+are what the Colab worker exists to relieve. Queue the export the moment
+a slot frees; after that Colab needs no Kaggle slot again.
+
 ## Measured costs
 
 | | value |
