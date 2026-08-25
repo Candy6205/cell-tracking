@@ -153,3 +153,49 @@ candidates. Sweeps that change the DETECTIONS must use D32 and exclude
 its 32 datasets from the 44b6 arm. Sweeps that only touch post-link
 constants may use either, because the same ranker, detections and ILP
 solution appear in both arms and the bias cancels in the delta.
+
+## Say the DENOMINATOR out loud before comparing two rates (2026-08-25)
+
+Seven times in one session I compared numbers whose denominators were
+different populations. It is the single most common error this project
+has produced, it survives code review because the arithmetic is always
+correct, and it has twice reached a written conclusion before the user
+caught it.
+
+**The rule: a rate may only be compared to another rate when both
+denominators are the same population, or when both are random samples of
+it. Write the denominator into the sentence and the bad comparisons
+become audible.**
+
+The two live examples, both about the same quantity:
+
+| written as | actually measures |
+|---|---|
+| "NMS costs 0.91% of ground truth in 6bba" | 0.91% of the **9.71% that were annotated** |
+| "NMS costs 13.1% in Zebrahub" | 13.1% of **every cell, all labelled** |
+
+and then, having already recorded that trap, the same entry compared
+6bba's 0.0092 to 44b6's 0.0054 — 9.71% annotation coverage against
+**0.77%**, a 12x stricter sieve. Both are "sparse", which felt like
+enough. It is not: *equally named* is not *equally selected*.
+
+**Sparse ground truth is a hand-picked sample, never a random one.**
+Annotators label what they can see, and Zebrahub's recall by brightness
+quartile (**0.52 dimmest, 0.74 brightest**) says visibility dominates.
+So every sparse-GT rate is optimistic by an unknown amount, and the
+amount differs per domain with the coverage.
+
+Three practical consequences:
+
+1. **Within one domain, differences are still clean.** Before-and-after
+   on the same annotated set measures that set correctly. Report it that
+   way — "0.92% of 6bba's *annotated* cells" — and it stays true.
+2. **Across domains, only dense GT can be compared.** Zebrahub is the
+   only arm whose denominator is the true cell population. In any
+   experiment about what fraction of cells something loses, Zebrahub is
+   not one of three equal arms; it is the measurement, and the sparse
+   arms are context.
+3. This is a different rule from *three domains, or it does not count*
+   above, and neither implies the other. That rule is about whether an
+   effect generalises. This one is about whether two numbers were ever
+   the same kind of number.

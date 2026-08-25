@@ -96,7 +96,7 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
-## 2026-08-25 -- nms3 PARTIAL: the denser domain loses LESS to suppression. The dense-GT arm crashed on a key-name collision.
+## 2026-08-25 -- nms3 PARTIAL: two sparse arms landed, the dense arm crashed, and the two sparse arms CANNOT be compared to each other
 
 `biohub-nms3` v1 ran `6bba`, ran `44b6`, then died entering Zebrahub.
 **Both sparse arms landed and the 6bba anchor held** (0.0092 here against
@@ -104,23 +104,55 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
 
 ### What suppression costs, per domain
 
-| domain | cells/frame | before | after | **NMS costs** |
-|---|---|---|---|---|
-| 6bba | 97 | 0.9652 | 0.9561 | **0.0092** |
-| **44b6** | **327** | 0.9581 | 0.9527 | **0.0054** |
+| domain | cells/frame | annotated | before | after | **cost** |
+|---|---|---|---|---|---|
+| 6bba | 97 | 9.71% | 0.9652 | 0.9561 | **0.0092** |
+| 44b6 | 327 | **0.77%** | 0.9581 | 0.9527 | **0.0054** |
 
-**This is the opposite of the density hypothesis.** The domain with 3.4x
-more cells per frame loses *less* to a fixed 4.0 µm suppression radius,
-not more. The radius sweep says the same thing — on `44b6`, dropping the
-radius from 4.0 to 2.0 buys 0.0008 of reachable ground truth (0.9527 →
-0.9535) and the curve is flat below 3.0.
+### ⚠ The cross-domain reading is NOT available, and the first version of this entry made it anyway
 
-**It does not close the question.** Both rows above are *sparse* ground
-truth — they measure the annotated cells only, 9.71% in `6bba` and
-**0.77%** in `44b6`. The whole reason for the Zebrahub arm is that its
-ground truth is dense, so it is the only one that can see whether
-suppression eats the unannotated crowd. That arm is the load-bearing
-one and it is exactly the one that did not run.
+The first version of this entry said *"this is the opposite of the
+density hypothesis — the denser domain loses less."* **Withdrawn.** The
+user caught it within minutes, on the grounds that recall and annotation
+are not the same thing.
+
+`reachable()` counts **GT nodes with a detection point within 5.0 µm**.
+Its denominator is not the cells that exist, it is **the cells somebody
+chose to label**. So 0.9581 does not read "95.81% of 44b6's cells", it
+reads *"95.81% of the two-or-three cells per frame that were annotated
+in 44b6"*. That is a recall against a hand-picked sample, and it equals
+recall only if annotation is a random draw from the true cells — which
+nobody does, because annotators label what they can see.
+
+The two rows therefore have **differently-selected denominators**:
+`6bba` keeps 9.71% of its cells, `44b6` keeps 0.77%, a 12x stricter
+sieve. If annotation favours bright isolated cells — and Zebrahub's
+recall-by-brightness-quartile of **0.52 dimmest vs 0.74 brightest** says
+brightness dominates detectability — then `44b6`'s sample is the more
+purified of the two, and *isolated* is exactly the property that makes a
+cell safe from suppression. **0.0054 < 0.0092 is consistent with 44b6
+suppressing more gently AND with 44b6 being annotated more selectively.
+These two rows cannot separate them.**
+
+What survives: the *within-domain* differences are clean, because before
+and after are measured on the same annotated set. "Suppression costs
+0.92% of 6bba's annotated cells" stands. "0.0092 vs 0.0054 across
+domains" does not.
+
+Same error class as the six others today — **numbers from different
+populations compared to each other** — and this one appeared in the same
+entry that warned both arms were sparse.
+
+### Why this makes the Zebrahub arm the whole experiment
+
+Zebrahub labels **every** cell. Only there is the denominator the true
+cell population, only there is the word "recall" earned, and only there
+can the number be compared to anything else. It is the arm that did not
+run. v2 is queued.
+
+The radius sweep has the same limit and is recorded for later use, not
+read now: on `44b6`, 4.0 → 2.0 moves reachable-annotated from 0.9527 to
+0.9535, flat below 3.0.
 
 ### The crash
 
