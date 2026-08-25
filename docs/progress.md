@@ -306,6 +306,107 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ the detector ablation, finally run: the ensemble buys DIVERSITY, and 3 passes tie 12
+
+`det_ablate3.py` -> `biohub-det-ablate3` v3, **17 min on a T4**. The
+question is the user's from 2026-08-24 and had never been answered; v1
+and v2 of the old `det_ablate` never produced a number. Zebrahub dense
+GT, greedy 1:1 within 5 um, **every configuration at ITS OWN best gate**.
+
+**Anchor holds:** FULL reads recall 0.7738 / precision 0.7350 against
+`biohub-node-bright` v2's 0.7659 / 0.7362 on the same 41 crops (that run
+used every 5th frame, this every 10th).
+
+| config | passes | gate* | recall | prec | **F1\*** | F1@0.15 |
+|---|---|---|---|---|---|---|
+| B0 (`bright`, NO tophat) | 4 | 0.15 | 0.7812 | 0.7235 | 0.7512 | 0.7512 |
+| B1 (`traintophat`) | 4 | 0.20 | 0.7936 | 0.6915 | 0.7391 | 0.7251 |
+| B2 (`v2_tophat_b32`) | 4 | 0.05 | 0.6699 | 0.6686 | 0.6693 | 0.6239 |
+| **B01** | 8 | 0.20 | 0.7700 | 0.7474 | **0.7585** | 0.7522 |
+| B02 | 8 | 0.10 | 0.7787 | 0.7177 | 0.7470 | 0.7217 |
+| B12 | 8 | 0.10 | 0.8068 | 0.6651 | 0.7291 | 0.7289 |
+| FULL | 12 | 0.15 | 0.7738 | 0.7350 | 0.7539 | 0.7539 |
+| **FULL_f1** | **3** | 0.15 | 0.7796 | 0.7312 | **0.7546** | 0.7546 |
+| FULL_f2 | 6 | 0.15 | 0.7762 | 0.7327 | 0.7539 | 0.7539 |
+| **B0_f1** | **1** | 0.15 | 0.7817 | 0.7178 | 0.7484 | 0.7484 |
+| B1_f1 | 1 | 0.20 | 0.7958 | 0.6830 | 0.7351 | 0.7193 |
+| B2_f1 | 1 | 0.05 | 0.6841 | 0.6495 | 0.6663 | 0.6369 |
+
+### ⭐ The ensemble buys DIVERSITY, not member quality
+
+| pairing | v2 (all at 0.15) | **v3 (own gates)** |
+|---|---|---|
+| B01 - B12 | +0.0233 | **+0.0294** |
+| B02 - B12 | -0.0072 | **+0.0179** |
+
+**At fair gates, every pairing containing B0 beats the pairing without
+it** -- and B0 has the WORST reported `val_recall` of the three (0.5731
+against 0.6589 and 0.5789). B0 is also the only branch that does not get
+top-hat input; branches 1 and 2 are pixel-identical in what they see.
+The one genuinely different view of the data is the one the ensemble
+cannot do without, and its solo metric said it was the weakest.
+
+**`val_recall` anti-predicts here**, which is now the eighth time this
+session an offline number has run opposite to the measured outcome.
+
+### The user caught a real error, and the correction is partial
+
+v2 scored every configuration at 0.15 and read B2's F1 of 0.6239 as
+"nearly useless". The user objected that this needed more care. Correct:
+**0.15 is calibrated for the THREE-BRANCH AVERAGE, and a single branch
+lives on a different probability scale.** At its own gate B2 gains
+**+0.045** (0.6239 -> 0.6693).
+
+Two things the correction does NOT overturn, and one it leaves open:
+
+- B2 is still last by ~0.07, far outside noise.
+- **B2 does not help the ensemble either: FULL - B01 = -0.0046**, i.e.
+  removing B2 from the three is slightly BETTER, and B01 at gate 0.20 is
+  the best F1 of all twelve configurations.
+- ⚠ **B2's optimum is CENSORED.** Its F1-vs-gate curve falls
+  monotonically from the lowest gate swept (0.6693, 0.6585, 0.6499,
+  0.6239, 0.5895 ...), so its peak is at or below 0.05 -- and 0.05 is
+  `DETECT_THRESH`, the peak-finding floor, where no peaks exist below.
+  Measuring B2's true best needs a fresh detection pass with a lower
+  floor. Same for `B2_f1`.
+
+### Flip-and-average: helps ONE branch, does nothing on top of three
+
+| | 4 views minus 1 view |
+|---|---|
+| B0 alone | **+0.0028** |
+| B1 alone | **+0.0040** |
+| B2 alone | **+0.0029** |
+| **FULL (three branches)** | **-0.0007** |
+
+**SUPERSEDES what v2 was read as saying.** Reporting FULL_f1 0.7546
+against FULL 0.7539 as "the four flip views buy nothing" was wrong twice
+over: the 0.0007 had no error bar, and the flips DO buy about +0.003 --
+for a single branch. Averaging across branches already performs the same
+variance reduction, so the two are redundant with each other and the
+second one is free to drop.
+
+This also predicts what `biohub-tta-probe` must find: **the four views
+cannot be identical volumes**, or averaging them could not have moved a
+single branch by +0.003.
+
+### ⭐ What is cheap enough to matter
+
+Configurations within 0.003 F1 of FULL, cheapest first:
+**`FULL_f1(3)`, `B0(4)`, `FULL_f2(6)`, `B01(8)`, `FULL(12)`.**
+
+**Three forward passes tie twelve.** That is a 4x cut in detection cost
+on every future GPU run, and it bears directly on the submission: the
+global solve is projected at ~11.8 h against a 12 h cap (ref 55707206's
+description), which is what currently makes the +0.0033 threshold change
+from `biohub-thr-sweep` too risky to submit on its own.
+
+⚠ **This is DETECTION F1, not adj_J.** `biohub-node-filter` measured
+that the two do not move together -- removing detections costs edges
+faster than it removes noise. A configuration change has to be scored
+through the pipeline before it can be believed, and the gate that
+maximises F1 is not necessarily the gate that maximises adj_J.
+
 ## 2026-08-25 -- ⭐⭐⭐ morphology in the EDGE RANKER: adj_J -0.0015. The whole morphology line is closed.
 
 `morph_edge.py` -> `biohub-morph-edge` v2, **106 min on CPU**, trained on
