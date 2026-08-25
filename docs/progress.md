@@ -96,6 +96,81 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-25 -- ⭐⭐⭐⭐ thr3: the detection gate FAILS the three-domain rule — but the dissenting domain is 44b6, by 0.0008, against Zebrahub's +0.0080.
+
+`biohub-thr3`, 179 min CPU. Correctly loaded **D32** (`edge_ranker_d32.pkl`,
+pool 32) and excluded the 16 `44b6` datasets inside that pool, because
+this sweep changes DETECTIONS and the ranker-leak rule in
+`working-agreement.md` requires it. **Its baseline is therefore
+adj_J 0.9222, which lands 0.0002 from `biohub-div-gate`'s recorded D32
+row — the anchor holds.**
+
+⚠ **These absolute numbers are NOT comparable to `post_sweep`,
+`short_sweep` or the submission**, all of which ran on D187. Only the
+deltas within this run mean anything.
+
+### Absolute
+
+| gate | 6bba | 44b6 | zebrahub |
+|---|---|---|---|
+| **0.15** (shipped) | 0.9222 | **0.8603** | 0.7988 |
+| 0.12 | **0.9243** | 0.8598 | 0.8068 |
+| 0.10 | 0.9236 | 0.8596 | 0.8074 |
+| 0.08 | 0.9236 | 0.8594 | **0.8075** |
+
+### Delta vs the shipped 0.15
+
+| gate | 6bba | 44b6 | zebrahub |
+|---|---|---|---|
+| 0.12 | +0.0021 | **−0.0006** | **+0.0080** |
+| 0.10 | +0.0014 | −0.0008 | **+0.0085** |
+| 0.08 | +0.0014 | −0.0009 | **+0.0087** |
+
+**The rule says discard, and the rule was pre-registered, so discard is
+the verdict.** But the shape must be recorded accurately, because the
+script's own pre-written verdict string says *"6bba artefact"* and
+**that is wrong about which domain dissents.**
+
+- `6bba` gains and `zebrahub` gains — and Zebrahub gains **four times
+  more**, +0.0080 against +0.0021. Zebrahub is the arm with dense
+  ground truth, so its adj_J is over all cells, not over annotated ones.
+- **`44b6` is the lone dissenter, at −0.0006 to −0.0009** — at or under
+  the resolution floor.
+
+So this is not one domain carrying a result the others refuse. It is two
+domains agreeing, one of them strongly, against a third that moves by
+less than the noise. That is a materially different situation from
+`poolsize` (6bba alone, +0.0073, LB −0.001), and the record should not
+file it as the same thing.
+
+**Not acting on it.** Relaxing a pre-registered rule the first time a
+result sits just outside it is how the rule stops meaning anything. The
+honest state is: contested, with the dissent smaller than the floor, and
+the decision belongs to the user.
+
+### The column that explains the mechanism, and a new interaction
+
+| gate | nodes | repair pool |
+|---|---|---|
+| 0.15 | 548,794 | **111,937** |
+| 0.12 | 596,529 | 64,202 |
+| 0.10 | 621,292 | 39,439 |
+| 0.08 | 639,878 | **20,853** |
+
+**Exactly conserved**: 0.15 → 0.08 adds 91,084 nodes and removes 91,084
+from the repair pool. Lowering the gate does not create detections, it
+**moves them from `_gap_close`'s repair pool into primary nodes** — the
+script was written to print both precisely so a fall could not be
+misattributed.
+
+**And that collides with the flicker finding.** `_gap_close` repairs a
+dropout by snapping to a candidate in `[CAND_THR 0.05, gate)`. At gate
+0.08 that band holds 19% of what it held at 0.15. So **lowering the gate
+progressively destroys the repair mechanism**, and `biohub-gap2`'s arms
+— which depend on that pool — would behave differently under a lowered
+gate. The two lines are not independent and a future sweep should cross
+them, the same way `gap2` now crosses span with `SHORT_MIN`.
+
 ## 2026-08-25 -- ⭐⭐⭐⭐⭐ THE MISSES FLICKER. No annotated cell is permanently invisible, and 48% of dropouts are longer than the repair can reach.
 
 **The user's observation, from watching the rendered movie**: in
