@@ -306,6 +306,107 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐ mass conservation: a voxel count cannot test it. WHY is open.
+
+`div_mass.py` -> `biohub-div-mass` v1, **3 min on CPU**. Reads only
+`biohub-zh-masks`; no detector, no images, no competition mount.
+
+**Answer: (Va+Vb)/Vp is 1.772 where mass conservation predicts 1.0, and
+a fake fork is 1.984 where it predicts 2.0. The two are nearly the same
+number, so a voxel count on these masks cannot tell a real division from
+a mother plus a passing neighbour. Per-fork AUC 0.605.**
+
+> ⚠ **CORRECTED same day, and the correction matters.** This entry
+> first said the cause was settled -- that the watershed measures
+> TERRITORY between peaks rather than cell mass -- and filed the line
+> CLOSED. That was over-claimed. The user proposed the competing
+> reading: the masks are inflated by a fuzzy FRINGE and the real signal
+> is buried under it. Writing mask = core M + fringe H, a division reads
+> (M+2H)/(M+H), which equals the measured 1.772 at **H = 3.39 M** -- the
+> cell would be 22.8% of the mask, a shell only ~1.3 voxels thick on a
+> 6.62-voxel mask, since volume goes as the cube. A fake fork reads 2.0
+> and a continuation 1.0 under EITHER reading. **Every number below fits
+> both, and they prescribe opposite next moves:** territory means no
+> threshold helps, fringe means strip it and the signal returns.
+> `mask_anatomy.py` -> `biohub-mask-anatomy` decides it. Until that
+> lands, the measured failure stands and the CAUSE does not.
+>
+> Note also that the diameter anchor cannot arbitrate: 7.08 / 8.83 um on
+> the competition data came from watershed-on-heatmap masks too, so both
+> could be inflated by the same fringe.
+
+### Both gates and both anchors passed, so the negative is attributable
+
+- 974,613 of 1,021,008 GT nodes (**95.5%**) land inside a label.
+- median equivalent diameter **10.76 um** [9.00, 13.54]. Anchors: 7.08 um
+  over all competition detections, 8.83 um over GT-matched ones. Zebrahub
+  cells slightly larger; same order, so the pooled indexing is right.
+- mining: **7,894 division events, 0 crops empty** (15,788 before the
+  daughter-order dedupe). The broken-mining signature -- 68 positives,
+  26 of 41 crops empty -- did not appear. 945,261 continuations.
+
+### The measurement
+
+| quantity | mass conservation predicts | measured |
+|---|---|---|
+| DIV `(Va+Vb)/Vp` | **1.0** | **1.772** [1.03, 2.93] |
+| DIV `Vchild/Vmother` | 0.5 | 0.878 [0.43, 1.53] |
+| DIV diameter ratio | 0.794 | 0.958 [0.76, 1.15] |
+| CONT `Vnext/Vnow` | 1.0 | **1.000** [0.73, 1.37] |
+| FAKE FORK `(V1+Vq)/V0` | 2.0 | **1.984** [1.31, 3.18] |
+
+per-FORK AUC (true division vs fake fork) **0.6051**; per-EDGE AUC
+(daughter vs continuation) **0.6247**.
+
+### Why this is a clean negative and not a broken run
+
+**The two control rows hit their predictions exactly.** Continuations
+read 1.000 and fake forks read 1.984. The machinery reproduces the
+physics wherever the physics is about COUNTING CELLS. It fails only on
+the row where the answer depends on cell SIZE.
+
+One explanation covers every number: the mother is ONE peak and so ONE
+basin; the two daughters are TWO peaks and so TWO basins; basins are
+sized by neighbour spacing, not by the cell. The ratio is then ~2
+regardless of whether mass is conserved -- which is why true divisions
+(1.772) and fake forks (1.984) are nearly the same number, and why the
+AUC is 0.60 rather than 0.5 or 0.9.
+
+Two corroborations:
+
+- **CONT diameter ratio is 1.000 with p10-p90 of [0.900, 1.111].** Real
+  cell volume does not hold to +-10% frame to frame. That tightness is a
+  tessellation, not a measurement of matter.
+- **44.7% of divisions had BOTH daughters inside ONE label** (3,532 of
+  7,894; a further 678 lost a member to non-detection, leaving 3,684
+  usable). Freshly separated sisters touch, and a watershed seeded on a
+  detection heatmap does not split them. That fraction is a hard ceiling
+  on what ANY size feature could see here.
+
+### What this does and does not close
+
+MEASURED and not in dispute: a VOXEL COUNT on these masks separates true
+divisions from fake forks at AUC 0.605. As a feature, that is nothing.
+
+OPEN: **why**. See the correction at the top. `mask_anatomy.py` asks the
+one question that splits the two readings using nothing but the label
+array -- what does a mask's surface actually touch? A fringe ends where
+the heatmap falls below `MASK_FLOOR`, i.e. at BACKGROUND; a territory
+boundary is a watershed line halfway to a neighbour, with cell on both
+sides. It cross-checks with density: across the 41 crops, 44 to 815
+cells per frame, territory predicts median mask volume falling as 1/N
+(log-log slope near -1) and fringe predicts flat (near 0).
+
+NEVER MEASURED: whether cell mass is actually conserved at division. An
+intensity-weighted mass (background-subtracted brightness sum inside the
+mask, which `morph_edge.py`'s `crop_stats_all` already computes as its
+4th column) is a property of the cell rather than of the region, and
+discounts a dim fringe for free. It needs the Zebrahub images mounted
+alongside the masks, still CPU. **Weigh it against the 44.7% ceiling
+before spending a slot** -- that fraction is a detector failure (one
+peak served two daughters) and neither reading above touches it.
+
+
 ## 2026-08-25 -- masks for all 41 Zebrahub crops: the morphology line is now free
 
 `zh_masks.py` -> `biohub-zh-masks` v1, **54 min GPU, 41/41 written, 0

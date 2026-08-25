@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-div-mass",
-  "title": "Biohub div mass",
-  "code_file": "div_mass.py",
+  "id": "faustine649/biohub-mask-anatomy",
+  "title": "Biohub mask anatomy",
+  "code_file": "mask_anatomy.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
