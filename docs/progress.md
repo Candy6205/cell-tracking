@@ -96,6 +96,96 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-25 -- ⭐⭐⭐ nms4, the density test in all three domains: 2 of 3, none significant. The line closes, and the interesting number is not about NMS.
+
+`biohub-nms4`, 13 min CPU. True cells per frame in every domain —
+counted per frame on Zebrahub, and from the organisers'
+`estimated_number_of_nodes / T` on the competition arms. All three
+density ranges are about 10x wide, so all three are measurable and the
+`NO RANGE` guard did not fire.
+
+### The table
+
+| domain | sets | density range | **corr(lost to NMS, true density)** | corr(reachable BEFORE NMS, true density) |
+|---|---|---|---|---|
+| 6bba | 12 | 50–521 (10.3x) | **−0.0633** | **−0.5580** |
+| 44b6 | 12 | 74–786 (10.6x) | **+0.4856** | +0.0311 |
+| zebrahub | 8 | 51–562 (11.1x) | **+0.4067** | −0.0266 |
+
+### Read the sample size first
+
+**Not one of the six correlations reaches conventional significance.**
+At n=12 the two-tailed 5% threshold is |r| ≥ 0.576; at n=8 it is 0.707.
+
+| | r | p |
+|---|---|---|
+| 6bba before~density | −0.5580 | 0.059 |
+| 44b6 lost~density | +0.4856 | 0.110 |
+| zebrahub lost~density | +0.4067 | 0.317 |
+| the other three | ≤ 0.064 | ≥ 0.84 |
+
+Twelve datasets is twelve points. A correlation of +0.49 on twelve
+points is a shape, not a fact.
+
+### The verdict the pre-registered rule gives
+
+**The density hypothesis does NOT survive.** Two domains show it at
+about +0.45, `6bba` shows nothing at all (−0.06, p=0.85). Signs
+disagree, so by the rule written down before the run it is a property of
+some domains and not of the method.
+
+This was the user's line — they pushed three times to have it tested
+where cells are actually crowded, against my closing it on `6bba` alone.
+Testing it properly was right; the answer is that it does not replicate.
+
+### The one number worth keeping is not about NMS
+
+`6bba`'s **−0.5580 (p=0.059)** says that in `6bba`, datasets with more
+true cells per frame have systematically worse reachability **before any
+suppression happens**. The detector is failing upstream. The other two
+domains show nothing there (+0.031, −0.027).
+
+That is a candidate explanation for why `6bba` shows no NMS density
+effect — the crowding damage is already done before suppression runs, so
+suppression then takes an even share. **It is a hypothesis, not a
+result**, and it is one point short of significance. Carried as
+unresolved, per the standing rule about not explaining away a
+disagreeing measurement.
+
+If it holds it matters more than NMS ever did, because **the 12-dataset
+holdout this project measures everything on is entirely `6bba`** — the
+one domain with a density-dependent detection problem.
+
+Caveat on it: `6bba` reachability is against annotated cells (9.71%).
+The correlation is across 12 datasets within one domain, so the
+annotation convention is roughly constant — but "roughly" is doing work
+and has not been checked.
+
+### The radius grid, refined, and why it closes the line
+
+nms3's grid put everything between two adjacent points. Refined to
+(2.5, 3.0, 3.25, 3.5, 3.75, 4.0, 4.5), the curve is **smooth and
+monotone in all three domains** — no plateau, no kink, no natural
+optimum. Ceiling gain from the shipped 4.0 down to 3.0:
+
+| domain | 4.0 | 3.0 | gain | extra points kept |
+|---|---|---|---|---|
+| 6bba | 0.9561 | 0.9564 | +0.0003 | +645 |
+| 44b6 | 0.9527 | 0.9535 | +0.0008 | +1720 |
+| zebrahub | 0.8947 | 0.8972 | +0.0025 | +1246 |
+
+**Reachability is monotone in the radius and therefore structurally
+incapable of choosing one** — it always votes smaller, all the way to
+keeping every duplicate peak. Only the official score, which pays for
+the extra points through precision and the node-count penalty, can pick.
+
+And the ceiling gain is +0.0003 and +0.0008 in two of three domains,
+at or under the resolution floor, **before** paying for the extra
+points. A several-hour full-pipeline radius sweep would be spending
+that time to chase a number the ceiling already says is too small.
+**The NMS radius line closes here**, with the measurement the user asked
+for rather than the one-domain version I tried to close it on.
+
 ## 2026-08-25 -- nms3 PARTIAL: two sparse arms landed, the dense arm crashed, and the two sparse arms CANNOT be compared to each other
 
 `biohub-nms3` v1 ran `6bba`, ran `44b6`, then died entering Zebrahub.
