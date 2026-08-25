@@ -1,0 +1,5 @@
+# Shell scripts driven through WSL must keep LF. bash rejects CRLF
+# outright with `$'\r': command not found`, and the Windows-side file
+# tools write CRLF by default -- that cost a debugging round on
+# tools/colab/cx.sh.
+*.sh text eol=lf
