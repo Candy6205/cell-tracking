@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-node-filter",
-  "title": "Biohub node filter",
-  "code_file": "node_filter.py",
+  "id": "faustine649/biohub-thr-sweep",
+  "title": "Biohub thr sweep",
+  "code_file": "thr_sweep.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -16,9 +16,7 @@
   ],
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
-    "faustine649/biohub-poolsize",
-    "faustine649/biohub-zh-detect",
-    "faustine649/biohub-zebrahub-extract"
+    "faustine649/biohub-poolsize"
   ],
   "model_sources": []
 }

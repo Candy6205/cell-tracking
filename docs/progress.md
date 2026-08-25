@@ -306,6 +306,70 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ morphology in the EDGE RANKER: adj_J -0.0015. The whole morphology line is closed.
+
+`morph_edge.py` -> `biohub-morph-edge` v2, **106 min on CPU**, trained on
+187 datasets. Six SIGNED morphology columns appended to the ranker's 18:
+four child/parent ratios (mean, max, std, MASS) and the two absolute
+brightness levels.
+
+**BASE reproduced the anchor exactly** -- score 0.9386, adj_J 0.9254,
+div_J 0.1316, TP/FP/FN 5/26/7 -- so the comparison is valid.
+
+| arm | cols | score | adj_J | div_J | TP/FP/FN |
+|---|---|---|---|---|---|
+| BASE | 18 | **0.9386** | **0.9254** | 0.1316 | 5/26/7 |
+| MORPH | 24 | 0.9326 | 0.9240 | 0.0857 | 3/23/9 |
+| delta | | -0.0060 | **-0.0015** | -0.0459 | |
+
+**adj_J -0.0015 is below the ~0.003 holdout floor. Morphology does
+nothing for the edge ranker.** Stage A agreed in advance: edge AUC
+0.9866 against 0.9864, and permutation importance for all six columns
+between +0.0003 and +0.0007.
+
+### The div_J drop is NOT attributable, and saying so matters
+
+div_J fell 0.0459, which unpacks to **TP 5 -> 3: two divisions**. The
+standing warning applies -- "⚠ Five true divisions. Every row rests on
+TP counts of 1-5, far under anything resolvable alone."
+
+More importantly the pre-registered mechanism is ruled out by this run's
+own Stage A. The worry written into the script was that a
+morphology-aware ranker would push mother->daughter edges DOWN, refuse
+both daughters, and starve the orphan patch (whose proposals need a
+parent with exactly one child). That requires the model to SEE the size
+change. It cannot: **`MASS_ratio` over 225,861 rows is median 0.994,
+p10 0.722, p90 1.270** -- a daughter should sit near 0.5 and the tenth
+percentile does not approach it. The script's own pre-registered reading
+of that distribution was "if the p10 does not reach anywhere near 0.5
+the division signature is not in this feature and the orphan-starvation
+worry is moot."
+
+So: **no effect on edges, and a two-event move in divisions that this
+sample cannot resolve.** Not "morphology starves divisions".
+
+### The morphology line, closed end to end (2026-08-25)
+
+| route | measurement | verdict |
+|---|---|---|
+| mass conservation, voxel count | per-fork AUC 0.605 | wrong quantity measured |
+| fringe vs tessellation | 76.8% background-bounded, density slope -0.028 | **user right: fringe** |
+| mass conservation, brightness | per-fork AUC 0.621, +0.0157 | fringe real, nothing under it |
+| box brightness as a node filter | F10 - S10 adj_J **-0.0297** | loses to raising the threshold |
+| morphology in the edge ranker | adj_J **-0.0015** | no effect |
+
+Underneath all five: **no dataset here annotates cell size**, so size is
+unverifiable rather than merely weak (see the ruler entry). Brightness
+escapes that -- its label exists -- and brightness genuinely separates
+real detections from hallucinations at AUC 0.866 on Zebrahub. It just
+does not survive the transfer to competition data, and removing
+detections is expensive under an edge-counting metric regardless.
+
+**Do not reopen this with a better mask algorithm or another feature
+built on masks.** Reopen it only if a size or segmentation annotation
+appears, or if the filter can be trained on competition data, which
+needs a spurious-detection label that sparse GT cannot give.
+
 ## 2026-08-25 -- ⭐⭐⭐ the node filter LOSES to raising the threshold. Cutting detections is expensive.
 
 `node_filter.py` -> `biohub-node-filter` v1, **66 min on CPU**. Assembled
