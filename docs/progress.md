@@ -96,6 +96,142 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-25 -- ⭐⭐⭐⭐⭐ THE MISSES FLICKER. No annotated cell is permanently invisible, and 48% of dropouts are longer than the repair can reach.
+
+**The user's observation, from watching the rendered movie**: in
+`6bba_3abfe10a` many red circles are cells detected in one frame,
+missing in the next, some flickering back and forth. `flicker.py`
+measured it over 379 annotated GT tracks in the 12 `6bba` holdout
+datasets, following the GT's own edges so a track is a real cell's
+history.
+
+| | tracks | |
+|---|---|---|
+| detected in EVERY frame | 270 | 71.2% |
+| **detected in NO frame** | **0** | **0.0%** |
+| INTERMITTENT | 109 | 28.8% |
+
+**The "permanently invisible" class is empty.** So the ceiling
+argument — dim is dim, nothing to do — does not apply to these losses.
+Every annotated cell is found in some frame.
+
+### The dropouts, by length
+
+| length | runs | | |
+|---|---|---|---|
+| **1 frame** | 102 | **52.0%** | the only length `_gap_close` bridges |
+| **2 frames** | 44 | 22.4% | unrepaired |
+| 3 frames | 23 | 11.7% | unrepaired |
+| 4+ frames | 27 | 13.8% | unrepaired |
+
+**48% of dropouts are beyond the reach of the existing repair.**
+
+### This is the same phenomenon as `SHORT_MIN`, seen from the other end
+
+A two-frame dropout splits a track in two. If either piece falls under
+6 nodes, the shipped `SHORT_MIN = 6` deleted it. That is why lowering it
+to 4 gained adj_J in all three domains today — the filter was deleting
+the fragments of real cells that flicker had shattered.
+
+### What kills the obvious fix, and why the follow-up has TWO variables
+
+`_gap_close` requires the inserted node to land on a real candidate from
+the repair band `[CAND_THR 0.05, UNET_THRESH 0.15)`. But at the 465
+missed frames:
+
+| | |
+|---|---|
+| **no candidate within 5 µm at all** | **79.8%** |
+| there is one | 20.2%, median score 0.1226, p75 0.1352 |
+
+**Four times in five the heatmap response does not dip below threshold,
+it vanishes.** So the existing repair can fire on at most a fifth of
+dropouts, and a two-frame bridge needing a candidate at *both* missing
+frames would fire on roughly 0.2 × 0.2 = 4%.
+
+The remaining fifth sits just under 0.15, which is where
+`biohub-thr-sweep`'s winning gate of 0.12 lands — those two results are
+looking at the same cells.
+
+### `biohub-gap2`, queued
+
+`_gap_close` rewritten with two parameters, **crossed with `SHORT_MIN`
+at the user's instruction** because the two are the same phenomenon and
+cannot be assumed independent — if a wider bridge repairs the dropouts,
+there are fewer fragments and `SHORT_MIN`'s optimum moves.
+
+- `GAP_SPAN` ∈ {1, 2, 3} — how many missing frames to bridge. The gate
+  is divided by the span so a longer bridge gets a proportional travel
+  budget; without that it would test the gate, not the span.
+- `GAP_NEED_CAND` ∈ {True, False} — whether an inserted node may be
+  purely interpolated, with no detection evidence. The case for it: the
+  official metric matches nodes by centroid distance at `max_distance`
+  7.0 µm, so an interpolated node near a real GT cell counts as a match
+  and brings two correct edges. The case against: interpolating across a
+  genuinely ended track manufactures false nodes, and the metric carries
+  a node-count penalty.
+
+10 arms × 3 domains, with **two** must-reproduce anchors: `BASE`
+(span 1, candidate required, `SHORT_MIN` 6) must give `biohub-poolsize`'s
+D187 row, and `sm4_base` must give `biohub-short-sweep`'s short_4
+deltas. `post_sweep` swept this function's four constants and all four
+were noise — but the span is not a constant, it is the shape of the
+loop, and nobody had ever moved it.
+
+## 2026-08-25 -- ⭐⭐ depth3: the depth hypothesis does NOT survive. Signs disagree and nothing is significant.
+
+Pre-registered before the run, and this is the branch that fired: *"recall
+flat means the front/back difference on screen is not depth, and this
+line closes with a negative."*
+
+| domain | corr(recall, z) | p |
+|---|---|---|
+| 6bba | −0.6837 | 0.062 |
+| 44b6 | −0.6800 | 0.064 |
+| **zebrahub** | **+0.5011** | 0.206 |
+
+Two domains fall with depth, **Zebrahub rises**, and at 8 bins the 5%
+threshold is |r| ≥ 0.707 so **none of the three is significant**.
+Zebrahub is the arm whose GT is dense, i.e. the only one whose `recall`
+is recall over all cells rather than over annotated cells.
+
+### The brightness link is broken in the opposite direction
+
+| | r | p | |
+|---|---|---|---|
+| 6bba: GT brightness ~ z | **+0.8048** | 0.016 | **significant** |
+| 6bba: recall ~ GT brightness | **−0.7788** | 0.023 | **significant** |
+| 44b6: GT brightness ~ z | −0.0059 | 0.989 | nothing |
+
+In `6bba`, **GT-point brightness RISES with depth** — the opposite of
+attenuation — and brighter bins have *worse* recall.
+
+### ⚠ Do not read that against the recorded 0.52/0.74
+
+The recorded finding (recall 0.52 for the dimmest GT-brightness quartile
+against 0.74 for the brightest) is **per cell**. The −0.7788 here is a
+correlation over **8 bin means**. Those are different populations, and a
+bin-level correlation can invert the individual-level one. **They are
+not in contradiction; they are not the same quantity.**
+
+That is the day's recurring error appearing inside my own analysis
+design this time — the eleventh instance. A per-cell version of this
+measurement would be the honest comparison and has not been run.
+
+### A gap in the design, stated rather than glossed
+
+Zebrahub's brightness column is `nan` throughout: the sampling only runs
+where a raw volume is mounted, which is the two competition arms. **The
+load-bearing arm has no brightness data**, so the depth → dim link is
+tested only where the GT is sparse.
+
+### What it buys
+
+The depth line closes with a negative, and that protects the flicker
+result above: the intermittent misses are **not** explained by cells
+being too deep to see, which is the reading that would have made them a
+ceiling rather than something to repair.
+
 ## 2026-08-25 -- ⭐⭐⭐⭐⭐ short_sweep: a CURVE, not a spike. `SHORT_MIN` 6 → 4 SUBMITTED as the first test of the three-domain rule.
 
 `biohub-short-sweep`, 168 min CPU, 7 values × 3 domains. **Both anchors

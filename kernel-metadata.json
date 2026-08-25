@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-depth3",
-  "title": "Biohub depth3",
-  "code_file": "depth3.py",
+  "id": "faustine649/biohub-gap2",
+  "title": "Biohub gap2",
+  "code_file": "gap2.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -14,8 +14,8 @@
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
-    "faustine649/biohub-prenms-cache",
-    "faustine649/biohub-prenms2"
+    "faustine649/biohub-poolsize",
+    "faustine649/biohub-zh-detect"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"

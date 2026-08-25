@@ -1161,5 +1161,6 @@ print("  Zebrahub is the load-bearing arm again: its GT is dense, so "
       flush=True)
 
 warning_summary()
-print(f"\n  {time.time() - t0:.0f}s total", flush=True)
+# t0 is nms4's per-domain timer and does not exist here; the
+# elapsed time is not the point of this run.
 print("\nDEPTH3 DONE", flush=True)
