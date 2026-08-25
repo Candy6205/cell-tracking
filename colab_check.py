@@ -6,42 +6,41 @@ THE ONLY QUESTION. `kaggle-toolchain.md` section 11 established that the
 three packages deciding ILP behaviour can be version-matched on Colab's
 Python 3.13: tracksdata 0.1.0rc6.dev3+g980c2d30a, ilpy 0.6.0, pyscipopt
 6.2.1. **Matching versions is not proof.** A different machine, a
-different libc, a different BLAS, or a solver seeded differently can
-break ties differently, and this pipeline's linking problems are full of
+different libc, a different BLAS, or a solver breaking ties differently
+can move the answer, and this pipeline's linking problems are full of
 near-ties.
 
-So: run one holdout dataset end to end and compare against the recorded
-number. `biohub-poolsize`'s D187 row over the 12 holdout datasets is
-score 0.9386 / adj_J 0.9254 / div_J 0.1316 / TP-FP-FN 5-26-7. This runs
-the SAME datasets with the SAME ranker, so the aggregate must match.
+So run the 12 holdout datasets end to end and compare against the
+recorded number. `biohub-poolsize`'s D187 row is score 0.9386 / adj_J
+0.9254 / div_J 0.1316 / TP-FP-FN 5-26-7, on these datasets with this
+ranker.
 
-  matches  -> Colab is interchangeable with Kaggle and can carry
-              experiments whose results get compared to recorded anchors
-  differs  -> Colab may only run experiments that are self-contained,
-              with every arm computed on Colab and nothing compared
-              across platforms
+  matches  -> Colab is interchangeable with Kaggle, and a result
+              computed here can be compared to a recorded anchor
+  differs  -> Colab may only run SELF-CONTAINED experiments, every arm
+              computed here, nothing compared across platforms
 
-Every pipeline function below is poolsize.py's, carried across
-unmodified. Only the preamble and the tail differ, so a mismatch cannot
-be blamed on a code change.
+Every pipeline function is poolsize.py's, carried across in whole
+contiguous blocks and in its order. Only the preamble and the tail
+differ, so a mismatch cannot be blamed on a code change.
 
-DATA, all local to /content:
+DATA, unpacked from one 5.8 MB archive into /content/data:
   detcache_<name>.npz   detections, from biohub-edge-ranker
-  gt_<name>.npz         ground truth, from biohub-gt-export (212 KB for
-                        all 24 -- the competition mount is not needed)
-  edge_ranker_d187.pkl  the ranker
+  gt_<name>.npz         ground truth, from biohub-gt-export
+  edge_ranker_d187.pkl  the ranker behind submission 55757064
 """
 from __future__ import annotations
 
 import gc
 import pathlib
 import pickle
+import subprocess as _sp
 import sys
 import time
 from collections import defaultdict
 
 import numpy as np
-from scipy.optimize import linear_sum_assignment                # noqa: F401
+from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 import tracksdata as td
 
@@ -56,45 +55,57 @@ from tracking_cellmot.metrics import (                           # noqa: E402
 import division_recovery as dr                                   # noqa: E402
 
 SCRIPT_VERSION = "2026-08-25a-colab-check"
-# carried from poolsize.py's replaced preamble, verbatim
-ILP_DISAPP = 1.5
+ILP_DISAPP = 1.5          # from poolsize.py's replaced preamble
 ILP_FLOOR = 0.10
+DIV_W = 0.55
+GATE_UM = 10.0            # the candidate radius, also from the preamble
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 print("tracksdata", getattr(td, "__version__", "?"), flush=True)
 
-# poolsize.py sets `root` from the competition mount. Nothing this
-# script runs touches it -- the GT arrives through gt_*.npz instead --
-# so it is bound to a path that does not exist rather than deleted, so
-# that any code path which DOES reach for it fails loudly.
+# poolsize.py resolves `root` from the competition mount, which does not
+# exist here. Bound to a nonexistent path rather than deleted, so any
+# code path that still reaches for competition data fails loudly.
 root = pathlib.Path("/content/NO_COMPETITION_MOUNT")
 
 DATA = pathlib.Path("/content/data")
+if not DATA.exists():
+    DATA.mkdir(parents=True, exist_ok=True)
+    _r = _sp.run(["tar", "-xzf", "/content/ctpack.tgz", "-C", str(DATA)],
+                 capture_output=True, text=True)
+    print("unpack rc", _r.returncode, _r.stderr[:120], flush=True)
 CACHES = {p.stem[len("detcache_"):]: p
           for p in DATA.glob("detcache_*.npz")}
 GTS = {p.stem[len("gt_"):]: p for p in DATA.glob("gt_*.npz")}
 print(f"caches {len(CACHES)}, gt {len(GTS)}", flush=True)
-
-
-def load_dets(name):
-    z = np.load(CACHES[name])
-    T = max(int(k[1:]) for k in z.files if k.startswith("c")) + 1
-    return [(z[f"c{t}"], z[f"s{t}"]) for t in range(T)]
+assert CACHES and GTS, "/content/ctpack.tgz did not unpack"
 
 
 def load_gt_graph(name):
-    """Rebuild the GT graph from the exported npz, the same way
+    """Rebuild the GT graph from the exported npz, the way
     zh_pipeline.py rebuilds Zebrahub's -- write a geff, read it back
-    with tracksdata, so the OFFICIAL scorer sees exactly what it sees on
+    with tracksdata -- so the OFFICIAL scorer sees what it sees on
     Kaggle."""
     z = np.load(GTS[name])
     arr = np.stack([z["t"].astype(float), z["z"], z["y"], z["x"]], axis=1)
-    edges = np.asarray(z["edges"], int)
+    # `edges` holds NODE IDS, not row indices -- that is what read_geff
+    # returns and gt_export wrote it through unchanged. poolsize.py
+    # remaps them the same way (`row_of` in its training block). Passing
+    # raw ids to _save indexes a list by an arbitrary integer and raises
+    # IndexError, which is exactly what happened here.
+    row_of = {int(v): i for i, v in enumerate(np.asarray(z["node_ids"]))}
+    edges = np.asarray(
+        [[row_of[int(a)], row_of[int(b)]]
+         for a, b in np.asarray(z["edges"], int)
+         if int(a) in row_of and int(b) in row_of], int)
+    if len(edges) == 0:
+        edges = np.zeros((0, 2), int)
     gdir = pathlib.Path("/content/gtgeff")
     gdir.mkdir(exist_ok=True)
     gp = gdir / f"{name}.geff"
     dr._save(str(gp), arr, edges)
     r = td.graph.IndexedRXGraph.from_geff(str(gp))
     return (r[0] if isinstance(r, tuple) else r), len(arr)
+
 
 SCALE = np.array([1.625, 0.40625, 0.40625])
 UNET_THRESH = 0.15
@@ -117,21 +128,8 @@ DIV_W_SISTER = 0.15
 DIV_FRAME_CAP = 0.0076
 DIV_GLOBAL_CAP = 0.00375
 
-# ---- detection caches from the v2 kernel output -------------------------
-BASE = pathlib.Path("/kaggle/input")
-CACHES = {}
-stack = [BASE]
-while stack:
-    d = stack.pop()
-    if d.name.endswith((".zarr", ".geff")) \
-            or "cell-tracking-during-development" in d.name:
-        continue
-    for f in d.glob("detcache_*.npz"):
-        CACHES[f.stem[len("detcache_"):]] = f
-    if len(d.parts) - len(BASE.parts) < 4:
-        stack += [p for p in d.iterdir() if p.is_dir()]
-print(f"detection caches found: {len(CACHES)}", flush=True)
-assert len(CACHES) >= 40, "attach biohub-edge-ranker as kernel source"
+# (poolsize.py's /kaggle/input cache discovery removed; the
+#  header is the single definition of CACHES)
 
 
 def load_dets(name):
@@ -252,11 +250,7 @@ def pair_features(dets, vels, T):
     return out
 
 
-# `root = find_root(None)` removed: poolsize.py resolves it from the
-# competition mount, which does not exist here. The header binds `root`
-# to a nonexistent path on purpose, so any code path that still reaches
-# for the competition data fails loudly instead of reading something
-# unexpected. The GT arrives through gt_*.npz instead.
+# root: bound in the header
 
 GATE_XY = 10.0
 GATE_Z = 10.0
@@ -547,6 +541,48 @@ def solve_edges(coords, cand_edges, T, div_w, window_size):
     return out
 
 
+# ---- acceleration lookahead --------------------------------------------
+# Togashi's stack item 4 (public-solutions-recon.md:313): "Acceleration
+# lookahead in motion prediction (bonus for consistent acceleration), not
+# just velocity." Never transplanted -- the recon lists items 1 and 5 as
+# taken and leaves 2, 3, 4, 6.
+#
+# It is the same shape of gap div_kinematics just proved real on the
+# division side: the model gets ONE temporal number. `pair_features` has
+# `md`, the residual against a CONSTANT-VELOCITY extrapolation, where the
+# velocity itself comes from a single previous transition. A cell that is
+# turning or speeding up breaks that model, and nothing in the 18 columns
+# can say so.
+#
+# Acceleration needs THREE positions, so it cannot exist in the two frames
+# the official edge head sees, nor in a one-step velocity. That is the
+# whole point.
+
+NFEAT_BASE = 18
+N_ACC = 5
+NFEAT_ACC = NFEAT_BASE + N_ACC
+EPS = 1e-9
+
+_WARN_COUNT = defaultdict(int)
+
+
+def warn_once(key, msg):
+    """Rule 1: a fallback that does not announce itself produces a
+    plausible wrong number."""
+    if _WARN_COUNT[key] == 0:
+        print(f"  WARN {msg}", flush=True)
+    _WARN_COUNT[key] += 1
+
+
+def warning_summary():
+    if not _WARN_COUNT:
+        print("  no degradations fired", flush=True)
+        return
+    print("  degradation summary:", flush=True)
+    for k_, n_ in sorted(_WARN_COUNT.items()):
+        print(f"    {k_}: {n_}", flush=True)
+
+
 def pass1_tracks(dets):
     """Velocities AND the backward link map from one greedy pass.
     pass1_velocities discards the links; acceleration needs them."""
@@ -566,35 +602,149 @@ def pass1_tracks(dets):
     return seeds, vels, prev_of
 
 
+def accel_of(seeds, prev_of, t, i):
+    """(acceleration vector um/frame^2, steps available).
+
+    Needs THREE positions: t, t-1, t-2. With fewer, acceleration is
+    undefined -- return zero and say how many steps there were, so the
+    model can split on the count instead of reading 0 as 'not
+    accelerating'."""
+    if t < 2:
+        return np.zeros(3), 0
+    i1 = int(prev_of[t][i]) if i < len(prev_of[t]) else -1
+    if i1 < 0:
+        warn_once("accel_no_parent",
+                  "a cell had no backward link, so acceleration is "
+                  "undefined -> all 5 columns are 0 and acc_hist says 0; "
+                  "that is NOT a measurement of constant velocity")
+        return np.zeros(3), 0
+    i2 = int(prev_of[t - 1][i1]) if i1 < len(prev_of[t - 1]) else -1
+    if i2 < 0:
+        warn_once("accel_one_step",
+                  "a cell had only ONE backward step, so acceleration "
+                  "needs a third position it does not have -> 0 with "
+                  "acc_hist 1")
+        return np.zeros(3), 1
+    P0, _ = seeds[t]
+    P1, _ = seeds[t - 1]
+    P2, _ = seeds[t - 2]
+    if i >= len(P0) or i1 >= len(P1) or i2 >= len(P2):
+        return np.zeros(3), 0
+    p0 = P0[i] * SCALE
+    p1 = P1[i1] * SCALE
+    p2 = P2[i2] * SCALE
+    return (p0 - p1) - (p1 - p2), 2
 
 
-# ---- the check ----------------------------------------------------------
+def pair_features(dets, vels, T):
+    """The 18 base columns EXACTLY as the transplant computes them, then 5
+    acceleration columns. `vels` is accepted and ignored -- this rebuilds
+    the pass so it can keep the link map the acceleration needs."""
+    seeds, vels_own, prev_of = pass1_tracks(dets)
+    out = []
+    for t in range(T - 1):
+        P, ps = seeds[t]
+        C, cs = seeds[t + 1]
+        if len(P) == 0 or len(C) == 0:
+            out.append(([], np.zeros((0, NFEAT_ACC), np.float32), P, C))
+            continue
+        Pu = P * SCALE[None, :]
+        Cu = C * SCALE[None, :]
+        tree_p = cKDTree(Pu)
+        tree_c = cKDTree(Cu)
+        dens_p = np.array([len(tree_p.query_ball_point(x, 7.0)) - 1
+                           for x in Pu])
+        dens_c = np.array([len(tree_c.query_ball_point(x, 7.0)) - 1
+                           for x in Cu])
+        pred = Pu + vels_own[t]
+        acc = np.zeros((len(P), 3))
+        acc_n = np.zeros(len(P))
+        for i in range(len(P)):
+            a, n = accel_of(seeds, prev_of, t, i)
+            acc[i] = a
+            acc_n[i] = n
+        # constant velocity plus half the acceleration -- the standard
+        # second-order step, and what "lookahead" means here
+        pred_acc = pred + 0.5 * acc
+        pairs, rows = [], []
+        cand_of_i = defaultdict(list)
+        cand_of_j = defaultdict(list)
+        raw = {}
+        for i, x in enumerate(Pu):
+            for j in tree_c.query_ball_point(x, GATE_UM):
+                d = float(np.linalg.norm(Cu[j] - x))
+                raw[(i, j)] = d
+                cand_of_i[i].append((d, j))
+                cand_of_j[j].append((d, i))
+        for i in cand_of_i:
+            cand_of_i[i].sort()
+        for (i, j), d in raw.items():
+            delta = Cu[j] - Pu[i]
+            md = float(np.linalg.norm(Cu[j] - pred[i]))
+            md_a = float(np.linalg.norm(Cu[j] - pred_acc[i]))
+            rank = next(k for k, (_, jj) in enumerate(cand_of_i[i])
+                        if jj == j)
+            v = vels_own[t][i]
+            na = float(np.linalg.norm(acc[i]))
+            nv = float(np.linalg.norm(v))
+            acc_cos = (float(np.dot(v, acc[i])) / (nv * na)
+                       if nv > EPS and na > EPS else 0.0)
+            rows.append([d, delta[0], abs(delta[0]),
+                         float(np.linalg.norm(delta[1:])), md, d - md,
+                         ps[i], cs[j],
+                         abs(float(_logit(np.array([ps[i]]))[0]
+                                   - _logit(np.array([cs[j]]))[0])),
+                         dens_p[i], dens_c[j], len(P), len(C),
+                         rank, len(cand_of_i[i]), len(cand_of_j[j]),
+                         nv, t / max(1, T),
+                         # ---- acceleration lookahead ----
+                         na, acc_cos, md_a, md - md_a, acc_n[i]])
+            pairs.append((i, j))
+        out.append((pairs, np.asarray(rows, np.float32), P, C))
+    return out
+
+
+
+
+from sklearn.ensemble import HistGradientBoostingClassifier    # noqa: E402
+from sklearn.metrics import roc_auc_score                      # noqa: E402
+
+HOLDOUT = [
+    "6bba_268e1230", "6bba_2312ac41", "6bba_283bf9f1", "6bba_3a1849c2",
+    "6bba_3abfe10a", "6bba_5c824876", "6bba_61dd1e0d", "6bba_7af54fde",
+    "6bba_7b5d3b2c", "6bba_afb141ff", "6bba_aeee7805", "6bba_c27cba08",
+]
+COLS = {"D32": list(range(NFEAT_BASE)), "D187": list(range(NFEAT_BASE))}
+
+
+# ---- the check -----------------------------------------------------------
 MIN_POOL = 100
 _pk = next(iter(DATA.glob("edge_ranker_d187.pkl")), None)
-assert _pk is not None, "edge_ranker_d187.pkl not uploaded to /content/data"
+assert _pk is not None, "edge_ranker_d187.pkl missing from the archive"
 with open(_pk, "rb") as f:
     blob = pickle.load(f)
 pool = blob.get("pool")
 assert pool is not None and len(pool) >= MIN_POOL, (
-    f"the pkl lists {0 if pool is None else len(pool)} training datasets; "
-    f"the recorded 0.9386 / 0.9254 is D187's, so a smaller pool would not "
-    f"be comparable")
+    f"the pkl lists {0 if pool is None else len(pool)} training "
+    f"datasets; the recorded 0.9386 / 0.9254 is D187's, so a smaller "
+    f"pool is not comparable")
 MODEL = blob["model"]
 MCOLS = blob["cols"]
-DIV_W = 0.55
 print(f"ranker pool {len(pool)}", flush=True)
 
-NAMES = sorted(n for n in CACHES if n in GTS and n.startswith("6bba_"))
+NAMES = sorted(n for n in CACHES if n in GTS)
 print(f"scoring {len(NAMES)} datasets", flush=True)
-assert NAMES, "no dataset has both a cache and a GT export"
+assert len(NAMES) >= 12, (
+    f"only {len(NAMES)} datasets have both a cache and a GT export; the "
+    f"recorded number is over 12 and a subset is not comparable")
 
 rows = []
 t0 = time.time()
 for k, name in enumerate(NAMES):
     dets = load_dets(name)
     T = len(dets)
-    seeds, vels, prev_of = pass1_tracks(dets)
     feats = pair_features(dets, None, T)
+    seeds = [seeds_of(dets[t]) for t in range(T)]
     probs = [MODEL.predict_proba(r_[:, MCOLS])[:, 1] if len(p_)
              else np.zeros(0) for p_, r_, P, C in feats]
     coords_rows, offset, n_glob = [], {}, 0
@@ -672,7 +822,7 @@ for k, name in enumerate(NAMES):
     gc.collect()
 
 m = summarise(rows)
-print("\n=== COLAB RESULT ===", flush=True)
+print("\n=== COLAB RESULT vs THE RECORDED ANCHOR ===", flush=True)
 print(f"  score  {m['score']:.4f}   recorded 0.9386", flush=True)
 print(f"  adj_J  {m['adj_edge_jaccard']:.4f}   recorded 0.9254", flush=True)
 print(f"  div_J  {m['division_jaccard']:.4f}   recorded 0.1316", flush=True)
@@ -681,17 +831,18 @@ print(f"  TP/FP/FN {m['division_tp']:.0f}/{m['division_fp']:.0f}/"
 d = abs(m["adj_edge_jaccard"] - 0.9254)
 print(f"\n  |adj_J - recorded| = {d:.5f}", flush=True)
 if d < 1e-4:
-    print("  IDENTICAL. Colab is interchangeable with Kaggle; a result "
-          "computed here can be compared to any recorded anchor.",
+    print("  IDENTICAL. Colab is interchangeable with Kaggle; a number "
+          "computed here may be compared to a recorded anchor.",
           flush=True)
 elif d < 0.003:
-    print("  WITHIN THE RESOLUTION FLOOR but not identical. Usable for "
-          "screening, NOT for a delta of the size this project chases -- "
-          "a platform difference of the same order as the effect is not "
-          "a platform that can measure the effect.", flush=True)
+    print("  WITHIN THE RESOLUTION FLOOR but NOT identical. Usable for "
+          "screening only. A platform difference the same size as the "
+          "effects this project chases is not a platform that can "
+          "measure them.", flush=True)
 else:
-    print("  DIFFERENT. Colab may only run self-contained experiments "
-          "where every arm is computed here. Do not compare a Colab "
-          "number to a Kaggle number.", flush=True)
+    print("  DIFFERENT. Colab may run only SELF-CONTAINED experiments, "
+          "every arm computed here. Never compare a Colab number to a "
+          "Kaggle number.", flush=True)
+warning_summary()
 print(f"\n  {time.time()-t0:.0f}s total", flush=True)
 print("\nCOLAB CHECK DONE", flush=True)

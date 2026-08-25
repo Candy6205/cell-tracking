@@ -96,6 +96,90 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-25 -- ⭐⭐⭐⭐ THE POST-LINK SWEEP: one of fourteen survived. `SHORT_MIN` 6 → 4, positive in all three domains.
+
+`biohub-post-sweep`, 245 min, CPU. Seven post-link constants inherited
+from the public solution, fourteen one-at-a-time changes, scored in
+`6bba` (12 holdout), `44b6` (12 outside D32's pool) and Zebrahub (8
+crops). Both anchors held: BASE `6bba` reproduced `biohub-poolsize`'s
+D187 exactly at score 0.9386 / adj_J 0.9254 / div_J 0.1316.
+
+### BASE, the shipped configuration
+
+| domain | score | adj_J | div_J |
+|---|---|---|---|
+| 6bba | 0.9386 | 0.9254 | 0.1316 |
+| 44b6 | 0.8499 | 0.8499 | **0.0000** |
+| zebrahub | 0.8014 | 0.7992 | 0.0221 |
+
+### The result
+
+**`short_4` is the only change that survived the pre-registered
+three-domain rule with a delta big enough to see.**
+
+| config | 6bba | 44b6 | zebrahub | verdict |
+|---|---|---|---|---|
+| **short_4** (`SHORT_MIN` 6→4) | **+0.0025** | **+0.0054** | **+0.0045** | **same sign, positive** |
+| short_8 (`SHORT_MIN` 6→8) | +0.0007 | +0.0044 | **−0.0056** | signs disagree |
+| lf_w_0.5 | −0.0015 | −0.0027 | −0.0032 | same sign, negative |
+| lf_win_1 | −0.0002 | −0.0007 | −0.0020 | same sign, negative |
+| gap_minsc_0.15 | +0.0002 | −0.0003 | −0.0008 | signs disagree |
+| lf_w_1.0 | +0.0014 | −0.0019 | +0.0007 | signs disagree |
+| lf_win_3 | +0.0010 | −0.0027 | +0.0004 | signs disagree |
+| the four `gap_*` gate/snap/cap rows | ±0.0000 | ±0.0006 | ±0.0001 | noise, see below |
+
+### What `SHORT_MIN` is, in plain terms
+
+`_short_filter` deletes a whole predicted track when it has fewer than
+`SHORT_MIN` nodes, unless that track contains a division. The shipped
+value is 6. Lowering it to 4 means **keeping the 4- and 5-node tracks we
+were throwing away**, and doing that gains adj_J in every domain.
+
+The filter is a bet that short predicted tracks are mostly wrong. At
+length 4–5 the bet loses: those fragments are mostly right, and deleting
+them removes correct edges from the numerator. Going the other way
+(`short_8`, delete even more) helps `44b6` and hurts Zebrahub — that is
+the signature of a domain-specific effect, and the rule discards it.
+
+### A correction to the script's own verdict column, made here so it is not repeated
+
+`gap_gate_7` printed **"SAME SIGN, POSITIVE"** with three deltas of
+`+0.0000`. That is not a win. All three were positive but under `1e-4`,
+and the test as written had no lower band, so it promoted a number a
+thousand times smaller than the holdout's own noise. **Agreeing in sign
+is not the same as being large enough to see.** `short_sweep.py` adds an
+explicit `TINY = 5e-4` floor; anything whose weakest domain is under it
+prints `TOO SMALL TO MATTER` instead. Read `short_4` as the only real
+survivor of the fourteen.
+
+### The one column that carries no information
+
+`44b6`'s BASE div_J is **0.0000** — the 12 `44b6` datasets in this arm
+produce no correct divisions at all, so every `44b6` entry in the div_J
+delta table is `+0.0000` by construction. It is not evidence that these
+changes leave divisions alone; it is evidence that there is nothing
+there to move.
+
+### What happens next
+
+1. **`biohub-short-sweep` is queued** (CPU, 7 configs × 3 domains):
+   `SHORT_MIN` ∈ {1, 2, 3, 4, 5, 6, 7}, where 1 means the filter is
+   switched off entirely. **Is `short_4` a curve or a spike?** A real
+   effect varies smoothly with the constant; a lone value that wins
+   while both neighbours lose is what noise looks like. It carries two
+   must-reproduce anchors, the second being `short_4`'s three deltas to
+   four decimals — same code, same inputs, so any drift means the
+   pipeline is not deterministic and this whole table was noise.
+2. **Then, and only then, the leaderboard.** `SHORT_MIN` is line 127 of
+   `submit_ranker.py`, the script behind ref 55707206 (LB 0.921), so
+   `6 → 4` is a genuine single-variable submission. That is the
+   experiment that tells us whether **the three-domain rule is worth
+   anything** — the local holdout is 0 for 2 against the leaderboard,
+   but both of those failures were `6bba`-only. This is the first
+   candidate the rule has ever produced. Costs ~11.8 h GPU and one
+   submission slot; **needs the user's go-ahead** because it is
+   outward-facing.
+
 ## ⭐ PRIORITY as of 2026-08-25 (user's call): DIVISIONS FIRST, and the reason is structural
 
 **This overrides the 2026-08-24 ordering below.** It is not a change of

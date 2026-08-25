@@ -1,24 +1,24 @@
 {
-  "id": "faustine649/biohub-prenms2",
-  "title": "Biohub prenms2",
-  "code_file": "prenms2.py",
+  "id": "faustine649/biohub-short-sweep",
+  "title": "Biohub short sweep",
+  "code_file": "short_sweep.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": true,
-  "enable_internet": false,
-  "machine_shape": "NvidiaTeslaT4",
+  "enable_gpu": false,
+  "enable_internet": true,
   "dataset_sources": [
-    "xiaoleilian/biohub-unet3d-weights",
-    "xiaoleilian/biohub-unet3d-weights-v2models"
+    "pilkwang/biohub-tracking-support-pack-50ep-v1",
+    "faustine649/cell-tracking"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
+    "faustine649/biohub-cache-train",
     "faustine649/biohub-poolsize",
-    "faustine649/biohub-zebrahub-extract"
+    "faustine649/biohub-zh-detect"
   ],
   "model_sources": []
 }
