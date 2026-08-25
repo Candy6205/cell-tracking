@@ -22,6 +22,12 @@ wrong and the length hides it.**
   is wrong"; "brightness weights dim voxels less", not "it strips the
   fringe". This governs what is written TO the user; entries in `docs/`
   already use figurative shorthand and are not being rewritten.
+- **No unexplained abbreviations.** 2026-08-25: "TTA是什么，神奇的缩写增加了".
+  Say the thing — "flip-and-average" / 翻转平均, not "TTA" — or expand it
+  the first time. Project-local names coined WITH the user (adj_J, div_J,
+  the orphan patch, the repair pool) are fine; field jargon imported from
+  outside is not, and switching to an abbreviation for something already
+  being discussed in plain words is the worst version of it.
 
 **They will interrogate the provenance of any claim, and they are right
 to.** Recalled "facts" drift — quantifiers inflate, inferences harden into

@@ -52,6 +52,32 @@ same 41 crops with the same protocol: **recall 0.7659, precision
 0.7362**. That run used every 5th frame and this one uses every 10th, so
 the two are not identical samples and small differences are expected;
 a large one means this reimplementation is not the pipeline's detector.
+(v2 landed 0.7738 / 0.7350. It holds.)
+
+v3: FIXED A REAL FLAW THE USER CAUGHT. v2 scored every configuration at
+the SAME threshold, 0.15 -- but 0.15 is calibrated for the THREE-BRANCH
+AVERAGE, not for a single branch. Branch 2 fired only 75,986 times
+against branch 1's 125,419, and v2 read that as "B2 is nearly useless"
+(solo F1 0.6239). That reading is not supported: **fewer detections at a
+fixed threshold is the signature of a systematically lower probability
+scale, not of a worse model.** B2 also had the HIGHEST precision of the
+three singles (0.7291 against B0's 0.7235) -- it is conservative, not
+bad, and a conservative member is exactly what an ensemble can use.
+
+Same class of error as several others this session: comparing
+quantities that live on different scales. So v3 sweeps the gate PER
+CONFIGURATION and reports each one at its own best operating point.
+
+The sweep is free. The greedy 1:1 match runs in descending score order,
+so the assignment of the detections above any threshold t does not
+depend on anything below t. **One greedy pass therefore yields TP and
+detection counts at every threshold at once**: TP(t) is the number of
+MATCHED detections scoring >= t.
+
+v3 also adds `B0_f1` -- one branch, one view, **a single forward pass**
+-- because v2 found the four flip views buy nothing (FULL_f1, 3 passes,
+F1 0.7546 against FULL's 0.7539 at 12) and B0 alone nearly matches FULL.
+If one pass ties twelve, that is a 12x cheaper detector.
 """
 import gc
 import glob
@@ -384,7 +410,12 @@ CONFIGS = [
     ("FULL",      (0, 1, 2), (0, 1, 2, 3)),
     ("FULL_f1",   (0, 1, 2), (0,)),
     ("FULL_f2",   (0, 1, 2), (0, 1)),
+    ("B0_f1",     (0,),      (0,)),          # ONE forward pass
+    ("B1_f1",     (1,),      (0,)),
+    ("B2_f1",     (2,),      (0,)),
 ]
+# every gate the sweep reports; DETECT_THRESH is the peak-finding floor
+GATES = (0.05, 0.08, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.60)
 
 CROPS = None
 for _c in ("/kaggle/input/notebooks/faustine649/biohub-zebrahub-extract/"
@@ -400,8 +431,9 @@ assert files, f"{CROPS} is empty"
 
 print(f"\n=== ABLATION over {len(CONFIGS)} configurations, "
       f"{len(files)} crops, every {FRAME_STRIDE}th frame ===", flush=True)
-print(f"  scoring at UNET_THRESH {SCORE_THR}, greedy 1:1 within "
-      f"{MATCH_UM} um, Zebrahub dense GT", flush=True)
+print(f"  peaks at DETECT_THRESH {DETECT_THRESH}, NMS, then swept "
+      f"over gates {GATES}; greedy 1:1 within {MATCH_UM} um, "
+      f"Zebrahub dense GT", flush=True)
 print("  anchor: biohub-node-bright v2 read this detector at recall "
       "0.7659 / precision 0.7362", flush=True)
 
@@ -436,7 +468,7 @@ def detect_from(logits, vol, branches, flips):
             acc = lg if acc is None else acc + lg
         hs.append(1.0 / (1.0 + np.exp(-(acc / len(flips)))))
     h = hs[0] if len(hs) == 1 else np.mean(hs, axis=0)
-    # PEAK AT DETECT_THRESH, NMS, THEN gate at SCORE_THR -- the order the
+    # PEAK AT DETECT_THRESH, NMS, then the CALLER gates -- the order the
     # caches were built in. Peak-finding directly at 0.15 is NOT the same
     # detector: _physical_nms is order dependent, so a candidate pool
     # containing the low-scoring peaks suppresses differently. Getting
@@ -451,21 +483,30 @@ def detect_from(logits, vol, branches, flips):
     coords[:, 1] = coords[:, 1] * POOL + (POOL - 1) / 2
     coords[:, 2] = coords[:, 2] * POOL + (POOL - 1) / 2
     ref = np.array([_refine(vol, c)[0] for c in coords])
-    rc, rs = _physical_nms(ref, sc, NMS_UM)
-    keep = rs >= SCORE_THR
-    return rc[keep], rs[keep]
+    # v3 returns the FULL post-NMS list; the caller gates it. NMS runs
+    # before the gate in the cache's order, so gating afterwards at any
+    # level is exactly what the pipeline would have produced there.
+    return _physical_nms(ref, sc, NMS_UM)
 
 
 def match(det, gt_um):
     """Greedy 1:1, highest score first -- node_bright v2's protocol.
-    Returns (n_matched, n_det)."""
+
+    Returns TP and detection counts AT EVERY GATE from one pass. That is
+    exact, not an approximation: the greedy loop consumes detections in
+    descending score order, so whether a detection scoring >= t is
+    matched cannot depend on any detection scoring < t. Running the
+    match once and counting by score therefore gives the same answer as
+    re-running it after each gate."""
     coords, sc = det
+    tp = np.zeros(len(GATES), np.int64)
+    nd = np.zeros(len(GATES), np.int64)
     if len(coords) == 0 or len(gt_um) == 0:
-        return 0, len(coords)
+        return tp, nd
     det_um = coords * SCALE[None, :]
     tree = cKDTree(gt_um)
     claimed = set()
-    hit = 0
+    matched = np.zeros(len(coords), bool)
     for i in np.argsort(-sc):
         near = tree.query_ball_point(det_um[i], MATCH_UM)
         if not near:
@@ -474,12 +515,16 @@ def match(det, gt_um):
         free = [g for g in near if g not in claimed]
         if free:
             claimed.add(free[0])
-            hit += 1
-    return hit, len(coords)
+            matched[i] = True
+    for k, g in enumerate(GATES):
+        m = sc >= g
+        nd[k] = int(m.sum())
+        tp[k] = int((m & matched).sum())
+    return tp, nd
 
 
-TP = {c[0]: 0 for c in CONFIGS}
-ND = {c[0]: 0 for c in CONFIGS}
+TP = {c[0]: np.zeros(len(GATES), np.int64) for c in CONFIGS}
+ND = {c[0]: np.zeros(len(GATES), np.int64) for c in CONFIGS}
 NG = 0
 t0 = time.time()
 done = 0
@@ -514,9 +559,9 @@ for f in files:
         NG += len(gi)
         lg = all_logits(vol)
         for nm, bs, fs in CONFIGS:
-            hit, nd = match(detect_from(lg, vol, bs, fs), gt_um)
-            TP[nm] += hit
-            ND[nm] += nd
+            tp_, nd_ = match(detect_from(lg, vol, bs, fs), gt_um)
+            TP[nm] += tp_
+            ND[nm] += nd_
         del lg, vol
     done += 1
     print(f"  {done}/{len(files)} {f.stem}  ({time.time() - t0:.0f}s)",
@@ -525,40 +570,65 @@ for f in files:
     gc.collect()
 
 print(f"\n=== RESULTS: {NG} GT points over {done} crops ===", flush=True)
-print(f"  {'config':<10} {'passes':>7} {'dets':>9} {'recall':>8} "
-      f"{'prec':>8} {'F1':>8}", flush=True)
-rows = {}
+print("  Each configuration at ITS OWN best gate. Comparing all of them "
+      "at 0.15 -- what v2 did -- is comparing probability scales that "
+      "are not the same scale, which is what made B2 look useless.",
+      flush=True)
+print(f"\n  {'config':<10} {'passes':>6} {'gate*':>6} {'dets':>9} "
+      f"{'recall':>8} {'prec':>8} {'F1*':>8} {'F1@.15':>8}", flush=True)
+best = {}
+at15 = {}
+i15 = GATES.index(0.15)
 for nm, bs, fs in CONFIGS:
     rec = TP[nm] / max(1, NG)
-    pre = TP[nm] / max(1, ND[nm])
-    f1 = 2 * rec * pre / max(1e-9, rec + pre)
-    rows[nm] = (rec, pre, f1)
-    print(f"  {nm:<10} {len(bs) * len(fs):>7} {ND[nm]:>9} {rec:>8.4f} "
-          f"{pre:>8.4f} {f1:>8.4f}", flush=True)
+    pre = TP[nm] / np.maximum(1, ND[nm])
+    f1 = 2 * rec * pre / np.maximum(1e-9, rec + pre)
+    k = int(np.argmax(f1))
+    best[nm] = (GATES[k], float(rec[k]), float(pre[k]), float(f1[k]))
+    at15[nm] = float(f1[i15])
+    print(f"  {nm:<10} {len(bs) * len(fs):>6} {GATES[k]:>6.2f} "
+          f"{ND[nm][k]:>9} {rec[k]:>8.4f} {pre[k]:>8.4f} {f1[k]:>8.4f} "
+          f"{f1[i15]:>8.4f}", flush=True)
+
+print("\n=== the full F1-vs-gate curve, which is what settles B2 ===",
+      flush=True)
+print(f"  {'config':<10}" + "".join(f"{g:>8.2f}" for g in GATES),
+      flush=True)
+for nm, bs, fs in CONFIGS:
+    rec = TP[nm] / max(1, NG)
+    pre = TP[nm] / np.maximum(1, ND[nm])
+    f1 = 2 * rec * pre / np.maximum(1e-9, rec + pre)
+    print(f"  {nm:<10}" + "".join(f"{v:>8.4f}" for v in f1), flush=True)
 
 print("\n=== reading it ===", flush=True)
+print("  B2 AT ITS OWN GATE is the number that decides whether it is a "
+      "weak model or merely a differently calibrated one. If its best F1 "
+      "sits near B0's and B1's, v2's 'nearly useless' was an artefact of "
+      "scoring everything at 0.15 and must be struck.", flush=True)
 print("  Branches 1 and 2 get PIXEL-IDENTICAL input (both tophat), so "
-      "B12 adding little over B1 or B2 alone is the expected result and "
-      "would say the ensemble has two independent views, not three.",
-      flush=True)
-print("  Branch 0 is the only different view and the weakest alone "
-      "(val_recall 0.5731 vs 0.6589 and 0.5789). If B01 and B02 beat "
-      "B12, DIVERSITY is what the ensemble buys, not member quality -- "
-      "which is the user's original question answered directly.",
-      flush=True)
+      "B12 adding little over B1 or B2 alone would say the ensemble has "
+      "two independent views, not three.", flush=True)
 for a, b in (("B01", "B12"), ("B02", "B12"), ("FULL", "B01"),
-             ("FULL", "B12"), ("FULL", "FULL_f2"), ("FULL_f2", "FULL_f1")):
-    if a in rows and b in rows:
-        print(f"  {a} - {b}: recall {rows[a][0] - rows[b][0]:+.4f}   "
-              f"prec {rows[a][1] - rows[b][1]:+.4f}   "
-              f"F1 {rows[a][2] - rows[b][2]:+.4f}", flush=True)
-print("\n  Any configuration whose F1 matches FULL is a configuration "
-      "the pipeline could switch to for free. FULL runs 12 forward "
-      "passes per frame; the cheapest tie is the saving.", flush=True)
-print("\n  ⚠ This is DETECTION quality, not adj_J. Detection recall was "
-      "costed at ~1.75% of the score and precision is not in that "
-      "decomposition at all, so a better F1 here is a reason to test a "
-      "configuration in the pipeline, not evidence it scores higher.",
+             ("FULL", "B12"), ("FULL", "FULL_f1"), ("FULL", "B0_f1"),
+             ("B0", "B0_f1"), ("B1", "B1_f1"), ("B2", "B2_f1")):
+    if a in best and b in best:
+        print(f"  {a} - {b}: F1* {best[a][3] - best[b][3]:+.4f}   "
+              f"(gates {best[a][0]:.2f} vs {best[b][0]:.2f})", flush=True)
+
+cheap = sorted(((len(bs) * len(fs), nm) for nm, bs, fs in CONFIGS
+                if best[nm][3] >= best["FULL"][3] - 0.003))
+print(f"\n  Configurations within 0.003 F1 of FULL, cheapest first: "
+      f"{[f'{n}({p})' for p, n in cheap]}", flush=True)
+print("  FULL runs 12 forward passes. The cheapest tie is the saving, "
+      "and it is a saving on every future GPU run as well as on the "
+      "submission's runtime budget.", flush=True)
+print("\n  WARNING This is DETECTION quality, not adj_J. Detection "
+      "recall was costed at ~1.75% of the score and precision is not in "
+      "that decomposition at all, so a better F1 here is a reason to "
+      "test a configuration in the pipeline, not evidence it scores "
+      "higher. The gate that maximises F1 is also not necessarily the "
+      "gate that maximises adj_J -- biohub-node-filter measured that "
+      "removing detections costs edges faster than it removes noise.",
       flush=True)
 print(f"\n  {time.time() - t0:.0f}s total", flush=True)
 print("\nDET ABLATE3 DONE", flush=True)

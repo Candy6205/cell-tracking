@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-det-ablate3",
-  "title": "Biohub det ablate3",
-  "code_file": "det_ablate3.py",
+  "id": "faustine649/biohub-tta-probe",
+  "title": "Biohub tta probe",
+  "code_file": "tta_probe.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
