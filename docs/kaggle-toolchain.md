@@ -454,12 +454,42 @@ What a submission actually costs:
   selection slots at the end;
 - the wall-clock wait for the rescore, which matters only for planning.
 
-The ~11.8 h figure is real but it is the **hidden-test runtime against
-the competition's 12 h cap** — a timeout risk, recorded in ref
-55707206's description. That is a reason to watch the margin when adding
-work to the pipeline. It is not a quota charge, and treating it as one
-inflates the apparent price of the single most informative experiment
-available: putting a local result on the leaderboard.
+### ⚠ And 11.8 h is an ESTIMATE that has never been measured
+
+Also corrected by the user, same day. The number comes from ref
+55707206's own description, which I wrote:
+
+> RUNTIME RISK: 210 s/dataset measured vs the 0.917 pipeline's 86 s;
+> **~200 hidden volumes** puts this near 11.8 h against the 12 h cap
+
+That is `210 × 200 = 11.67 h`, and **both factors are assumptions**:
+
+- **210 s/dataset** was measured on the 4 visible movies, not the hidden
+  ones;
+- **~200 hidden volumes** is a guess, taken from the train split having
+  199. Nothing establishes the hidden split is the same size.
+
+**Nothing on record measures the hidden rescore's duration.** The
+submission record carries the submit timestamp and no completion time;
+the kernel's `last_run_time` is the visible run, which is a different
+job. The user's standing observation is the only direct evidence there
+is, and it points the other way: **no submission has ever still been
+running the next morning**, so the real figure is likely under 8 h.
+
+This matters because the estimate has already been used to block work —
+`progress.md` calls `biohub-thr-sweep`'s +0.0033 threshold change "too
+risky to submit on its own", and 11.8 h is the entire reason. That
+verdict rests on an unverified extrapolation and should be revisited.
+
+**A measurement is available and costs nothing:** the visible run emits
+`submission.csv` for 4 movies, and the submission record carries
+`total_bytes` for the hidden run (262,623,879 for ref 55707206).
+Dividing gives the hidden movie count directly, which is the weaker of
+the two assumptions. Do that instead of repeating the estimate.
+
+Until then, treat 11.8 h as what it is: **arithmetic, not a
+measurement.** It is a reason to watch the margin, not a budget charge,
+and not a fact.
 
 **A kernel that dies instantly still pays the full mount.** `biohub-det-ablate2`
 v1 hit an `assert` **7.7 seconds** into the script and burned **~4.7 minutes**

@@ -1199,6 +1199,19 @@ global solve is projected at ~11.8 h against a 12 h cap (ref 55707206's
 description), which is what currently makes the +0.0033 threshold change
 from `biohub-thr-sweep` too risky to submit on its own.
 
+> **SUPERSEDED 2026-08-25 — that verdict rests on a number nobody
+> measured.** 11.8 h is `210 s/dataset × ~200 hidden volumes`, and both
+> factors are assumptions: the 210 s was timed on the 4 VISIBLE movies,
+> and the ~200 comes from the train split having 199, with nothing
+> establishing the hidden split is the same size. Nothing on record
+> measures the hidden rescore's duration at all. The user's standing
+> observation — no submission has ever still been running the next
+> morning — is the only direct evidence and puts it under 8 h. **So
+> "too risky to submit on its own" is not established**, and the
+> threshold change should be reconsidered on its merits. See
+> `kaggle-toolchain.md` section 9 for the measurement that would settle
+> it.
+
 > WARNING **QUALIFIED the same day by `biohub-tta-probe` (entry above).**
 > "Tie" means tie ON F1. The two configurations disagree on **11.08% of
 > their detections** (symmetric difference 6,298 of 56,858, matched
