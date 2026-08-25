@@ -306,6 +306,99 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐ brightness strips the fringe and the signal is still not there. Size is DONE for divisions.
+
+`div_intmass.py` -> `biohub-div-intmass` v2, **4 min on CPU**, 12 crops
+carrying 5,699 division events. Sum BRIGHTNESS inside each mask instead
+of counting voxels, so a dim fringe is discounted continuously with no
+new threshold -- the retry `mask_anatomy` called for.
+
+**Answer: per-fork AUC 0.6210 by brightness against 0.6054 by voxel
+count. +0.0157. Mass conservation does not come back.**
+
+### The gate passed -- brightness really does discount the fringe
+
+| the outer one-voxel shell holds | |
+|---|---|
+| **volume** | 47.7% |
+| **brightness** | **33.3%** |
+
+A 14.4-point discount. The fringe is real and it is dim, exactly as
+`mask_anatomy` said. So step 2's numbers are attributable.
+
+### The anchor held to 0.0003
+
+| | div_mass, 41 crops | here, 12 crops |
+|---|---|---|
+| voxel-count DIV median | 1.772 | **1.784** |
+| voxel-count per-fork AUC | 0.6051 | **0.6054** |
+
+The subset reproduces the whole, so the brightness-minus-voxel
+difference is the only thing that varied.
+
+### The measurement
+
+| | voxel count | **brightness** | conserved predicts |
+|---|---|---|---|
+| DIV `(Ia+Ib)/Ip` | 1.784 | **1.713** | 1.0 |
+| CONT | 1.000 | **1.000** | 1.0 |
+| FAKE FORK | 2.009 | 2.027 | 2.0 |
+| **per-fork AUC** | 0.6054 | **0.6210** | |
+
+Stripping the fringe moved the division ratio 4% of the way toward 1.0
+when it needed to move about 80%. **The fringe was real but it was not
+what was hiding the signal; there was no signal under it.**
+
+### ⭐ The user's photobleaching worry, answered
+
+The user raised that mother-at-t and daughters-at-t+1 are two separate
+exposures, so bleaching, focus drift or illumination drift would bias
+I(t+1)/I(t) for reasons that are not biology. **`CONT Inext/Inow` is
+exactly that control and it reads 1.000 over 45,657 non-dividing
+cells.** No drift. (`_norm` also normalises each frame by its own 50th
+and 99.5th percentiles, so global drift is removed before this is even
+measured -- and the CONT row confirms the removal worked.)
+
+### Two live explanations for 1.713, neither of which changes the call
+
+1. the two daughters genuinely carry ~1.7x the mother's fluorescence --
+   either not conserved, or the mother's last annotated frame is not the
+   frame where her material is all present;
+2. the mother is mid-mitosis at t, the detector responds weakly to
+   condensed chromatin, her mask is small and her brightness undercounted.
+
+Also a hard ceiling regardless: **2,289 of 5,699 divisions (40%) had both
+daughters in one label** and were dropped, so the 2,870 usable ones are
+the already-well-separated ones -- a biased, easier sample, and the
+answer is still negative on it.
+
+### ⚠ Where this leaves divisions, checked against the record rather than recalled
+
+I recommended wiring div-kinematics' FULL model (1.8 FP per TP vs BASE's
+6.9) into the pipeline. **That was already spent and it failed:**
+`biohub-div-gate` did exactly that on 2026-08-24 and the prune sweep is
+monotone DOWNHILL -- doing nothing wins, because the bottom 25% of forks
+by `p_div` holds 20% of the TPs against only 4% of the FPs. The 1.8 was
+measured over every candidate triple `build()` emits; the pipeline emits
+553 forks that already passed the ILP or the orphan patch, and those are
+the hard cases. Full entry below.
+
+**The correction itself is the reusable part: I produced 1.8 from recall
+and did not check whether it had been spent. `working-agreement.md` says
+look numbers up at the moment of use -- that rule covers not just the
+VALUE but whether the lead is still open.**
+
+The division ledger as it now stands:
+
+| route | status |
+|---|---|
+| morphology / size as a division signal | measured today, AUC 0.621, too weak |
+| `p_div` as a post-hoc fork filter | dead 2026-08-24, monotone downhill |
+| forking harder to buy true divisions | dead, division FN never below 6 |
+| `div_forks`' three uses | all null 2026-08-24 |
+| **morphology's effect on the ORPHAN SUPPLY** | **open -- `morph_edge`'s div_J** |
+
+
 ## 2026-08-25 -- ⭐⭐⭐ the masks are cells plus a FRINGE, not a tessellation. The user was right.
 
 `mask_anatomy.py` -> `biohub-mask-anatomy` v1, **19 s on CPU**, labels
