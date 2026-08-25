@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-tta-probe",
-  "title": "Biohub tta probe",
-  "code_file": "tta_probe.py",
+  "id": "faustine649/biohub-det-floor",
+  "title": "Biohub det floor",
+  "code_file": "det_floor.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
