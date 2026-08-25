@@ -1,24 +1,20 @@
 {
-  "id": "faustine649/biohub-thr3",
-  "title": "Biohub thr3",
-  "code_file": "thr3.py",
+  "id": "faustine649/biohub-gt-export",
+  "title": "Biohub gt export",
+  "code_file": "gt_export.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
   "enable_gpu": false,
-  "enable_internet": true,
+  "enable_internet": false,
   "dataset_sources": [
-    "pilkwang/biohub-tracking-support-pack-50ep-v1",
     "faustine649/cell-tracking"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
   "kernel_sources": [
-    "faustine649/biohub-edge-ranker",
-    "faustine649/biohub-cache-train",
-    "faustine649/biohub-poolsize",
-    "faustine649/biohub-zh-detect"
+    "faustine649/biohub-poolsize"
   ],
   "model_sources": []
 }

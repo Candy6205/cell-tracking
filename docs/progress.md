@@ -306,6 +306,60 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- the GT is 212 KB, and the 44b6 arm is 2x noisier than the 6bba one
+
+`gt_export.py` -> `biohub-gt-export` v1, **1 min on CPU**. Writes what
+`read_geff` returns as one npz per dataset, for the 12 `6bba` holdout
+and 12 `44b6` outside D32's training pool.
+
+**24 datasets, 13,279 nodes, 12,839 edges, 212 KB total.** The
+competition data is 87.6 GB of zarr and its `.geff` directories cannot
+be fetched file-by-file; the GT inside them is a fifth of a megabyte.
+That unblocks any machine without the competition mount -- see
+`kaggle-toolchain.md` section 11 for the Colab worker it was blocking.
+
+(Degradation noted in the log and worth keeping: `zarr` was not
+installed, so `read_geff` fell back to its filesystem reader. A `.geff`
+IS a zarr store, so that path matters even though the `geff` library is
+optional.)
+
+### ⚠ The measurement this exposes, which bears on `biohub-post-sweep`
+
+| domain | datasets | GT edges | per dataset |
+|---|---|---|---|
+| `6bba` | 12 | **10,313** | 859 |
+| `44b6` | 12 | **2,526** | **210** |
+
+**The 44b6 arm carries 24% of the 6bba arm's ground truth**, so its
+adj_J estimate is about **2x noisier** (standard error goes as
+1/sqrt(n)). Its thinnest dataset has **49 edges**.
+
+**44b6 is the worst of both worlds for a sweep arm:** 327 cells per
+frame against 6bba's 97, so the ILP costs the most there, while the
+annotated fraction is 0.77% against 9.71%, so the measurement is the
+weakest. That is also why `biohub-post-sweep` ran past three hours
+against an estimate of 100 minutes -- the estimate used `poolsize`'s
+67 s per dataset, **measured on 6bba only.**
+
+### How to read the three-domain rule given this
+
+The rule -- an effect counts only if its adj_J delta has the same sign
+in `6bba`, `44b6` and Zebrahub -- controls false positives well and has
+**low power**. If each domain independently shows the correct sign for a
+marginal effect about 65% of the time, all three agreeing happens ~27%
+of the time. Most real small effects will fail it.
+
+That is defensible: the holdout is 0 for 2 against the leaderboard at
+this scale, so an effect the rule cannot detect is one that would not
+have been actionable. **But do not read "nothing survived the rule" as
+"these constants are already optimal."** Those are different claims, and
+only the first one will have been measured.
+
+If power is wanted later, enlarge the 44b6 arm rather than loosening the
+rule: 71 `44b6` datasets exist and 12 are being used. Using every one
+outside D32's pool would roughly quadruple that arm's ground truth, at
+the cost of runtime and no quota.
+
 ## 2026-08-25 -- ⭐⭐⭐⭐ THE LOCAL HOLDOUT IS 0 FOR 2 AGAINST THE LEADERBOARD
 
 **Submission 55757064 (D187 ranker, pool 32 -> 187) scored LB 0.920
