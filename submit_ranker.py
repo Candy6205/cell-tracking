@@ -115,7 +115,43 @@ SCALE = np.array([1.625, 0.40625, 0.40625])
 POOL = 4
 REPAIR = True
 CAND_THR = 0.05
-UNET_THRESH = 0.15
+# ---- THE ONLY CHANGE vs ref 55772253 (LB 0.920) ------------------------
+# The detection gate. 0.15 was inherited from the public solution and
+# swept downward for the first time by biohub-thr-sweep, then in three
+# domains by biohub-thr3:
+#
+#   gate     6bba      44b6   zebrahub
+#   0.15   0.9222    0.8603     0.7988   <- was shipped
+#   0.12   0.9243    0.8598     0.8068
+#   delta  +0.0021   -0.0006    +0.0080
+#
+# The three-domain rule DISCARDS this: 44b6 dissents. But it dissents by
+# 0.0006, under the resolution floor, while Zebrahub -- the dense-GT arm,
+# whose adj_J is over ALL cells rather than annotated ones -- gains
+# +0.0080, four times 6bba's gain. Submitting it is the user's call
+# against the rule, on the reasoning that a leaderboard that reports
+# three decimals cannot reward a policy of shipping only >= 0.005, and
+# that a score which does not FALL is a green light rather than a red
+# one. Rank has gone 155 -> 285 -> 334 while we held still.
+#
+# THE MECHANISM, which is why this one has a reason and not just a
+# number: flicker.py found that at the 20.2% of missed frames which do
+# have a sub-threshold peak, the median score is 0.1226. Those cells sit
+# between 0.12 and 0.15 and this change admits them.
+#
+# ⚠ TWO THINGS TO WATCH, both measured by thr3 and both adverse:
+# 1. NODES. 548,794 -> 596,529, +8.7%. The metric's node-count penalty
+#    is 0.1 * (N_pred - N_true)/N_true, so +8.7% costs about -0.0080 of
+#    J -- the same size as Zebrahub's gain. Ref 55772253 showed exactly
+#    this cancellation: +1.61% bytes, local +0.0025..+0.0054, LB 0.000.
+#    Read total_bytes on this one before reading the score.
+# 2. THE REPAIR POOL. _gap_close draws candidates from
+#    [CAND_THR, UNET_THRESH) and requires >= GAP1_MIN_CAND_SCORE 0.10,
+#    so the usable band goes from [0.10, 0.15) to [0.10, 0.12) -- cut by
+#    60%. thr3 measured the whole pool 111,937 -> 64,202. Lowering the
+#    gate does not create detections, it MOVES them out of the repair
+#    pool into primary nodes, exactly conserved.
+UNET_THRESH = 0.12
 NMS_UM = 4.0
 DETECT_THRESH = min(UNET_THRESH, CAND_THR) if REPAIR else UNET_THRESH
 
