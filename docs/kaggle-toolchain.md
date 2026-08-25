@@ -254,7 +254,70 @@ Weights are resolved by `glob("/kaggle/input/**/<name>")`, so a wrong
 mount is invisible until the assert fires minutes into the run.
 
 
-## 11. Colab as a third worker: what is established, and what blocks it
+## 11. Colab as a third worker: never run the job INSIDE the exec cell
+
+### The one rule
+
+**`colab exec` must only ever start a job and return. Never wait in it.**
+
+```bash
+# in the exec cell -- returns in under a second
+nohup python /content/job.py > /content/job.log 2>&1 &
+# then poll with separate short execs
+tail -40 /content/job.log
+```
+
+The job then survives the client disconnecting, its progress is visible
+while it runs, and a lost session costs the run but not the answer.
+
+### The failure that established this, and its correct diagnosis
+
+2026-08-25. The environment was solved end to end — version-matched
+`tracksdata 0.1.0rc6.dev3`, data uploaded, the whole chain proven on one
+dataset (`6bba_2312ac41: nodes 11523 edges 11205, 21s`, ILP through
+SCIP, post-link patches, geff save, official scorer). The 12-dataset
+acceptance run then returned `TimeoutError: Timeout waiting for output`
+and nothing else, and the session was later reclaimed.
+
+**The first write-up of this called it a platform limit and parked
+Colab. That was wrong** — the user, who runs long Colab jobs in another
+session, said so immediately. The simpler explanation fits every
+observation:
+
+- `--timeout 3600` is **the client waiting for output, not the job
+  running**. The traceback comes from `jupyter_kernel_client`, not from
+  Colab.
+- The job needed longer than 60 minutes and was not hung. On Kaggle the
+  same 12-dataset ILP stage occupies a large share of `post_sweep`'s
+  1323 s `6bba` block on a 4-vCPU machine; a smaller Colab CPU VM taking
+  1–2 hours is ordinary. The estimate that killed it — "dataset 1 took
+  21 s, so 12 take 4 minutes" — was the actual error.
+- The client giving up **orphaned** the run; the session then went idle
+  and was reclaimed. **The client was killed first, and by us.**
+
+One failed run does not establish a platform limit. Prefer the
+explanation that requires nothing new to be true.
+
+### Two properties of `colab exec` that make the rule necessary
+
+- It runs the file as ONE interactive cell and **buffers all stdout
+  until the cell finishes**, so a job printing a line per dataset shows
+  nothing for its whole duration.
+- On timeout it returns the traceback **and none of the run's output**,
+  so there is no way to tell how far it got.
+
+Both disappear once the job writes to a file and the cell returns
+immediately.
+
+### Sessions
+
+**Multiple concurrent sessions are allowed** (confirmed by the user
+2026-08-25). Use a distinct `-s` name and do not attach to a session you
+did not create — `colab sessions` shows the user's own work alongside
+ours, and taking over the wrong one interferes with a job you cannot
+see.
+
+### Everything below still holds
 
 Established 2026-08-25 on the user's WSL install of `google-colab-cli`.
 The user's laptop itself is NOT usable -- it runs at 70-80% memory with
