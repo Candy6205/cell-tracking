@@ -73,13 +73,36 @@ import predict_unet_transformer as PIPE                        # noqa: E402
 print("tracksdata + pipeline import OK", flush=True)
 
 # ---- the trained ranker, from the attached kernel output ----------------
+# 2026-08-25: biohub-poolsize showed the ranker had been learning from 32
+# datasets while 187 sat cached -- ranker_fine drew on biohub-edge-ranker's
+# 44 caches minus the 12 holdout, and biohub-cache-train added the other
+# 155 on 08-23 for the division census without anyone retraining. Holding
+# everything else fixed, 187 is worth adj_J +0.0032 and score +0.0073, and
+# both anchors held (D32 reproduced ranker_fine's 0.9884 edge AUC exactly
+# and landed 0.0002 from div-gate's adj_J).
+#
+# Prefer the D187 pkl and REFUSE to run on the old one. The filename
+# differs, so a plain glob for edge_ranker.pkl would silently pick up
+# ranker_fine's 32-dataset model and produce a submission that looks
+# entirely normal -- the exact failure mode this session hit four times.
+MIN_POOL = 100
 _pk = None
-for _d in pathlib.Path("/kaggle/input").glob("*/**/edge_ranker.pkl"):
-    _pk = _d
-    break
-assert _pk is not None, "attach a ranker kernel (edge_ranker.pkl) as source"
+for _pat in ("*/**/edge_ranker_d187.pkl", "*/**/edge_ranker.pkl"):
+    for _d in pathlib.Path("/kaggle/input").glob(_pat):
+        _pk = _d
+        break
+    if _pk is not None:
+        break
+assert _pk is not None, "attach a ranker kernel (edge_ranker*.pkl) as source"
 with open(_pk, "rb") as _f:
     _blob = pickle.load(_f)
+_pool = _blob.get("pool") if isinstance(_blob, dict) else None
+assert _pool is not None and len(_pool) >= MIN_POOL, (
+    f"ranker pkl at {_pk} was trained on "
+    f"{len(_pool) if _pool else 'an unrecorded number of'} datasets; this "
+    f"submission requires >= {MIN_POOL}. Attach faustine649/biohub-poolsize "
+    f"and detach biohub-ranker-fine.")
+print(f"ranker pool: {len(_pool)} datasets", flush=True)
 # the ranker kernels dump {"model": clf, "version": ...}, not a bare model
 CLF = _blob["model"] if isinstance(_blob, dict) else _blob
 assert hasattr(CLF, "predict_proba"),     f"ranker pkl holds {type(CLF).__name__}, not a classifier"

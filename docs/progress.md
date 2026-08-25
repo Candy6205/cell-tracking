@@ -96,7 +96,87 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
-## ⭐ PRIORITY as of 2026-08-24 (user's call): detection and linking, not divisions
+## ⭐ PRIORITY as of 2026-08-25 (user's call): DIVISIONS FIRST, and the reason is structural
+
+**This overrides the 2026-08-24 ordering below.** It is not a change of
+mind about the loss budget -- that table is still correct. It is that
+morphology arriving changed what the division machinery IS.
+
+The user's argument, in their words: divisions were being caught by the
+ORPHAN FORK, but morphology features are EDGE-correlated, so the simple
+orphan fork can no longer serve as the division criterion.
+
+Unpacked, and it is sharper than the "orphan starvation" worry recorded
+in `morph_edge.py`:
+
+**The orphan patch was never a division detector. It is a LINKER-FAILURE
+detector.** Its raw material is the ILP refusing the second daughter and
+leaving her unlinked; `_add_safe_divisions` then requires a parent with
+EXACTLY ONE child (`div_train.py:418`, `if len(ch) != 1: continue`).
+What it catches is therefore a function of how the linker fails. Change
+the linker -- which is exactly what putting morphology in the ranker
+does -- and what it catches changes, in a direction the division side
+cannot predict.
+
+Two regimes, opposite results, and the patch is silent in both:
+
+| ranker becomes | what the ILP does | orphan patch | div_J |
+|---|---|---|---|
+| more FASTIDIOUS (daughters "look different", edges pushed down) | refuses both daughters, `len(ch)==0` | never fires | falls |
+| more CORRECT | takes both daughters, `len(ch)==2` | never fires | rises |
+
+### The third regime, and it is the one already running (user, 2026-08-25)
+
+The two rows above are the cases where the patch goes SILENT. The user
+named the dangerous one: the patch FIRES, on things that are not mother
+and daughter at all. It is not hypothetical -- it is the status quo,
+measured on the 12-dataset 6bba holdout by `biohub-poolsize` and carried
+in ref 55757064's description:
+
+| ranker | div TP | div FP | div FN |
+|---|---|---|---|
+| D32 | 3 | **21** | 9 |
+| D187 (submitted) | 5 | **26** | 7 |
+
+**26 false divisions bought 5 real ones.** Two things keep that from
+being fatal, and both are already on record:
+
+- a fork lying entirely among unannotated cells enters no FP set
+  (user's observation, verified): 913 extra forks cost -0.0027 adj_J,
+  about 30 visible edge FPs, so ~97% of extra forks are INVISIBLE.
+- but div_J is not blind to them, and div_J is the 0.1 term.
+
+And the exchange rate cannot be improved by forking more: across all 12
+`gate_sweep` points (forks 0 to 1847) **division FN never drops below
+6** while division FP explodes. The divisions we miss are not in the
+candidate set. So the only move with value left is KILLING FALSE FORKS,
+not proposing more.
+
+That is what mass conservation is for: a real division sums to one
+mother, a mother-plus-passing-neighbour sums to two.
+
+**Bound on `div_mass`:** its fake forks are built from GT (mother + true
+successor + any GT cell within GATE_UM), which is an EASIER population
+than the patch's actual false positives -- those already survived sister
+distance, mutual-nearest, both-children-continue and divergence. A good
+AUC there says the route is worth walking; it does not say the 26 fall.
+Testing that needs the patch's real survivors.
+
+
+`poolsize` already ran the second regime: a better ranker moved div_J
+0.0909 -> 0.1316. That is on record and it is why "a more confident
+linker drains the orphan pool" was too simple -- CORRECT and CONFIDENT
+are different axes.
+
+**The consequence: divisions need a criterion that does not depend on
+the linker failing first.** Mass conservation is a candidate for exactly
+that -- "these two cells sum to one mother" is answerable without the
+ILP having made a mistake. `div_mass.py` -> `biohub-div-mass` is that
+measurement. If it lands, divisions decouple from linking and the
+2026-08-24 ordering can resume.
+
+
+SUPERSEDED 2026-08-25 by the block above -- ## ⭐ PRIORITY as of 2026-08-24 (user's call): detection and linking, not divisions
 
 Divisions are parked (item 1). The loss budget says why -- decomposed
 from the det-threshold table below:
@@ -225,6 +305,62 @@ the precondition for the division term to be worth anything at all.
 - Uncommitted: two days of docs + scripts (progress/reference/recon
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
+
+## 2026-08-25 -- masks for all 41 Zebrahub crops: the morphology line is now free
+
+`zh_masks.py` -> `biohub-zh-masks` v1, **54 min GPU, 41/41 written, 0
+skipped, no degradation warning fired.** Watershed on the detector
+heatmap, pooled to an isotropic 1.625 um grid, one `.npz` per crop
+carrying `labels` plus the GT (`nodes`, `track_id`, `parent_track_id`,
+`voxel_um`, `t0`), so a consumer needs this one kernel and not the 7.5 GB
+crops.
+
+T=100 for every crop. Peaks per crop 4,438 (`ZSNS004_z2y5x5`) to 81,493
+(`ZSNS005_z1y6x3`); 0.5-5.7 MB each.
+
+**Why this run existed:** `regionprops` on these masks IS HOCT's
+`create_graph`, verified at 0.000e+00 (entry below). One GPU pass buys
+unlimited CPU iteration on size and shape -- which is what the four
+wasted HOCT GPU runs were paying for.
+
+## 2026-08-25 -- morphology change is a REAL edge signal, not detection quality leaking
+
+`morph_confound.py` -> `biohub-morph-confound`, CPU. The worry was that
+"morphology separates true from false links" is really "morphology
+separates real cells from spurious detections", since a false link's far
+endpoint is usually a spurious detection. Test: split the negatives by
+whether the far endpoint is itself a GT-matched cell, on Zebrahub's
+DENSE ground truth so real-endpoint negatives actually exist.
+
+| negative class | n | AUC of \|d intensity\| |
+|---|---|---|
+| **N-real** (both endpoints real cells, simply not linked) | 2,022,702 | **0.8298** |
+| N-fake (far endpoint spurious) | 88,941 | 0.8640 |
+
+**0.8298 on two million negatives whose both ends are real cells.** The
+detection component exists and is worth 0.034. The signal is not it.
+
+This is what the competition data could not answer: its GT is sparse, so
+"a matched cell near another matched cell" is nearly always its own
+successor -- the same construction that produced `morph_probe` step 2b's
+3 negatives and every HOCT gate's "109 of 109".
+
+### `morph_cheap`: which of these can be had without masks
+
+`morph_cheap.py` -> `biohub-morph-cheap`, CPU, Spearman against the
+verified mask-based `regionprops` (ranking is all a tree needs):
+
+| mask feature | best box proxy | rho | usable |
+|---|---|---|---|
+| `intensity_mean` | crop mean | **0.965** | yes |
+| `intensity_max` | crop max | **0.968** | yes |
+| `intensity_std` | crop std | **0.946** | yes |
+| `equivalent_diameter_area` | `n_half` | 0.713 | **NO** |
+
+**A box does not know where the cell ends.** Every size proxy failed.
+So intensity is free from the raw volume; SIZE needs the masks, which is
+why `zh_masks` was worth 54 minutes of GPU.
+
 
 ## 2026-08-25 -- ⭐⭐ morphology is OURS, and real cells are 28% bigger than spurious ones
 
