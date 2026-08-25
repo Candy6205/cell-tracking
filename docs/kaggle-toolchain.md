@@ -204,6 +204,56 @@ b = next(i for i, x in enumerate(lines) if "FOO" in x)
 This cost two failed patches and one accidental push of an unpatched
 script.
 
+### 9. `machine_shape` is not optional on a GPU kernel
+
+`biohub-det-ablate3` v1 was given a **Tesla P100 (sm_60)**, which the
+installed PyTorch does not support -- it builds for sm_70 and above. The
+kernel printed
+
+```
+Tesla P100-PCIE-16GB with CUDA capability sm_60 is not compatible
+GPU present but conv3d unusable -> CPU
+```
+
+and silently continued on CPU. This is not bad luck: kernels that ran
+fine on GPU carry
+
+```json
+"machine_shape": "NvidiaTeslaT4"
+```
+
+in their metadata (confirmed on `biohub-zh-masks`, which ran 54 min on a
+T4). Omit the field and Kaggle picks, and P100 is in the pool.
+
+**Every GPU kernel's metadata must pin `"machine_shape":
+"NvidiaTeslaT4"`.** Two failure modes if you do not, and the second is
+worse than the first:
+
+- the run dies, or
+- **it does not die.** The detector falls back to CPU, produces the same
+  numbers 30x slower, and burns the wall clock while looking healthy.
+
+### 10. Recover a working kernel's sources instead of reconstructing them
+
+`det_ablate3` v1 also died on `unet3d_bright.pt not found`, because the
+assembly copied the SCRIPT from `zh_masks.py` but the metadata was
+written from scratch and guessed the wrong weight datasets. The correct
+ones are `xiaoleilian/biohub-unet3d-weights` and
+`xiaoleilian/biohub-unet3d-weights-v2models`; the guess was
+`pilkwang/biohub-tracking-support-pack-50ep-v1`, which is a different
+pack.
+
+The fix takes one command and settles both this and `machine_shape`:
+
+```bash
+py kag.py kernels pull faustine649/<a-kernel-that-worked> -p /tmp/x -m
+```
+
+**When an assembly reuses a script's code, reuse its metadata too.**
+Weights are resolved by `glob("/kaggle/input/**/<name>")`, so a wrong
+mount is invisible until the assert fires minutes into the run.
+
+
 ## Measured costs
 
 | | value |

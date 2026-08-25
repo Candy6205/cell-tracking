@@ -1,22 +1,23 @@
 {
-  "id": "faustine649/biohub-thr-sweep",
-  "title": "Biohub thr sweep",
-  "code_file": "thr_sweep.py",
+  "id": "faustine649/biohub-det-ablate3",
+  "title": "Biohub det ablate3",
+  "code_file": "det_ablate3.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": false,
-  "enable_internet": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "machine_shape": "NvidiaTeslaT4",
   "dataset_sources": [
-    "pilkwang/biohub-tracking-support-pack-50ep-v1",
+    "xiaoleilian/biohub-unet3d-weights",
+    "xiaoleilian/biohub-unet3d-weights-v2models",
     "faustine649/cell-tracking"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
   "kernel_sources": [
-    "faustine649/biohub-edge-ranker",
-    "faustine649/biohub-poolsize"
+    "faustine649/biohub-zebrahub-extract"
   ],
   "model_sources": []
 }
