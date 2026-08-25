@@ -306,6 +306,78 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ the masks are cells plus a FRINGE, not a tessellation. The user was right.
+
+`mask_anatomy.py` -> `biohub-mask-anatomy` v1, **19 s on CPU**, labels
+only. Two tests that share no arithmetic; both land on FRINGE.
+
+**This overturns my reading of `div_mass` the same day I wrote it.** I
+said a voxel count measures the TERRITORY between peaks and filed the
+line closed. The user said it sounds like the edges are being
+over-counted, then proposed the method that settled it: assume the
+fringe hypothesis, derive what it forces, and check that.
+
+### Test 1 -- when a mask stops, why does it stop?
+
+A fringe ends where the heatmap falls below `MASK_FLOOR`, i.e. at
+BACKGROUND. A territory boundary is a watershed line drawn halfway to a
+neighbouring peak: cell on both sides, no background anywhere near. So
+count boundary faces and ask what is on the other side.
+
+| boundary faces against | count | share |
+|---|---|---|
+| **BACKGROUND** | 14,911,652 | **76.8%** |
+| another mask | 4,508,503 | 23.2% |
+
+Three quarters of every mask surface is cut by the threshold, not by a
+neighbour.
+
+### Test 2 -- does a mask shrink when the field is crowded?
+
+The 41 crops span **45 to 809 cells per frame, an 18x range**.
+
+| crop | cells/frame | median vol | bg face % |
+|---|---|---|---|
+| ZSNS004_z2y5x5 | 45 | 523 um^3 | 95.7% |
+| ZSNS005_z1y1x5 | 55 | 451 um^3 | 97.5% |
+| ZSNS001_z2y2x7 | 450 | 541 um^3 | 74.3% |
+| ZSNS004_z2y1x3 | 606 | 571 um^3 | 81.4% |
+| ZSNS005_z1y6x3 | 809 | 534 um^3 | 72.1% |
+
+**log(volume) on log(cells per frame): slope -0.028, r -0.127.**
+Territory requires -1 (a cell's share is the volume divided by the
+cells). Volume spans 2.4x against density's 18x. A tessellation cannot
+do this; a cell plus a fringe can, because neither knows how crowded it
+is. Even the densest crop is still 72% background-bounded -- territory
+exists but never dominates.
+
+### What this means
+
+`div_mass`'s 1.772 is not evidence that mass is not conserved. It is
+evidence that **we weighed the wrong thing**: mask = core M + fringe H
+with H = 3.39 M, so ~77% of the volume is a shell about 1.3 voxels thick
+on a 6.62-voxel mask. Mass conservation has still never been tested.
+
+**The retry is `div_intmass.py` -> `biohub-div-intmass`: sum BRIGHTNESS
+inside the mask instead of counting voxels.** A fringe voxel sits at
+heatmap 0.05-0.1 and reads dim; a core voxel is near 0.9 and reads
+bright, so brightness discounts the fringe continuously with no new
+threshold -- which matters because at 6.6 voxels across there is no room
+to erode. It is gated on measuring that discount rather than assuming
+it: the outer shell's share of VOLUME against its share of LIGHT, with
+step 2 suppressed if they are equal.
+
+### Method note worth keeping
+
+The user's proof-by-contradiction beat the correlation study I was about
+to write: **19 seconds against a multi-crop regression, because assuming
+a hypothesis and hunting its forced consequence finds a one-number test.**
+Also on record: my diameter anchor (7.08 / 8.83 um) could not arbitrate
+this at all, because those numbers came from watershed-on-heatmap masks
+too and carry the same fringe. An anchor drawn from the same
+construction as the thing under test proves nothing about it.
+
+
 ## 2026-08-25 -- ⭐⭐ mass conservation: a voxel count cannot test it. WHY is open.
 
 `div_mass.py` -> `biohub-div-mass` v1, **3 min on CPU**. Reads only

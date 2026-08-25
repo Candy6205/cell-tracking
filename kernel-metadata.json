@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-mask-anatomy",
-  "title": "Biohub mask anatomy",
-  "code_file": "mask_anatomy.py",
+  "id": "faustine649/biohub-div-intmass",
+  "title": "Biohub div intmass",
+  "code_file": "div_intmass.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -10,7 +10,8 @@
   "dataset_sources": [],
   "competition_sources": [],
   "kernel_sources": [
-    "faustine649/biohub-zh-masks"
+    "faustine649/biohub-zh-masks",
+    "faustine649/biohub-zebrahub-extract"
   ],
   "model_sources": []
 }
