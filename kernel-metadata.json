@@ -1,28 +1,24 @@
 {
-  "id": "faustine649/biohub-submit-ranker",
-  "title": "Biohub submit ranker",
-  "code_file": "submit_ranker.py",
+  "id": "faustine649/biohub-depth3",
+  "title": "Biohub depth3",
+  "code_file": "depth3.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": true,
-  "enable_tpu": false,
-  "enable_internet": false,
-  "keywords": [
-    "gpu"
-  ],
+  "enable_gpu": false,
+  "enable_internet": true,
   "dataset_sources": [
     "pilkwang/biohub-tracking-support-pack-50ep-v1",
-    "xiaoleilian/biohub-unet3d-weights",
-    "xiaoleilian/biohub-unet3d-weights-v2models",
     "faustine649/cell-tracking"
   ],
   "kernel_sources": [
-    "faustine649/biohub-poolsize"
+    "faustine649/biohub-edge-ranker",
+    "faustine649/biohub-cache-train",
+    "faustine649/biohub-prenms-cache",
+    "faustine649/biohub-prenms2"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
-  "model_sources": [],
-  "machine_shape": "NvidiaTeslaT4"
+  "model_sources": []
 }
