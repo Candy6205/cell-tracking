@@ -439,6 +439,27 @@ Measured by reading `time_used` around known events:
 | a session that STARTS, from container-up | **yes, all of it** |
 | **mounting data sources** | **yes** — and this is the trap |
 | a CPU kernel (`enable_gpu: false`) | **no** — separate pool |
+| **submitting to the competition** | **NO** (user, 2026-08-25) — see below |
+
+### ⚠ A submission does NOT cost GPU quota. Stop saying it does.
+
+Corrected by the user on 2026-08-25 after I priced a submission at
+"about 11.8 h of GPU" three separate times while recommending for and
+against making one. **The rescore Kaggle runs on the hidden test is not
+charged to the weekly accelerator budget.**
+
+What a submission actually costs:
+
+- **one of the day's submission slots**, and one of the two final
+  selection slots at the end;
+- the wall-clock wait for the rescore, which matters only for planning.
+
+The ~11.8 h figure is real but it is the **hidden-test runtime against
+the competition's 12 h cap** — a timeout risk, recorded in ref
+55707206's description. That is a reason to watch the margin when adding
+work to the pipeline. It is not a quota charge, and treating it as one
+inflates the apparent price of the single most informative experiment
+available: putting a local result on the leaderboard.
 
 **A kernel that dies instantly still pays the full mount.** `biohub-det-ablate2`
 v1 hit an `assert` **7.7 seconds** into the script and burned **~4.7 minutes**

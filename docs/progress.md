@@ -96,6 +96,83 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-25 -- ⭐⭐⭐⭐⭐ short_sweep: a CURVE, not a spike. `SHORT_MIN` 6 → 4 SUBMITTED as the first test of the three-domain rule.
+
+`biohub-short-sweep`, 168 min CPU, 7 values × 3 domains. **Both anchors
+held**, and the second one exactly: `short_4`'s deltas reproduced
+`biohub-post-sweep` to four decimals in all three domains
+(+0.0025 / +0.0054 / +0.0045). **The pipeline is deterministic and
+post_sweep's table was real, not noise.**
+
+### The curve
+
+| `SHORT_MIN` | 6bba | 44b6 | zebrahub |
+|---|---|---|---|
+| 1 | 0.9258 | 0.8552 | **0.8060** |
+| 2 | 0.9258 | 0.8552 | **0.8060** |
+| 3 | 0.9258 | 0.8552 | **0.8060** |
+| **4** | **0.9279** | **0.8553** | 0.8037 |
+| 5 | 0.9277 | 0.8533 | 0.8015 |
+| 6 (shipped) | 0.9254 | 0.8499 | 0.7992 |
+| 7 | 0.9263 | 0.8515 | 0.7968 |
+
+**1, 2 and 3 are byte-identical in every domain**, so the solved graph
+contains no components of length 1 or 2. The filter only ever acts on
+lengths 3, 4 and 5.
+
+### Restated as "which track lengths should be deleted"
+
+That is the form the three-domain rule can actually judge:
+
+| delete tracks of length | 6bba | 44b6 | zebrahub | verdict |
+|---|---|---|---|---|
+| 5 | −0.0025 | −0.0034 | −0.0023 | same sign — **harmful everywhere** |
+| 4 | −0.0002 | −0.0020 | −0.0022 | same sign — **harmful everywhere** |
+| 3 | +0.0021 | +0.0001 | −0.0023 | **signs disagree — contested** |
+
+The shipped `SHORT_MIN = 6` deletes all three lengths, and two of those
+three deletions lose in every domain. `SHORT_MIN = 4` stops deleting 4s
+and 5s and keeps deleting 3s; whether to stop deleting 3s as well is
+exactly what the rule cannot decide, so the value stops at 4.
+
+4 beats 5 in all three (+0.0002 / +0.0020 / +0.0022) and beats the
+shipped 6 in all three (+0.0025 / +0.0054 / +0.0045).
+
+### SUBMITTED, and what is actually being tested
+
+`biohub-submit-ranker` v5. **Exactly one non-comment line differs from
+the deployed version**, verified by diffing against the source pulled
+back from Kaggle (which was byte-identical to the local copy):
+`SHORT_MIN = 6` → `4`.
+
+**The comparison is against ref 55757064, LB 0.920 — NOT 0.921.** The
+deployed kernel prefers `edge_ranker_d187.pkl` and refuses the older
+one, so it is the D187 pipeline, and D187 is also what `post_sweep` and
+`short_sweep` measured on. Comparing the result to 0.921 would move two
+things at once, which is the error this log already records twice.
+
+**What is being measured is the rule, not the constant.** The weakest
+domain's +0.0025 is the same scale as the two local gains that failed to
+appear on the leaderboard (windowing +0.0019 → −0.001; ranker pool
++0.0073 → −0.001). Both of those were measured on `6bba` alone. This is
+the first candidate the three-domain rule has ever produced, so:
+
+- **it appears on the LB** → three-domain agreement buys something a
+  single-domain holdout does not, and the rule is worth its cost;
+- **it does not** → the rule is not sufficient either, and no local
+  measurement at this scale should drive a submission again.
+
+Either answer is worth more than the constant.
+
+### A correction the user made, recorded because I repeated the error
+
+I priced this submission at "about 11.8 h of GPU quota" three times.
+**A submission does not cost GPU quota.** The 11.8 h is the hidden-test
+runtime against the competition's 12 h cap — a timeout risk, not a
+budget charge. Treating it as a charge inflated the apparent price of
+the single most informative experiment available. Recorded in
+`kaggle-toolchain.md` section 9.
+
 ## 2026-08-25 -- ⭐⭐⭐ nms4, the density test in all three domains: 2 of 3, none significant. The line closes, and the interesting number is not about NMS.
 
 `biohub-nms4`, 13 min CPU. True cells per frame in every domain —

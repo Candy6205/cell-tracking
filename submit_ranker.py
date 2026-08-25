@@ -124,7 +124,39 @@ GATE_UM = 10.0
 MAX_LINK_UM = 10.0
 TIGHT_UM = 6.0
 LINK_SIM_W = 2.0
-SHORT_MIN = 6
+# ---- THE ONLY CHANGE vs ref 55757064 (LB 0.920) ------------------------
+# SHORT_MIN was 6, inherited from the public solution and never swept.
+# `_short_filter` deletes a whole predicted track with fewer than
+# SHORT_MIN nodes unless it contains a division, so 6 deletes every
+# component of length 3, 4 and 5. (Lengths 1 and 2 never occur --
+# biohub-short-sweep found SHORT_MIN 1, 2 and 3 give byte-identical
+# results in all three domains.)
+#
+# biohub-short-sweep, 7 values x 3 domains, both anchors held and
+# short_4's deltas reproduced biohub-post-sweep EXACTLY:
+#
+#   SHORT_MIN      6bba      44b6        zh
+#     3          0.9258    0.8552    0.8060
+#     4          0.9279    0.8553    0.8037
+#     5          0.9277    0.8533    0.8015
+#     6          0.9254    0.8499    0.7992   <- was shipped
+#
+# Read as "which track lengths should be deleted":
+#   length 5 -> hurts all three domains
+#   length 4 -> hurts all three domains
+#   length 3 -> +0.0021 6bba, +0.0001 44b6, -0.0023 zh -- CONTESTED
+#
+# So 4 is the value every domain agrees is at least as good as 6
+# (+0.0025 / +0.0054 / +0.0045) and better than 5, while whether to go
+# further to 3 is exactly what the three-domain rule cannot decide.
+#
+# ⚠ The weakest domain's +0.0025 is the same scale as two local gains
+# that did NOT appear on the leaderboard (windowing +0.0019 -> -0.001,
+# ranker pool +0.0073 -> -0.001). Both of those were measured on 6bba
+# alone. This submission is the first test of whether agreeing across
+# three domains changes that -- which is the thing being measured here,
+# more than the constant itself.
+SHORT_MIN = 4
 LINEFIT_WEIGHT = 0.8
 LINEFIT_WINDOW = 2
 GAP1_GATE_UM = 9.0
