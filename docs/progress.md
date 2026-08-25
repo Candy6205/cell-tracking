@@ -306,6 +306,73 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐⭐ THE LOCAL HOLDOUT IS 0 FOR 2 AGAINST THE LEADERBOARD
+
+**Submission 55757064 (D187 ranker, pool 32 -> 187) scored LB 0.920
+against the D32 baseline's 0.921.** The local holdout had it at +0.0073
+score and +0.0032 adj_J, reproduced bit for bit by two independent runs,
+with both anchors holding.
+
+### State it precisely: not "worse", INDISTINGUISHABLE
+
+| | 55707206 (D32) | 55757064 (D187) |
+|---|---|---|
+| LB public | **0.921** | **0.920** |
+| `total_bytes` on the hidden test | 262,623,879 | 262,803,696 (**+0.07%**) |
+| local holdout score | 0.9313 | 0.9386 (**+0.0073**) |
+| local holdout adj_J | 0.9222 | 0.9254 (+0.0032) |
+
+The LB reports three decimals, so 0.001 IS its reporting resolution, and
+the two pipelines emitted output within 0.07% of each other on the
+hidden test. **The honest reading is that they are the same submission
+as far as the leaderboard can see** -- which is worse news than losing,
+because the +0.0073 the holdout measured simply is not there.
+
+### Both paired local-vs-LB comparisons we have ever run
+
+| change | local delta | LB delta | hidden-test output |
+|---|---|---|---|
+| windowed vs global | **+0.0019** | **-0.001** | +10% |
+| ranker pool 32 -> 187 | **+0.0073** | **-0.001** | +0.07% |
+
+**Two for two.** Every time a positive local delta has been taken to the
+leaderboard it has failed to appear. The second one is the larger and
+better-anchored of the two.
+
+### The signal we explained away
+
+`biohub-poolsize`'s own entry recorded that **D187's edge AUC was LOWER**
+(0.9864 against 0.9884) while its adj_J was higher, and filed it as "a
+bigger pool means a bigger, harder validation split, so edge AUC cannot
+be compared across configurations". That rationalisation may have been
+wrong: the simpler reading is that the larger pool made the ranker
+slightly worse and the local adj_J gain was specific to `6bba`. **When a
+second measurement disagrees with the one you like, do not explain it
+away; carry it as unresolved.**
+
+### What this changes
+
+- **The best submission is still ref 55707206, LB 0.921.** Final
+  selection allows two; that one holds a slot.
+- **A local gain under ~0.01 on the 12-dataset holdout is not evidence.**
+  All twelve are `6bba`, one imaging batch, and many knobs have now been
+  tuned against them.
+- The user identified both failure modes before this result landed:
+  researcher overfitting to a 12-dataset holdout, and "only the LB is
+  truth, but that means a lot of GPU or CPU may be wasted". Both are now
+  measured rather than argued.
+- `biohub-post-sweep`'s pre-registered three-domain rule -- an effect
+  counts only if its sign agrees across `6bba`, `44b6` and Zebrahub --
+  was designed as a precaution and now has evidence behind it.
+
+### What it does NOT license
+
+It does not say the pipeline cannot be improved, and it does not say
+local measurement is useless. Local work still reliably rejects things:
+`node_filter`'s -0.03 and `morph_edge`'s -0.0015 are far outside any
+noise and would not have been worth an LB slot. **The holdout screens
+out; it does not select in.**
+
 ## 2026-08-25 -- ⭐⭐⭐ the detection ceiling: 13.1% of cells have NO peak at any threshold, and 9.5% are thrown away after having one
 
 `det_floor.py` -> `biohub-det-floor` v1, **16 min on a T4**, 41 crops,
@@ -1239,7 +1306,14 @@ derived thing it depends on.** Before adopting a feature, ask what
 annotation would falsify it. If none exists, it cannot be validated no
 matter how good it looks.
 
-## 2026-08-25 -- ⭐⭐⭐ THE RANKER TRAINS ON 32 DATASETS. 187 ARE CACHED. +0.0073.
+## 2026-08-25 -- THE RANKER TRAINS ON 32 DATASETS. 187 ARE CACHED. +0.0073 LOCALLY, NOTHING ON THE LB.
+
+> SUPERSEDED 2026-08-25 by the leaderboard. Submission 55757064
+> scored **0.920** against the D32 baseline's 0.921, with hidden-test
+> output within 0.07%. The +0.0073 below is real on the 12 `6bba`
+> holdout datasets and absent on the hidden test. The entry stands as
+> a record of what was measured; it is not a description of an
+> improvement. See the LB entry at the top.
 
 `poolsize.py` -> `biohub-poolsize`, 39 min on **CPU**. Both arms use the
 same 18 columns, the same code, the same protocol and the same holdout.
