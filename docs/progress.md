@@ -306,6 +306,83 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ flip-and-average: same F1, an 11% DIFFERENT detection set. The reverse proof falsified my claim.
+
+`tta_probe.py` -> `biohub-tta-probe` v1, **17 min on a T4**. The user
+asked for the reverse proof of "the four flip views buy nothing" -- the
+claim I made from `biohub-det-ablate3` v2's F1 0.7546 (3 passes) against
+0.7539 (12 passes). It is FALSE in the sense that matters.
+
+### A. The four views are correlated but NOT the same volume
+
+| | |
+|---|---|
+| Pearson r, view 0 vs views 1-3, per branch per frame (n=1845) | median **0.9781** [p10 0.9402, p90 0.9926] |
+| spread ACROSS the 4 views / spread across voxels | median **0.1085** [p10 0.061, p90 0.180] |
+| mean per-voxel abs difference, heatmap(4) vs heatmap(1) | 0.00198 |
+
+A convolution is translation-equivariant by construction but **nothing
+in the architecture makes it flip-equivariant** -- a kernel that responds
+to "bright left, dark right" cannot respond identically to the mirror.
+Flip invariance is LEARNED from augmentation, so it is approximate and
+never exact. The 11% across-view spread is that residual, and it is
+exactly what flip-averaging averages away.
+
+This was predicted by `det_ablate3` v3 before the run: flip-averaging
+buys about +0.003 F1 for a SINGLE branch (B0 +0.0028, B1 +0.0040, B2
++0.0029), which is impossible if the four views were identical volumes.
+
+### B. The F1 difference is inside its own error bar
+
+| | |
+|---|---|
+| paired over 41 crops, one view minus four | **+0.00109, SE 0.00150** |
+| in units of its own SE | **+0.73** |
+| crops where ONE view wins | **19 of 41** |
+
+19 of 41 is a coin flip. **Neither "buys nothing" nor "slightly better"
+is supported.** v2 pooled two F1 numbers and reported a 0.0007 gap with
+no error estimate; the honest statement was always "indistinguishable at
+this sample size".
+
+### ⭐ C. And yet they find DIFFERENT CELLS -- 11% of them
+
+| | |
+|---|---|
+| paired within 2 um | 50,560 |
+| only in the FOUR-view set | 2,786 |
+| only in the ONE-view set | 3,512 |
+| **symmetric difference** | **6,298 of 56,858 = 11.08%** |
+
+The COUNT gap was 1.3%. The SET gap is **11%**. About one detection in
+nine differs. **These are two different detectors that happen to score
+the same.** Count agreement is not set agreement, and F1 agreement is
+not detector agreement.
+
+### What this changes
+
+**RETRACTED:** "three forward passes tie twelve, so switch and spend the
+saved runtime on the lower gate." Switching changes 11% of the
+detections, and `biohub-node-filter` measured that detection quality and
+adj_J do not move together -- removing detections costs edges faster
+than it removes noise. An 11% churn in the node set propagates into
+linking, the ILP, and the division patch, and F1 says nothing about
+where it lands.
+
+**STANDS:** three passes are not WORSE than twelve on detection F1, and
+that is a real 4x saving *if* a pipeline run confirms adj_J holds. It
+has to be scored, not assumed. The same caution applies to `B0(4)` and
+`B01(8)`, which the ablation listed as ties.
+
+### Still untested
+
+The prediction that the disagreement concentrates on LOW-SCORING,
+near-threshold detections -- confident cells should be found by every
+view. `set_overlap` counts the symmetric difference but does not record
+the scores of the 6,298 detections in it. Cheap to add, and it would say
+whether an 11% churn is 11% of the borderline cases or spread across the
+whole score range. Those are very different risks.
+
 ## 2026-08-25 -- ⭐⭐⭐ the detector ablation, finally run: the ensemble buys DIVERSITY, and 3 passes tie 12
 
 `det_ablate3.py` -> `biohub-det-ablate3` v3, **17 min on a T4**. The
@@ -400,6 +477,15 @@ on every future GPU run, and it bears directly on the submission: the
 global solve is projected at ~11.8 h against a 12 h cap (ref 55707206's
 description), which is what currently makes the +0.0033 threshold change
 from `biohub-thr-sweep` too risky to submit on its own.
+
+> WARNING **QUALIFIED the same day by `biohub-tta-probe` (entry above).**
+> "Tie" means tie ON F1. The two configurations disagree on **11.08% of
+> their detections** (symmetric difference 6,298 of 56,858, matched
+> within 2 um), so switching is not a free saving -- it is a DIFFERENT
+> detector with the same summary score, and adj_J does not follow
+> detection F1. Score it through the pipeline before spending the
+> saving. The same caveat applies to `B0(4)` and `B01(8)`, which this
+> entry also lists as ties.
 
 ⚠ **This is DETECTION F1, not adj_J.** `biohub-node-filter` measured
 that the two do not move together -- removing detections costs edges
