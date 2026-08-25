@@ -96,6 +96,52 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-25 -- nms3 PARTIAL: the denser domain loses LESS to suppression. The dense-GT arm crashed on a key-name collision.
+
+`biohub-nms3` v1 ran `6bba`, ran `44b6`, then died entering Zebrahub.
+**Both sparse arms landed and the 6bba anchor held** (0.0092 here against
+`biohub-nms-loss`'s recorded 0.0091).
+
+### What suppression costs, per domain
+
+| domain | cells/frame | before | after | **NMS costs** |
+|---|---|---|---|---|
+| 6bba | 97 | 0.9652 | 0.9561 | **0.0092** |
+| **44b6** | **327** | 0.9581 | 0.9527 | **0.0054** |
+
+**This is the opposite of the density hypothesis.** The domain with 3.4x
+more cells per frame loses *less* to a fixed 4.0 µm suppression radius,
+not more. The radius sweep says the same thing — on `44b6`, dropping the
+radius from 4.0 to 2.0 buys 0.0008 of reachable ground truth (0.9527 →
+0.9535) and the curve is flat below 3.0.
+
+**It does not close the question.** Both rows above are *sparse* ground
+truth — they measure the annotated cells only, 9.71% in `6bba` and
+**0.77%** in `44b6`. The whole reason for the Zebrahub arm is that its
+ground truth is dense, so it is the only one that can see whether
+suppression eats the unannotated crowd. That arm is the load-bearing
+one and it is exactly the one that did not run.
+
+### The crash
+
+```
+T = max(int(k[1:]) for k in z.files if k.startswith("p")) + 1
+ValueError: invalid literal for int() with base 10: 'arent_track_id'
+```
+
+`prenms2` writes the peaks as `p0…pN` / `q0…qN` **and** puts the ground
+truth in the same file, including `parent_track_id` — which also starts
+with `"p"`. `startswith` alone matched it. The prefixes `p`/`q` were
+chosen deliberately to avoid colliding with the detection cache's
+`c`/`s`, and then collided with a GT array instead.
+
+Fixed in v2 by a shared `_frame_keys(files, prefix)` that requires the
+remainder to be digits, applied to **all three** frame-key scans rather
+than only the one that broke, and unit-tested against the real key set.
+
+Same family as `arm.lower()` on a float and `prev_of` as a dict: the
+name existed, the arity matched, nothing static could see it.
+
 ## 2026-08-25 -- ⭐⭐⭐⭐ THE POST-LINK SWEEP: one of fourteen survived. `SHORT_MIN` 6 → 4, positive in all three domains.
 
 `biohub-post-sweep`, 245 min, CPU. Seven post-link constants inherited

@@ -184,9 +184,20 @@ print(f"detection caches found: {len(CACHES)}", flush=True)
 assert len(CACHES) >= 40, "attach biohub-edge-ranker as kernel source"
 
 
+def _frame_keys(files, prefix):
+    """Frame keys are prefix + an integer, e.g. p0, p1, ... The GT arrays
+    can travel in the SAME npz, and one of them is `parent_track_id`,
+    which also starts with "p" -- `startswith` alone matched it and
+    int("arent_track_id") killed v1 of this kernel after both sparse arms
+    had already finished. The digit test is the whole fix, applied to
+    every frame-key scan here rather than only the one that broke."""
+    return [k for k in files
+            if k.startswith(prefix) and k[len(prefix):].isdigit()]
+
+
 def load_dets(name):
     z = np.load(CACHES[name])
-    T = max(int(k[1:]) for k in z.files if k.startswith("c")) + 1
+    T = max(int(k[1:]) for k in _frame_keys(z.files, "c")) + 1
     return [(z[f"c{t}"], z[f"s{t}"]) for t in range(T)]
 
 
@@ -923,7 +934,7 @@ def _physical_nms(coords, scores, radius_um, scale=SCALE):
 
 def load_pre(name):
     z = np.load(PRE[name])
-    T = max(int(k[1:]) for k in z.files if k.startswith("p")) + 1
+    T = max(int(k[1:]) for k in _frame_keys(z.files, "p")) + 1
     return [(np.asarray(z[f"p{t}"], float).reshape(-1, 3),
              np.asarray(z[f"q{t}"], float).reshape(-1)) for t in range(T)]
 
@@ -953,7 +964,9 @@ def zh_gt_and_peaks(name):
     """Zebrahub: the peaks and the DENSE ground truth travel in the same
     npz, written by prenms2."""
     z = np.load(ZPRE[name])
-    T = max(int(k[1:]) for k in z.files if k.startswith("p")) + 1
+    ks = _frame_keys(z.files, "p")
+    assert ks, f"{name}: no p<t> peak arrays in the npz"
+    T = max(int(k[1:]) for k in ks) + 1
     pre = [(np.asarray(z[f"p{t}"], float).reshape(-1, 3),
             np.asarray(z[f"q{t}"], float).reshape(-1)) for t in range(T)]
     nodes = np.asarray(z["nodes"], float) if "nodes" in z.files else None

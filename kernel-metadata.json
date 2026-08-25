@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-short-sweep",
-  "title": "Biohub short sweep",
-  "code_file": "short_sweep.py",
+  "id": "faustine649/biohub-nms3",
+  "title": "Biohub nms3",
+  "code_file": "nms3.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -17,8 +17,8 @@
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
-    "faustine649/biohub-poolsize",
-    "faustine649/biohub-zh-detect"
+    "faustine649/biohub-prenms-cache",
+    "faustine649/biohub-prenms2"
   ],
   "model_sources": []
 }
