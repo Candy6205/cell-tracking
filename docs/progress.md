@@ -306,6 +306,70 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ THE RULER IS THE PROBLEM. Mask-based mass is unmeasurable here, and the line closes.
+
+**User's objection, and it ends the line:** the detector does not even
+achieve full recall on Zebrahub, so expecting its masks to be accurate is
+asking too much. Checked against the record rather than argued:
+**recall 0.65 / precision 0.64** at the pipeline's det gate
+(`progress.md` "the clean ruler's first reading: recall 0.65, not 0.99").
+
+**35% of cells have no detection at all and 36% of detections are
+spurious.** The watershed's seeds ARE those peaks, so:
+
+- a MISSED cell leaves its volume unclaimed and a neighbouring basin
+  swallows it -- that neighbour's voxel count and brightness now contain
+  a whole extra cell;
+- a SPURIOUS peak splits one real cell into two basins.
+
+And the bias runs in exactly the direction that manufactures 1.713: at t
+there is one seed, at t+1 there are two, and the pair can claim not only
+the mother's old territory but any of the 35% unclaimed ground nearby.
+**The 40% merged-label rate is direct evidence of the same failure** --
+the detector found ONE peak where there were TWO cells. An instrument
+that cannot count cells cannot measure their size.
+
+### The validation that was not one
+
+`morph_probe` established our `regionprops` reproduces HOCT's
+`create_graph` at **0.000e+00** and this was read as "the extractor is
+correct". It is not: **it proves two implementations compute the SAME
+quantity, not that the quantity is a cell.** Two correct implementations
+of the wrong thing agree perfectly.
+
+Same defect as the diameter anchor earlier today (7.08 / 8.83 um also
+came from watershed-on-heatmap masks). **A check drawn from the same
+construction as the thing under test validates nothing.** Both instances
+were caught by the user, both within one day, and this is the general
+form: an anchor must come from OUTSIDE the construction, or it is only
+measuring self-consistency.
+
+### Why a clean subsample does not rescue it either
+
+Zebrahub's GT is dense, so one could keep only divisions whose whole
+local neighbourhood is perfectly detected -- every GT node matched, no
+unmatched detection nearby -- roughly 0.65^5 ~ 12% of events, a few
+hundred. That could answer the SCIENCE (is mass conserved) but not the
+ENGINEERING: **at inference there is no GT, so the pipeline cannot tell
+a clean neighbourhood from a dirty one**, and in the dirty majority the
+quantity is noise. A feature that is only trustworthy when you already
+know the answer is not a feature.
+
+### Status
+
+CLOSED: mass conservation as a division test, on masks built from this
+detector. Not because the physics is wrong -- matter does not appear
+from nowhere and the user is right about that -- but because **no ruler
+here can measure it.** Do not retry with another threshold, another
+weighting, or another mask floor; all of them are downstream of the same
+seeds.
+
+**This raises the value of detector work.** Poor detection was costed at
+~1.75% of the score through missed edge endpoints. It is now also the
+thing that makes EVERY mask-based morphology feature untrustworthy --
+size, shape, brightness, all of them.
+
+
 ## 2026-08-25 -- ⭐⭐ brightness strips the fringe and the signal is still not there. Size is DONE for divisions.
 
 `div_intmass.py` -> `biohub-div-intmass` v2, **4 min on CPU**, 12 crops
