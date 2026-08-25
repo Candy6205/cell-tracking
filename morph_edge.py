@@ -493,7 +493,15 @@ def score_dir(pred_dir):
     rows = []
     for gp in sorted(pathlib.Path(pred_dir).glob("*.geff")):
         name = gp.stem
-        dset = open_dataset(root / "train" / name, require_tracks=True)
+# load_image=False: the metric reads dset.tracks and dset.scale only.
+# Loading the image is what demanded a GPU (io.py:199 pins it); see
+# cpu-probe. Skipping it is what lets this whole line run on CPU.
+# v1 LOST THIS LINE in assembly -- cut from a score_dir that predates the
+# fix -- and died here after 94 minutes of training with "Cannot access
+# accelerator device when none is available". Stage A had already
+# printed, so nothing was lost but the wall clock.
+        dset = open_dataset(root / "train" / name, require_tracks=True,
+                              load_image=False)
         res_ = td.graph.IndexedRXGraph.from_geff(str(gp))
         g = res_[0] if isinstance(res_, tuple) else res_
         er = compute_metric(g, dset.tracks, scale=dset.scale)

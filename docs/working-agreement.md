@@ -17,6 +17,11 @@ wrong and the length hides it.**
 - Explain a mechanism only when it changes a decision.
 - Never describe a measurement before running it.
 - They ask for detail when they want it.
+- **No metaphors.** Said directly on 2026-08-25: "求你不要说话用比喻了".
+  Say the literal thing — "the detector's recall is 0.65", not "the ruler
+  is wrong"; "brightness weights dim voxels less", not "it strips the
+  fringe". This governs what is written TO the user; entries in `docs/`
+  already use figurative shorthand and are not being rewritten.
 
 **They will interrogate the provenance of any claim, and they are right
 to.** Recalled "facts" drift — quantifiers inflate, inferences harden into

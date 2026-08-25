@@ -306,6 +306,82 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
+## 2026-08-25 -- ⭐⭐⭐ the node filter LOSES to raising the threshold. Cutting detections is expensive.
+
+`node_filter.py` -> `biohub-node-filter` v1, **66 min on CPU**. Assembled
+from `poolsize.py` so environment, caches, holdout and ILP are identical
+to what produced the anchor; the D187 ranker is LOADED from
+`biohub-poolsize`'s pkl rather than retrained, so the linker is
+submission 55757064's byte for byte.
+
+**BASE reproduced the anchor exactly** -- score 0.9386, adj_J 0.9254,
+div_J 0.1316, TP/FP/FN 5/26/7 -- so every comparison below is valid.
+
+| arm | cuts | score | adj_J | div_J | TP/FP/FN |
+|---|---|---|---|---|---|
+| **BASE** | nothing | **0.9386** | **0.9254** | 0.1316 | 5/26/7 |
+| F10 | bottom 10% by node filter | 0.8879 | 0.8736 | **0.1429** | 5/23/7 |
+| S10 | bottom 10% by det score | 0.9168 | 0.9033 | 0.1351 | 5/25/7 |
+| F20 | bottom 20% by node filter | 0.8150 | 0.8029 | 0.1212 | 4/21/8 |
+| S20 | bottom 20% by det score | 0.8878 | 0.8753 | 0.1250 | 4/20/8 |
+
+**F10 - S10 = -0.0297 adj_J. F20 - S20 = -0.0724.** At a matched cut
+count the learned filter is WORSE than simply raising the detection
+threshold, despite leading it by +0.1418 AUC offline on Zebrahub.
+
+### Two findings, and the second is the more useful one
+
+**1. The Zebrahub -> competition transfer failed.** The run was designed
+against exactly this risk -- cutting by PERCENTILE within each dataset so
+only the ORDERING had to survive, never the probability scale. The
+ordering did not survive either. `morph_cheap`'s rho 0.965 licenses box
+statistics as a stand-in for mask statistics WITHIN a domain; it says
+nothing about ranking detections across domains, and this run is the
+evidence that it does not carry.
+
+**This is the FIFTH time an offline gain reversed in the pipeline** --
+after scale-invariant edge features, the division model's four arms,
+D187's own edge AUC, and div-gate's prune.
+
+**2. Removing detections is expensive under adj_J, by a mechanism that
+generalises.** Cutting 10% by the BEST EXISTING SIGNAL, the detection
+score itself, already costs **-0.0221 adj_J**; 20% costs -0.0501. The
+metric counts EDGES: a real cell carries roughly two of them and loses
+both when it is cut, while a false detection links to little and so
+returns little when removed. Any node filter must therefore be far more
+precise than the detection score merely to break even, and none of these
+was.
+
+The one signal pointing the right way: **F10 raised div_J to 0.1429 and
+cut false divisions 26 -> 23** with TP and FN unchanged, i.e. it removed
+hallucinations that were feeding spurious forks. div_J carries a tenth
+of adj_J's weight, so -0.0518 adj_J buries +0.0113 div_J.
+
+### What would have to change for this line to live
+
+Train the filter on COMPETITION data. That needs a "this detection is
+spurious" label, which sparse GT cannot give -- an unmatched detection
+there means unannotated, not false. That absence is why Zebrahub was
+used, and the transfer failure is why that substitution did not work.
+**Both ends of this line are blocked by the same missing label.**
+
+### ⚠ An open question this run RAISES, with the evidence conflicting
+
+If removing detections is expensive because missing cells cost edges,
+the asymmetry may run the other way: `UNET_THRESH` is 0.15, and LOWERING
+it would add detections, buying recall at the price of precision.
+
+Conflicting evidence, both already on record, neither decisive:
+
+- FOR: this run measures a controlled intervention and it says removing
+  real cells is what hurts.
+- AGAINST: `corr(edge J, N/N_true) = -0.64` says over-detection tracks
+  worse edge J -- but that is a correlation ACROSS datasets, confounded
+  by density, not an intervention.
+
+A threshold sweep would settle it and is the same shape of run as this
+one. Nobody has run it downward.
+
 ## 2026-08-25 -- ⭐⭐⭐ THE RULER IS THE PROBLEM. Mask-based mass is unmeasurable here, and the line closes.
 
 **User's objection, and it ends the line:** the detector does not even
