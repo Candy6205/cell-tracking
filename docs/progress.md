@@ -949,6 +949,38 @@ division line is called finished.
 ⚠ The masks cost one GPU pass and `biohub-hoct-gate` v4 has them cached
 (123 KB npz). Everything downstream is free.
 
+### ⚠ SUPERSEDED 2026-08-25 by the morphology line's close (user's question)
+
+**The table above is not independent evidence that morphology is
+measurable here.** `create_graph` computes its features FROM THE MASKS,
+and the masks are ours -- watershed on a detection heatmap, as this same
+entry says two paragraphs up. The 7.08 um came from the same
+construction `biohub-mask-anatomy` later showed is 76.8%
+background-bounded, i.e. mostly fringe. HOCT ran its code over our
+numbers; it did not supply an outside measurement.
+
+The reason the pretrained model can rely on morphology at all is that
+`general_v0` was trained on Cell Tracking Challenge data, **which has
+real segmentation ground truth**. We have none: Zebrahub's GT is points
+and the competition's is tracks. That asymmetry is the whole story of
+the morphology line, and it was knowable here.
+
+**The warning was already in this entry and went unacted on:**
+"Bragantini's own caveat is that results depend on mask quality."
+
+The split it implies was also derivable in advance, and matches what
+five runs on 2026-08-25 measured:
+
+| `create_graph` column family | depends on the mask boundary | outcome |
+|---|---|---|
+| `equivalent_diameter_area`, `inertia_tensor` | entirely | DEAD -- unverifiable, no size annotation exists |
+| `intensity_mean/min/max/std` | weakly | ALIVE -- AUC 0.866 separating hallucinated detections, but does not transfer Zebrahub -> competition |
+
+**Rule this yields: a feature is only as trustworthy as the most
+derived thing it depends on.** Before adopting a feature, ask what
+annotation would falsify it. If none exists, it cannot be validated no
+matter how good it looks.
+
 ## 2026-08-25 -- ⭐⭐⭐ THE RANKER TRAINS ON 32 DATASETS. 187 ARE CACHED. +0.0073.
 
 `poolsize.py` -> `biohub-poolsize`, 39 min on **CPU**. Both arms use the
