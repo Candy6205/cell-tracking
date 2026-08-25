@@ -306,7 +306,30 @@ the precondition for the division term to be worth anything at all.
   restructure, zebrahub_extract rewrite, finetune_detect v3). Commit
   when the user says so.
 
-## 2026-08-25 -- NMS costs 0.9% and the radius is already right. Line closed.
+## 2026-08-25 -- NMS costs 0.9% ON 6bba. NOT closed: the density hypothesis was tested on the LEAST dense domain.
+
+> ⚠ **CORRECTED by the user before the ink was dry.** The hypothesis was
+> that a FIXED 4.0 um radius hurts where cells are CROWDED. This run
+> measured it on `6bba` at **97 cells per frame** -- the least crowded
+> domain available. `44b6` runs **327** and Zebrahub's crops span
+> **45 to 809**. A null result on the sparsest data says almost nothing
+> about a density hypothesis, so **"the radius is already right" is
+> supported for 6bba and nowhere else.** `nms3.py` runs all three.
+>
+> Why it happened, since the mechanism matters more than the instance:
+> `biohub-prenms-cache` was built BEFORE the three-domain standard and
+> covered only the 12 `6bba` holdout, and I ran the experiment the data
+> allowed instead of waiting for the data the question needed. **Running
+> what is available rather than what answers the question is its own
+> failure mode**, and it produced a confident "closed" that was not
+> earned.
+>
+> The user also pointed at where the test actually belongs: **Zebrahub
+> is the only domain whose GT is dense, so it is the only place TRUE
+> cell density per crop is known** -- on competition data
+> `corr(annotation density, true density) = -0.20`. With crops spanning
+> 18x in density, the right measurement is NMS loss correlated against
+> true density across them, not three isolated numbers.
 
 `nms_loss.py` -> `biohub-nms-loss` v1, **9 min on CPU**, on
 `biohub-prenms-cache`'s pre-suppression peaks for the 12 `6bba` holdout
@@ -336,8 +359,13 @@ Per dataset the loss runs 0.0% to 3.8%, mostly under 1%.
 Halving the radius buys **+0.0003 recall for 665 more detections**, and
 the adaptive rule -- radius = beta x the frame's median
 nearest-neighbour distance, which was meant to remove the tuned
-constant -- does not beat the fixed one anywhere. **`NMS_UM` 4.0 is
-already right. Closed.**
+constant -- does not beat the fixed one anywhere.
+
+**On `6bba`, at 97 cells per frame.** See the correction at the top:
+this is the domain where the density hypothesis predicts the smallest
+effect, so the table above cannot close the question. The adaptive rule
+in particular was designed to matter WHERE DENSITY VARIES, and 6bba
+alone barely varies.
 
 ### ⚠ Two errors of mine this run exposes
 

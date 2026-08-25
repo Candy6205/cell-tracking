@@ -1,23 +1,24 @@
 {
-  "id": "faustine649/biohub-nms-loss",
-  "title": "Biohub nms loss",
-  "code_file": "nms_loss.py",
+  "id": "faustine649/biohub-prenms2",
+  "title": "Biohub prenms2",
+  "code_file": "prenms2.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": false,
-  "enable_internet": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "machine_shape": "NvidiaTeslaT4",
   "dataset_sources": [
-    "pilkwang/biohub-tracking-support-pack-50ep-v1",
-    "faustine649/cell-tracking"
+    "xiaoleilian/biohub-unet3d-weights",
+    "xiaoleilian/biohub-unet3d-weights-v2models"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
-    "faustine649/biohub-cache-train",
-    "faustine649/biohub-prenms-cache"
+    "faustine649/biohub-poolsize",
+    "faustine649/biohub-zebrahub-extract"
   ],
   "model_sources": []
 }
