@@ -373,6 +373,80 @@ local measurement is useless. Local work still reliably rejects things:
 noise and would not have been worth an LB slot. **The holdout screens
 out; it does not select in.**
 
+## 2026-08-25 -- multi-frame linking, all three attempts, and the one that was never recorded
+
+The user asked what happened to multi-frame tracking. Three attempts
+exist; **`biohub-accel`'s result was never written down** and survived
+only in a session scratchpad, which is how a run gets repeated by
+accident. Recorded here.
+
+### 1. Acceleration lookahead (Togashi's item 4) -- `biohub-accel`
+
+Five columns on top of the ranker's 18: `acc_len`, `acc_cos`, `md_acc`,
+`md-md_acc`, `acc_hist`.
+
+| arm | cols | score | adj_J | div_J | TP/FP/FN |
+|---|---|---|---|---|---|
+| BASE | 18 | **0.9386** | **0.9254** | 0.1316 | 5/26/7 |
+| ACC | 23 | 0.9319 | 0.9235 | 0.0833 | 3/24/9 |
+| delta | | -0.0067 | **-0.0019** | -0.0483 | |
+
+Stage A agreed in advance: edge AUC 0.9867 against 0.9864, permutation
+importance +0.0000 to +0.0017 across all five.
+
+**⭐ The cause is in the degradation counters, not in the model.**
+
+```
+accel_no_parent: 316,658
+accel_one_step:  246,780
+```
+
+against **225,861 candidate pairs**. Acceleration needs THREE
+consecutive positions; the backward chain is built by `pass1_tracks`, a
+greedy linker, and for most candidates it cannot produce three. All five
+columns are then filled with 0 -- which the model reads as "no
+acceleration", not as "unknown".
+
+**So this is not evidence that multi-frame information does not help. It
+is evidence that this implementation could not compute it.**
+
+Note also, by 2026-08-25's standard, that -0.0019 sits inside the range
+where the holdout has inverted against the leaderboard twice. "It hurt"
+is not supportable either. What is supportable: **no measurable effect,
+and the feature is undefined for most rows.**
+
+### 2. HOCT, higher-order cell tracking -- `biohub-hoct-score`
+
+`similarity` AUC **0.7012** with images, against **0.9091** for plain
+negative distance on the same 364 edges. Lost by 0.21. Training code is
+withheld so there is no fine-tuning path. Closed; full entry below.
+
+### 3. The division model's forward features -- `biohub-div-kinematics`
+
+`sep_slope` separates a true division from a random pair 1.155 against
+0.082, a 14x gap and the cleanest signal this project has found. It is
+genuinely multi-frame. `biohub-div-gate` then wired it into the pipeline
+and the prune sweep was monotone DOWNHILL. Closed as a post-hoc filter;
+the measurement stands.
+
+### ⭐ The version nobody has tried: TWO PASSES
+
+Every attempt above computes multi-frame features from a GREEDY backward
+chain, and that is exactly what the degradation counters say fails. The
+ILP already produces a globally optimal capacity-2 solution whose tracks
+are connected -- far better trajectories than the greedy pass.
+
+**Solve once, build the multi-frame features from the SOLVED tracks,
+re-solve.** That is not circular in the way it first sounds: the
+features are not being used to build the trajectories they come from,
+they are being used for a second solve. And it directly removes the
+diagnosed failure -- three consecutive positions would be available for
+most cells rather than a minority.
+
+Cost: two ILP solves per dataset instead of one, so roughly double
+`biohub-thr-sweep`'s ~10 min per configuration. Pure CPU on cached
+detections. Untried.
+
 ## 2026-08-25 -- ⭐⭐⭐ the detection ceiling: 13.1% of cells have NO peak at any threshold, and 9.5% are thrown away after having one
 
 `det_floor.py` -> `biohub-det-floor` v1, **16 min on a T4**, 41 crops,
