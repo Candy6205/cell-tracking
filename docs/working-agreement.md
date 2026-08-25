@@ -109,6 +109,45 @@ step.
 **An offline AUC is not a score.** On 2026-08-24 edge AUC anti-predicted
 the pipeline three times running. Measure adj_J.
 
+## Cross the knobs whose mechanisms touch (2026-08-26)
+
+**Sweeping one thing at a time is not neutral. It is a claim that the
+knobs are independent, and that claim needs a reason.**
+
+`gap2` was built to sweep `_gap_close`'s span and candidate requirement
+with `SHORT_MIN` fixed at 6. The user stopped it — *"交叉测呢"* — on the
+grounds that the two are the same phenomenon from opposite ends: a
+dropout longer than one frame shatters a track, the gap repair reaches
+only one frame, and the short filter then deletes the fragments. If a
+wider bridge repairs the dropouts, there is less for the filter to
+delete.
+
+Crossed, that is exactly what happened. **Five gap arms × three domains,
+and all fifteen gains shrink by roughly half when `SHORT_MIN` goes
+6 → 4:**
+
+| gap arm | 6bba sm6 → sm4 | 44b6 sm6 → sm4 | zh sm6 → sm4 |
+|---|---|---|---|
+| nocand1 | +0.0018 → **+0.0010** | −0.0016 → **−0.0008** | +0.0013 → **+0.0005** |
+| span2i | +0.0019 → +0.0011 | −0.0016 → −0.0008 | +0.0013 → +0.0005 |
+
+**One at a time would have overstated the gap line by about 2x**, and
+against a `SHORT_MIN` we had already decided to abandon.
+
+The test to apply before choosing a design: *can I name a mechanism by
+which these two knobs act on the same failure?* If yes, cross them. Two
+knobs at two values is four arms, not two — usually affordable, and the
+interaction is the finding.
+
+Also, from the same run: **the shipped configuration must be a literal
+arm, not an assumption.** `gap2`'s rewritten `_gap_close` normalised its
+gate by `span + 1`, which at span 1 doubled `GAP1_GATE_UM` from 9 to 18
+and quietly moved BASE off the shipped behaviour. The must-reproduce
+anchor caught it — adj_J 0.9253 against the recorded 0.9254, div_J
+0.1282 against 0.1316 — but only *after* 204 minutes of compute. A
+refactor that claims to preserve behaviour should be tested on one
+dataset before the sweep is launched.
+
 ## Three domains, or it does not count (2026-08-25)
 
 **The 12-dataset holdout is 0 for 2 against the leaderboard.** Windowing

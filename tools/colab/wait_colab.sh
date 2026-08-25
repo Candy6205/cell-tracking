@@ -8,10 +8,17 @@
 export MSYS_NO_PATHCONV=1
 SP=/mnt/c/Users/48688/AppData/Local/Temp/claude/D--programming-cell-tracking/8724d11c-e5b5-4ba3-be32-60f80bbf0f50/scratchpad
 
-echo "colab waiter started $(date -u '+%Y-%m-%d %H:%M:%S UTC') on session ct2"
+# The session name MUST be passed through. v1 called cx.sh without
+# CT_SESS, so it fell back to the default `ct2` -- a session that had
+# already been stopped -- and polled it for 180 minutes without ever
+# seeing the job it was supposed to be watching. Take it as an argument
+# so it cannot silently disagree with what `hold` created.
+SESS=${1:-${CT_SESS:-ct3}}
+
+echo "colab waiter started $(date -u '+%Y-%m-%d %H:%M:%S UTC') on session $SESS"
 for i in $(seq 1 60); do
   sleep 180
-  OUT=$(wsl -d Ubuntu-24.04 -- bash "$SP/cx.sh" poll 60 2>&1)
+  OUT=$(wsl -d Ubuntu-24.04 -- bash -c "CT_SESS=$SESS bash '$SP/cx.sh' poll 60" 2>&1)
   if echo "$OUT" | grep -q 'NOTHING -- the job has exited'; then
     echo "=== COLAB JOB EXITED after ~$((i * 3)) min ==="
     echo "$OUT"

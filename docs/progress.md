@@ -96,6 +96,99 @@ div_w 0.55, **solved GLOBALLY (no windowing)**.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-26 -- ⭐⭐⭐⭐ gap2: the CROSS was right, the gap line is dead, and the BASE anchor caught my own bug.
+
+`biohub-gap2`, 204 min CPU, 10 arms × 3 domains. Built from the user's
+"红色有很多是上一帧还检测到了,下一帧就检测不到了" and **crossed with
+`SHORT_MIN` at their instruction**, against my original one-at-a-time
+design.
+
+### ⚠ First: the BASE anchor did NOT hold, and the cause was mine
+
+| | recorded | gap2's BASE |
+|---|---|---|
+| adj_J | 0.9254 | **0.9253** |
+| div_J | 0.1316 | **0.1282** |
+
+The rewritten `_gap_close` normalised the gate by `step = span + 1`:
+
+```python
+D = D / float(step)      # span 1 -> step 2 -> gate 9 um becomes 18
+```
+
+**At span 1 — the shipped configuration — it divided by 2 and silently
+doubled `GAP1_GATE_UM`.** BASE was not BASE. Fixed to divide by `span`,
+which is 1 at span 1 and therefore byte-identical to the shipped code.
+
+The docstring had claimed *"with GAP_SPAN=1 and GAP_NEED_CAND=True this
+must be byte-identical … that is the BASE arm's job to prove"*, and the
+anchor did its job. **What the anchor could not do is stop the run**, so
+read the table below with the flaw in mind:
+
+- **the `SHORT_MIN` deltas are unaffected** — the same loosened gate sat
+  under both halves and cancelled in the difference, which is why
+  `sm4_base` reproduced `short_sweep`'s `+0.0025 / +0.0054 / +0.0045` to
+  four decimals;
+- **the GAP arms are contaminated**, because they compare different
+  spans and therefore different gates (×2, ×3, ×4 instead of ×1, ×2, ×3).
+
+### THE CROSS WAS RIGHT: every gap arm's gain halves when `SHORT_MIN` goes 6 → 4
+
+Each half is a delta against **its own** baseline.
+
+| gap arm | 6bba sm6 | 44b6 sm6 | zh sm6 | | 6bba sm4 | 44b6 sm4 | zh sm4 |
+|---|---|---|---|---|---|---|---|
+| nocand1 | +0.0018 | −0.0016 | +0.0013 | → | **+0.0010** | **−0.0008** | **+0.0005** |
+| span2 | +0.0002 | −0.0001 | +0.0003 | → | +0.0003 | −0.0001 | +0.0003 |
+| span2i | +0.0019 | −0.0016 | +0.0013 | → | +0.0011 | −0.0008 | +0.0005 |
+| span3i | +0.0019 | −0.0016 | +0.0013 | → | +0.0011 | −0.0008 | +0.0005 |
+
+**Five arms, three domains, fifteen cells — every one shrinks by roughly
+half.** The gap repair and the short filter are substitutes, exactly as
+the flicker mechanism predicts: a wider bridge leaves fewer fragments,
+so there is less for `SHORT_MIN` to delete.
+
+**A one-at-a-time sweep would have overstated the gap arms by about 2x**,
+and the user called it before the run. Record this as the standing
+reason to cross knobs whose mechanisms touch: *the assumption of
+independence is itself a claim, and here it was false.*
+
+### The line is dead anyway
+
+**Every gap arm fails the three-domain rule**: 44b6 negative in all of
+them, 6bba and Zebrahub positive in all of them. And three structural
+findings make it dead rather than merely unproven:
+
+1. **`span2i` and `span3i` are identical in every column.** Bridging
+   three frames finds nothing that bridging two does not.
+2. **`span2` — the honest widening, candidate still required — is
+   +0.0002 to +0.0003, i.e. nothing.** Exactly what `flicker.py`
+   predicted: 79.8% of missed frames have no candidate in the repair
+   band, so requiring one at *both* bridged frames fires on about
+   0.2 × 0.2 = 4% of dropouts.
+3. **`nocand1` ≈ `span2i` ≈ `span3i`.** All of the movement comes from
+   dropping the candidate requirement at span 1. **The span never
+   mattered at all.**
+
+And pure interpolation costs divisions: div_J −0.0032 in `6bba` and
+−0.0025 in Zebrahub. Inserting nodes the detector never saw manufactures
+exactly the kind of node the division patch then mines for forks.
+
+**Not re-running.** The fixed gate would loosen every arm equally, and
+44b6's dissent is present at both `SHORT_MIN` values and in all five
+arms — a looser gate does not flip a sign that consistent. The only
+thing that survived is `sm4_base`, which is already submitted.
+
+### Colab, for the record
+
+The acceptance test did not finish again, and this time the session is
+genuinely gone: **zero assignments on the server and no keep-alive
+process**, unlike the three earlier cases where the VM was provably
+alive. No theory offered — the evidence does not support one. One
+fact worth keeping: **`hold` does not actually hold.** Its background
+task reported "completed" while the keep-alive lingered for a further
+three hours and then died with it.
+
 ## 2026-08-25 -- ⭐⭐⭐⭐ thr3: the detection gate FAILS the three-domain rule — but the dissenting domain is 44b6, by 0.0008, against Zebrahub's +0.0080.
 
 `biohub-thr3`, 179 min CPU. Correctly loaded **D32** (`edge_ranker_d32.pkl`,

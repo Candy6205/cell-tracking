@@ -443,12 +443,26 @@ def _gap_close(nodes, edges, cand, cand_sc, cand_trees, next_id):
             C = np.asarray([nodes[g]["xyz"] for g in starts],
                            float) * SCALE
             D = np.sqrt(((P[:, None] - C[None]) ** 2).sum(2))
-            # The gate is a per-FRAME distance, so a longer bridge is
-            # allowed proportionally more total travel. Without this a
-            # 2-frame bridge would be held to a 1-frame budget and would
-            # essentially never fire, which would test the gate rather
-            # than the span.
-            D = D / float(step)
+            # A longer bridge should be allowed proportionally more total
+            # travel, otherwise a 2-frame bridge held to a 1-frame budget
+            # would essentially never fire and the run would be testing
+            # the gate rather than the span.
+            #
+            # ⚠ v1 WROTE `D = D / float(step)` AND THAT BROKE THE BASE
+            # ARM. `step` is `span + 1`, so at span 1 -- the shipped
+            # configuration -- it divided by 2 and silently doubled
+            # GAP1_GATE_UM from 9 to 18 um. BASE then reproduced
+            # biohub-poolsize's D187 row at adj_J 0.9253 / div_J 0.1282
+            # against the recorded 0.9254 / 0.1316, which is exactly the
+            # kind of small drift a must-reproduce anchor exists to
+            # catch. The SHORT_MIN deltas survived it because the same
+            # loosened gate sat under both halves and cancelled in the
+            # difference; the GAP arms did not, because they compare
+            # different spans and therefore different gates.
+            #
+            # Normalise by SPAN, not step: span 1 divides by 1 and is
+            # byte-identical to the shipped code.
+            D = D / float(span)
             cost = np.where(D > GAP1_GATE_UM, BIG, D)
             ri, ci = linear_sum_assignment(cost)
             for r_, c_ in zip(ri, ci):
