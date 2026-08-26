@@ -162,6 +162,131 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-27 -- RUNNING: gap4, and the ALLOCATOR is the real problem (the user's call)
+
+`biohub-gap4` pushed 2026-08-27, 8 arms × 3 domains, D187, `SHORT_MIN` 4.
+
+### The user's policy
+
+> 如果有候选点,可以直接补,没有候选点,就必须要 len 8
+
+The candidate is **evidence** — a real sub-threshold peak sitting at the
+interpolated position says a cell is there. The fragment-length test is
+a **proxy**. `len8` demands the proxy even when the evidence is present,
+so it deletes bridges a detected peak was backing. This policy demands
+the proxy only when the evidence is missing.
+
+With C = a qualifying candidate exists and L = both fragments ≥ N:
+
+| policy | bridges | |
+|---|---|---|
+| BASE | C | what ships |
+| `nocand` | everything | gap3 |
+| `len8` | L | gap3 — deletes C-and-short |
+| **the user's** | **C or L** | superset of BASE at the eligibility test |
+
+Partition by (C, L) into a = C∧L, b = C∧¬L, d = ¬C∧L, e = ¬C∧¬L:
+
+```
+nocand − BASE = d + e   = +0.0009 / +0.0012 / +0.0034
+len8   − BASE = d − b   = +0.0013 / +0.0043 / +0.0019
+the user's    = d       ← three unknowns, two equations
+```
+
+Not derivable from gap3. `len8 > nocand` in 6bba and 44b6 gives
+b + e < 0; Zebrahub gives the opposite; neither isolates `b`, which is
+exactly the difference.
+
+### THE BUDGET BINDS, AND IT IS HANDED OUT IN FRAME ORDER
+
+`_gap_close` walks `for t in range(T - step)` and `break`s the moment
+`n_added >= max_gaps`. progress.md already had the numbers and nobody
+connected them:
+
+| | |
+|---|---|
+| cap, `0.003 × nodes` | 476 bridges |
+| eligible WITH the candidate rule | ~238 — never binds |
+| eligible WITHOUT it | ~1,570 — **binds at 30% of demand** |
+
+So under any loosened policy the budget binds, and **what gets the
+budget is whatever sits at a low frame number, not whatever is a better
+bridge.** Demonstrated on synthetic data:
+
+| | superset held | BASE bridges LOST to `or8` |
+|---|---|---|
+| shipped budget 0.003 | 246 / 300 | **58** (both arms made exactly 600 — fully bound) |
+| budget past demand | **300 / 300** | **0** |
+
+**The user's read, and it is right**: raising the budget dodges the
+problem; ranking the bridges solves it.
+
+> 其实预算绑死的情况下,最好是打分,算更优
+
+### The scoring allocator — DESIGNED, NOT BUILT
+
+Two passes instead of one greedy sweep:
+
+1. **Collect.** For every frame, run the same per-frame
+   `linear_sum_assignment` and the same gates, but record
+   `(score, t, ge, gs, picks)` and **mutate nothing**. With no bridges
+   made, `ends`/`starts` are the original graph's endpoints, which is
+   what should be ranked.
+2. **Allocate.** Sort by score descending; accept greedily while the
+   budget remains and `ge ∉ succ`, `gs ∉ pred`, and every candidate the
+   bridge wants is still unused.
+
+Keeping the per-frame Hungarian assignment in pass 1 preserves the
+matching quality that already exists; only the *priority* across frames
+changes. Candidate scores:
+
+| score | available for | note |
+|---|---|---|
+| `−D`, the bridge distance | every bridge | already computed, free |
+| `cand_sc[tt][idx]` | candidate-backed only | needs a floor for midpoint bridges |
+| `min(frag_len_a, frag_len_b)` | every bridge | `_frag_len` caps at 12 |
+| **the edge ranker** | every bridge | the strongest, and the most work |
+
+**The edge ranker is the right answer and the expensive one.** The
+pipeline has a trained 18-feature pair scorer and gap closing uses raw
+Euclidean distance instead. Recorded in gap3 as left out on purpose:
+its features are computed over the primary seed set (local density,
+rank among candidates, per-frame counts) and rebuilding them for a
+repair-pool point is not a small change. Still the obvious next thing
+after a cheap score proves the allocator matters.
+
+### The anchors, and why there are three
+
+This assembly **reverses the gate order** — the candidate lookup now
+runs before the length test, because "only when there is no candidate"
+cannot be expressed otherwise. BASE, `nocand` and `len8` must all
+reproduce gap3 to the digit.
+
+Proved locally first, per the rule gap2 wrote in blood: **400 synthetic
+movies × 7 arms, byte-identical to gap3**, and every arm added
+1,580–12,284 edges so no arm was comparing two no-ops. The first version
+of that test was nearly vacuous (tracks too short for a length-8 gate to
+fire, candidates scattered so BASE made 4 bridges in 400 movies) and had
+to be rebuilt.
+
+⚠ One test artefact worth remembering: **do not compare raw edge tuples
+across arms.** Inserted nodes are numbered from `next_id`, so an arm
+making a different number of bridges renumbers all of them and every
+edge touching an insertion compares unequal. That reported the superset
+property failing 278 of 300 times — an artefact. Map back to the
+original `(ge, gs)` endpoints.
+
+### On len5/6/7, which the user asked first
+
+Reasoned, not run. Across gap3's gate 0 → 4 → 8 the **binding domain is
+6bba at every point** (+0.0009, +0.0010, +0.0013) and rises
+monotonically, while Zebrahub at 8 is still +0.0019, above it. So 6bba
+binds through the whole interval and 8 dominates 5, 6 and 7 unless
+something non-monotone happens between. Crude linear extrapolation puts
+the weakest-domain peak near gate 10 at +0.00145 — **+0.0002 over
+len8, which is noise.** ⚠ `_frag_len` caps at 12, so `GAP_MIN_LEN > 12`
+is unsatisfiable and silently disables gap closing entirely.
+
 ## 2026-08-26 -- ⭐⭐⭐⭐⭐ thr5 CORRECTS THE ENTRY BELOW. The node-count term is LINEAR with a constant slope, so there is no local/hidden asymmetry and it explains nothing.
 
 `biohub-thr5`, 190 min, gates 0.15 / 0.18 / 0.22 / 0.26, `SHORT_MIN` 4,
