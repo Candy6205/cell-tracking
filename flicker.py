@@ -52,7 +52,12 @@ from scipy.spatial import cKDTree
 SCALE = np.array([1.625, 0.40625, 0.40625])
 UNET_THRESH = 0.15
 CAND_THR = 0.05
-MATCH_UM = 5.0
+import os
+# The official scorer matches at max_distance 7.0
+# (tracking_cellmot/metrics.py). Every earlier number in this file
+# was measured at 5.0, which is stricter than the thing being
+# optimised, so it OVERSTATED the misses.
+MATCH_UM = float(os.environ.get('MATCH_UM', '5.0'))
 GT = pathlib.Path(r"C:\Users\48688\AppData\Local\Temp\gtx")
 DET = pathlib.Path(r"C:\Users\48688\AppData\Local\Temp\erout")
 

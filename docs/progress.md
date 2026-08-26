@@ -134,6 +134,201 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-26 -- ⭐⭐⭐⭐⭐ THE RULER WAS WRONG ALL ALONG. MATCH_UM 5.0 against the scorer's 7.0.
+
+Every diagnostic in this project matched detections to GT at **5.0 µm**.
+The official scorer matches at **7.0**
+(`tracking_cellmot/metrics.py: evaluate(..., max_distance=7.0)`), so
+every recall and miss figure in this log is **stricter than the thing
+being optimised**.
+
+| | at 5.0 (what was reported) | **at 7.0 (what counts)** |
+|---|---|---|
+| 6bba detector recall | 0.9561 | **0.9813** |
+| 6bba node-level miss rate | 4.45% | **1.74%** |
+| 6bba tracks intermittent | 28.8% | **14.2%** |
+| 6bba dropout runs | 196 | **95** |
+| length 2+, unrepaired | 94 | **34** |
+
+**The detection line is much closer to done than this log has been
+claiming.** 1.87% of annotated cells are missed, not 4.4%.
+
+## 2026-08-26 -- ⭐⭐⭐ logbase: the UNet is worth +0.0566 over the best classical filter, and the tophat buys almost nothing on its own
+
+`biohub-logbase`, 185 s CPU. Every arm scored at **matched detection
+count** — top-N peaks with N set to what the UNet keeps on that frame —
+so no threshold enters the comparison.
+
+| arm | recall@7.0 | vs UNet |
+|---|---|---|
+| **UNet (shipped)** | **0.9813** | — |
+| raw brightness | 0.8434 | −0.1379 |
+| **tophat only** | **0.8462** | −0.1351 |
+| LoG σ=1.3 | 0.8925 | −0.0888 |
+| **LoG σ=1.6** | **0.9247** | **−0.0566** |
+| LoG σ=2.0 | 0.9032 | −0.0781 |
+| tophat + LoG σ=1.6 | 0.9163 | −0.0650 |
+
+**The user's prior was right**: classical does not match the UNet, and
++0.0566 at the 0.92 level is a real gap, not a rounding difference.
+
+**But the tophat hypothesis is dead.** raw 0.8434 → tophat 0.8462 is
+**+0.0028**. I had inferred from the recorded `val_recall` (0.573
+no-tophat against 0.659 tophat) that the preprocessing was load-bearing.
+That 8.6-point gap is between **trained networks**, not between
+preprocessings: the tophat changes the input distribution and the
+network learns better on it, but **used directly as a detector the
+tophat is worth nothing**. Same error class as the rest of this session —
+*"a system that uses A is better"* is not *"A is useful"*.
+
+The LoG scale prediction held: matched σ for a blob of radius r is
+r/√3, cells are 7–9 µm across at a 1.625 µm isotropic heatmap voxel, so
+r = 2.2–2.8 voxels and σ = 1.25–1.6. The measured optimum is σ=1.6.
+
+## 2026-08-26 -- ⭐⭐⭐⭐ flicker3: three domains, and the only arm with a correct denominator says twice the flicker
+
+`biohub-flicker3`, 385 s CPU. `flicker.py` ran on 6bba alone — **the
+user caught it, the same criticism they have made repeatedly** — and at
+the wrong radius. Both fixed.
+
+At **MATCH_UM 7.0**:
+
+| | 6bba | 44b6 | **zebrahub (DENSE)** |
+|---|---|---|---|
+| tracks | 379 | **49** | **6,298** |
+| node-level miss rate | 1.74% | 1.39% | **3.51%** |
+| always detected | 85.8% | 73.5% | **67.0%** |
+| **never detected** | 0.0% | 0.0% | **0.6%** |
+| intermittent | 14.2% | 26.5% | **32.4%** |
+| dropout runs | 95 | 23 | **4,125** |
+| length 2+, unrepaired | 34 | 5 | **1,465** |
+
+Three things:
+
+1. **Zebrahub's flicker rate is more than double 6bba's** — 32.4%
+   against 14.2% — and Zebrahub is the only arm where every cell is
+   annotated. **Annotation favours cells that are easy to see**, which
+   this log has suspected all day and now has a number for.
+2. **The 44b6 arm has 49 tracks.** Twelve datasets at 327 cells/frame,
+   0.77% annotated, tracks of length ≥3 — forty-nine. Its 26.5% rests
+   on **thirteen** intermittent tracks. **Every "three domains agree"
+   verdict in this log has been carrying an arm with this little
+   statistical weight, and I never said so.**
+3. **"Never detected" is 0.6% in Zebrahub, not 0.** The class was empty
+   in the sparse arms because those cells were never annotated. So
+   "no cell is permanently invisible" becomes "0.6% are".
+
+## 2026-08-26 -- ⭐⭐⭐ how `_gap_close` actually works, and two corrections to my own account
+
+### The mechanism
+
+The candidate pool is a band, cut from the detector's own peaks:
+
+```
+CAND_THR 0.05  ─────────────  UNET_THRESH 0.15  ─────────
+   repair pool: 0.05 ≤ s < 0.15      primary nodes: s ≥ 0.15
+```
+
+and a bridge is built only if all of these hold:
+
+| test | value | swept? |
+|---|---|---|
+| endpoints within the gate | `GAP1_GATE_UM` 9.0 | no |
+| the **single nearest** candidate to the midpoint | — | never |
+| within the snap radius | `GAP1_SNAP_UM` 3.2 | yes → noise |
+| candidate score at least | `GAP1_MIN_CAND_SCORE` 0.10 | yes → noise |
+| under the cap | `GAP1_CAP_FRAC` 0.003 | yes → noise |
+
+`GAP1_MIN_CAND_SCORE` **cuts the usable pool in half** — `[0.10, 0.15)`
+of a `[0.05, 0.15)` band. All four constants were inherited from the
+public solution and none was derived.
+
+**Why every sweep of them was noise, finally explained**: the mechanism
+rarely fires at all — only ~20% of missed frames have any candidate in
+the band — so adjusting sub-constants inside a gate that seldom opens
+cannot move anything.
+
+### Correction 1: the midpoint is NOT careless
+
+I called the plain midpoint careless for ignoring velocity. **Wrong.**
+`ge` is at t, `gs` at t+2, the missing node at t+1, so **the midpoint IS
+the constant-velocity prediction**. Nothing to add for a one-frame gap.
+The main linker is the cruder of the two — `pred = P + 0.5 * prev_vel`
+uses a damped half-velocity, not a physical extrapolation.
+
+### Correction 2: the node-count penalty does NOT apply to this line
+
+I carried "the node-count penalty is the binding constraint" over from
+the submissions, where output grew +1.61% and +10.3%. **Gap closing is
+capped at 0.3% of nodes by construction.** Across the 12 6bba datasets:
+
+| | |
+|---|---|
+| cap, `0.003 × nodes` | **476** bridges |
+| eligible WITH the candidate requirement | ~238 — **the cap never binds** |
+| eligible WITHOUT it | ~1,570 — **binds at 30% of demand** |
+| nodes `nocand` adds | +238 = **+0.15%** |
+| its node-count penalty | 0.00014 of J — **unreadable** |
+
+**Two orders of magnitude from the submission case.** What decides this
+line is whether the bridges are RIGHT: 476 bridges add 952 edges, 0.77%
+of the total, a swing of about ±0.0077 — which is exactly the magnitude
+gap2 measured (+0.0018 / −0.0016 / +0.0013), with signs disagreeing
+across domains.
+
+### The user's correction, which inverted my conclusion
+
+I called gap2's `nocand1` the **upper bound** of the line and concluded
+a better selector could only land below it. **Wrong.** `nocand1` is the
+**unconditional** case — every gap gets a node whether or not there is
+any reason — and its value is what remains after good and bad bridges
+cancel. A **gated** version can be above *both*: it accepts bridges BASE
+refuses and refuses bridges `nocand1` accepts.
+
+> 理想情况下应该是直接插入一个点在一定的情况下可以触发,而不是直接插入一个
+> 没有检测出来的点这种条件可以随时触发
+
+gap2 measured "always" and "only with a candidate". **The entire space
+between them was untested** — `biohub-gap3` tests it.
+
+## 2026-08-26 -- RUNNING: gap3 and thr5
+
+**`biohub-gap3`** — pure interpolation, GATED. 8 arms × 3 domains, ~2.7 h.
+Each condition is its own arm because the user doubted the first:
+
+| arm | candidate? | velocity cosine | fragment length | primary-node clearance |
+|---|---|---|---|---|
+| BASE | **yes** | — | — | — |
+| nocand | no | — | — | — |
+| vel0.0 / vel0.5 | no | ≥0 / ≥0.5 | — | — |
+| len4 / len8 | no | — | ≥4 / ≥8 | — |
+| clear4 | no | — | — | 4 µm |
+| all | no | ≥0 | ≥4 | 4 µm |
+
+The velocity gate **passes** a stationary endpoint rather than rejecting
+it — a zero vector has no direction, and rejecting on it would kill
+every still cell. BASE anchors on short_sweep's short_4 row (0.9279 /
+0.8553 / 0.8037); gap2's BASE cannot be reused because its gate was
+divided by `span+1`, doubling `GAP1_GATE_UM` at span 1. Fixed.
+
+**`biohub-thr5`** — the gate TIGHTENED for the first time: 0.15, 0.18,
+0.22, 0.26, `SHORT_MIN` 4, ~4.5 h. And it prints the metric decomposed:
+
+```
+adj_J = edge_J × (1 − 0.1 × node_ratio)
+```
+
+`summarise()` does not aggregate `total_node_ratio`, so `_with_ratio()`
+adds it as a weighted mean using the same weights `adj_edge_jaccard`
+uses — **purely additive**, unit-tested, summarise's own keys untouched.
+Anchor: gate 0.15 must reproduce thr4's `g0.15_s4` exactly.
+
+**What to read**: not how far adj_J falls, but **how far `edge_J` falls
+against how much `node_ratio` improves**. If the edges barely suffer
+while the node count moves a lot, tightening could win on the hidden
+test even while losing locally — and that judgement is impossible from
+adj_J alone.
+
 ## 2026-08-26 -- ⭐⭐⭐⭐⭐ THE NODE-COUNT PENALTY IS THE STORY. Local is UNDER target, so it rewards what the leaderboard punishes.
 
 ### The two leaderboard results, and the number that explains both

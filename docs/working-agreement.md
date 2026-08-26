@@ -109,6 +109,29 @@ step.
 **An offline AUC is not a score.** On 2026-08-24 edge AUC anti-predicted
 the pipeline three times running. Measure adj_J.
 
+## Use the scorer's own constants (2026-08-26)
+
+**`MATCH_UM` was 5.0 in every diagnostic in this project. The official
+scorer matches at 7.0.** Every recall and miss figure ever reported here
+was therefore stricter than the thing being optimised, and by a lot:
+6bba's detector recall is 0.9813 at 7.0, not the 0.9561 this log
+repeated for two days. Miss rate 1.74%, not 4.45%.
+
+Before measuring anything against ground truth, read the constant out of
+`tracking_cellmot/metrics.py` rather than inheriting it from a sibling
+script. `evaluate(graph, gt_graph, scale=None, max_distance=7.0)`.
+
+## Say how many datasets an arm actually has (2026-08-26)
+
+`flicker3` reported 44b6 with **49 tracks**. Twelve datasets at 327
+cells per frame, annotated at 0.77%, tracks of length ≥3 — forty-nine,
+of which thirteen were intermittent.
+
+**Every "three domains agree" verdict in this log has been carrying an
+arm of that weight without saying so.** The rule counts domains; it does
+not weigh them. Print the n for each arm, every time, so a reader can
+see when "three domains" is really two and a rumour.
+
 ## Cross the knobs whose mechanisms touch (2026-08-26)
 
 **Sweeping one thing at a time is not neutral. It is a claim that the
