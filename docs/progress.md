@@ -10,26 +10,52 @@
 
 ## HANDOFF (2026-08-26, replacing the 2026-08-24 one below)
 
-**Best confirmed LB is still 0.921, ref 55707206** (D32 ranker).
-**Ref 55772253 is PENDING** — `SHORT_MIN` 6 → 4, one non-comment line
-different from ref 55757064, so its control is **0.920**, not 0.921.
+**Best confirmed LB is still 0.921, ref 55707206** (D32 ranker). Three
+submissions have landed since and none beat it:
+
+| ref | change | its own control | LB | verdict |
+|---|---|---|---|---|
+| 55757064 | — | — | 0.920 | the control for the next row |
+| 55772253 | `SHORT_MIN` 6 → 4 | 55757064 = **0.920** | **0.920** | a TRUE ZERO, not a loss |
+| 55780773 | + gate 0.15 → 0.12 | 55772253 = 0.920 | **0.918** | the only clear loss on record |
+
+⚠ Read 55772253 against **55757064 = 0.920**, not against 0.921. It
+differs from 55757064 by one non-comment line. Calling it "0.921 →
+0.920" invents a regression that did not happen.
 
 ### The single most important open question
 
 **Does a three-domain-agreeing result appear on the leaderboard?**
 
-The 12-dataset holdout is 0 for 2 against the LB (windowing +0.0019 →
-−0.001; ranker pool +0.0073 → −0.001), and both failures were `6bba`
-alone. The pre-registered rule — same sign in `6bba`, `44b6` and
-Zebrahub — was built to fix that, and `SHORT_MIN` 6 → 4 is the first
-candidate it has ever produced (+0.0025 / +0.0054 / +0.0045). Ref
-55772253 tests the RULE, not the constant. Either answer is worth more
-than the constant:
+The 12-dataset holdout is **0 for 3** against the LB: windowing +0.0019
+→ −0.001, ranker pool +0.0073 → −0.001, and now `SHORT_MIN` 6 → 4,
+which is the first candidate the three-domain rule ever produced
+(+0.0025 / +0.0054 / +0.0045) and which scored **0.000**.
 
-- **it appears** → three-domain agreement buys what a single-domain
-  holdout does not, and the rule earns its cost;
-- **it does not** → the rule is not sufficient either, and no local
-  measurement at this scale should drive a submission again.
+**And as of `thr5` there is no longer a mechanism excusing that.** The
+node-count term is linear with slope `-0.1 * dN/N_true`, independent of
+the current ratio, so local and hidden pay the same rate and the local
+deltas were already net of it. The asymmetry the 2026-08-26 node-count
+entry proposed does not exist. What remains is the plain reading: **a
++0.002 to +0.007 local gain, however many domains agree, is not
+evidence that the hidden test will move.**
+
+The live candidate is `gap3`'s **`len8`** (+0.0013 / +0.0043 / +0.0019,
+same sign in all three domains). It is prepared in `submit_ranker.py`
+and NOT submitted.
+
+⚠ **gap3 and thr5 both ran on D187, and only ONE of them has a usable
+44b6 arm.** Every 44b6 dataset is inside D187's training pool, so the
+question is whether the leak cancels in the delta:
+
+- **gap3 is a POST-LINK sweep.** All eight arms share one ranker, one
+  detection set and one ILP solution, and differ only in what
+  `_gap_close` does afterwards. The in-sample optimism inflates every
+  arm identically and cancels in the delta. **Three usable domains.**
+- **thr5 changes the DETECTIONS.** Each gate feeds the ranker a
+  different candidate set, so the in-sample bias differs per arm and
+  does NOT cancel. Its own log said so at startup. **Two usable
+  domains: 6bba and Zebrahub.**
 
 ### What 2026-08-25/26 closed, and what it opened
 
@@ -40,7 +66,9 @@ than the constant:
 | NMS radius / density | **closed.** 2 of 3 domains, none significant |
 | detector depth | **closed.** signs disagree, nothing significant |
 | gap closing (span, interpolation) | **closed.** all arms fail the rule; the span never mattered |
-| detection gate 0.15 → 0.12 | **contested.** 6bba +0.0021 and Zebrahub +0.0080 against 44b6 −0.0006. Discarded by the rule; the user's call |
+| detection gate, LOOSER (0.12) | **tried.** Local +0.0055/+0.0045/+0.0121, LB 0.918 against control 0.920. Reverted |
+| detection gate, TIGHTER (0.18–0.26) | **closed 2026-08-26 by `thr5`.** Monotone loss in both independent domains; Zebrahub −0.2204 at 0.26. It deletes real cells, not marginal false positives |
+| the node-count term as an explanation | **closed 2026-08-26 by `thr5`.** Linear, constant slope, no local/hidden asymmetry |
 | morphology | closed 2026-08-25 (`MASS_ratio` median 0.994) |
 
 **The one thing OPENED and not yet acted on**: `flicker.py` found that
@@ -134,6 +162,113 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-26 -- ⭐⭐⭐⭐⭐ thr5 CORRECTS THE ENTRY BELOW. The node-count term is LINEAR with a constant slope, so there is no local/hidden asymmetry and it explains nothing.
+
+`biohub-thr5`, 190 min, gates 0.15 / 0.18 / 0.22 / 0.26, `SHORT_MIN` 4,
+D187. Anchor held: g0.15 reproduced thr4's `g0.15_s4` exactly, 0.9279 /
+0.8553 / 0.8037.
+
+### 1. The correction, which is the important half
+
+The entry below (`THE NODE-COUNT PENALTY IS THE STORY`) claimed:
+
+> Locally, adding nodes helps twice — better edges **and** a move toward
+> the target. On the hidden test, if N_pred is at or over target, it
+> helps once and hurts once.
+
+**Both halves are wrong.**
+
+`reference.md`: the penalty is `max(0, J * (1 - 0.1 * (N_pred -
+N_true)/N_true))`. The `max(0, ...)` floors the whole product; it does
+**not** clamp the ratio. Verified against thr5's own columns — 6bba
+g0.15, `edge_J` 0.9258 × (1 − 0.1 × −0.0215) = 0.92779 against the
+reported 0.9279.
+
+**(a) A move toward the target HURTS, not helps.** Under target means a
+negative ratio means a multiplier above 1. Adding nodes moves the ratio
+up toward zero, which SHRINKS the bonus. Locally, adding nodes has
+always been costing us.
+
+**(b) There is no asymmetry, because the slope is constant.** Adding
+ΔN nodes changes the multiplier by exactly `−0.1 × ΔN/N_true`,
+regardless of where the ratio currently sits:
+
+| starting ratio | add 1.61% of nodes | multiplier | adj_J change |
+|---|---|---|---|
+| −0.0215 (6bba, actual) | → −0.0054 | 1.00215 → 1.00054 | **−0.0015** |
+| 0.0000 (hypothetical) | → +0.0161 | 1.00000 → 0.99839 | **−0.0015** |
+
+Identical. The only way the cost could differ between local and hidden
+is if the hidden `N_true` were a very different MAGNITUDE from ours —
+about half, to double the cost — which is implausible if the hidden
+split resembles the training split.
+
+**(c) So both failed submissions' local gains were ALREADY net of the
+node cost.** `SHORT_MIN` 4's +0.0025 / +0.0054 / +0.0045 and gate
+0.12's +0.0055 / +0.0045 / +0.0121 are post-penalty numbers. The
+leaderboard's 0.000 and −0.002 need a different explanation, and the
+only one left standing is the boring one: **the local gain is not
+present in the hidden data**, exactly as with windowing (+0.0019 →
+−0.001) and the ranker pool (+0.0073 → −0.001).
+
+The three-domain rule exists to fix precisely that, and its first
+verdict is 0.920 → 0.920.
+
+**One hole that cannot be closed from here**: `N_true` is the train
+geff's `estimated_number_of_nodes`, and `reference.md` records that the
+**test split has no such field**. What the official scorer uses for
+N_true on the hidden test is unknown and unverifiable from our side.
+
+### 2. Tightening the gate is dead in both independent domains
+
+⚠ **This run's 44b6 arm is IN-SAMPLE.** All 12 datasets sit inside
+D187's training pool, so it reports fit, not transfer. The script said
+so at startup. **The independent domains here are 6bba and Zebrahub —
+two.** The user chose D187 deliberately (it is the model the submission
+runs) and on D187 no clean 44b6 subset exists.
+
+| gate | 6bba | 44b6 (in-sample) | zh |
+|---|---|---|---|
+| 0.15 (shipped) | 0.9279 | 0.8553 | 0.8037 |
+| 0.18 | −0.0042 | +0.0058 | −0.0236 |
+| 0.22 | −0.0095 | −0.0095 | −0.0962 |
+| 0.26 | −0.0166 | −0.0453 | **−0.2204** |
+
+Both independent domains fall monotonically.
+
+### 3. The decomposition, which is what the run was FOR
+
+| | 6bba | | 44b6 | | zh | |
+|---|---|---|---|---|---|---|
+| gate | edge_J | ratio | edge_J | ratio | edge_J | ratio |
+| 0.15 | 0.9258 | −0.0215 | 0.8473 | −0.0875 | 0.7976 | −0.0808 |
+| 0.18 | 0.9193 | −0.0471 | 0.8465 | −0.1681 | 0.7709 | −0.1252 |
+| 0.22 | 0.9102 | −0.0911 | 0.8214 | −0.2970 | 0.6924 | −0.2285 |
+| 0.26 | 0.8975 | −0.1564 | 0.7768 | −0.4371 | 0.5631 | −0.3817 |
+
+Three readings, none of which adj_J alone could have given:
+
+- **`edge_J` is monotone DECREASING in the gate in every domain.**
+  Loosening improves the edges everywhere; the node term is the only
+  thing pushing back.
+- **Tightening deletes real cells, not marginal false positives.**
+  Zebrahub 0.15 → 0.26 loses 29% of `edge_J` relative. At 0.26 it emits
+  38% fewer nodes than there are cells, and a missed detection costs
+  twice (the GT edge becomes an FN, the neighbour's predicted edge
+  becomes an FP).
+- **The node-count bonus cannot pay for it.** Zebrahub's bonus grows
+  from +0.008 to +0.038 across that range — 0.03 against a 0.23 loss.
+
+**The threshold line is CLOSED at both ends.** Loosening: local gain,
+leaderboard loss (ref 55780773, 0.918 against its control's 0.920).
+Tightening: local loss in both independent domains. 0.15 stands.
+
+`SHORT_MIN` 4 sits at ratio −0.0215 on 6bba, so the shipped pipeline is
+already 2–9% BELOW the estimated cell count in every domain. That is a
+standing bonus of 1.002 to 1.009 and it is bigger than this log ever
+recorded — the 0.977 figure quoted below was **6bba's alone**; 44b6 is
+0.913 and Zebrahub 0.919.
+
 ## 2026-08-26 -- ⭐⭐⭐⭐⭐ gap3: a GATED bridge beats the ungated one, six of seven arms agree in all three domains, and this line does NOT move the node count
 
 `biohub-gap3`, 166 min, 8 arms × 3 domains, D187 ranker, `SHORT_MIN` 4.
@@ -207,6 +342,16 @@ of magnitude below the submission cases.
 **This is the first candidate in days whose local gain is not
 mechanically entangled with the thing that plausibly ate both previous
 submissions.** Whatever `len8` measures, it measures in the edges.
+
+> **DOWNGRADED the same day by `thr5`.** The paragraph above is
+> arithmetically fine — len8 costs at most 0.0003 of the multiplier, and
+> gap3's +0.0013 is already net of it. But its *significance* is gone:
+> thr5 showed the node-count term is linear with a constant slope, so it
+> never explained the two leaderboard results in the first place, and
+> being clear of it buys nothing. The remaining case for len8 is only
+> that it is the cleanest three-domain result on hand and it is small.
+> If it reads 0.000 that now means the same thing every other 0.000 has
+> meant.
 
 ### The cost, stated plainly
 
@@ -378,7 +523,7 @@ refuses and refuses bridges `nocand1` accepts.
 gap2 measured "always" and "only with a candidate". **The entire space
 between them was untested** — `biohub-gap3` tests it.
 
-## 2026-08-26 -- RUNNING: thr5 (gap3 DONE, see the gap3 entry above)
+## 2026-08-26 -- the DESIGNS of gap3 and thr5 (both FINISHED; results in the two entries above)
 
 **`biohub-gap3`** — FINISHED 2026-08-26, result in the entry above. Pure interpolation, GATED. 8 arms × 3 domains, ~2.7 h.
 Each condition is its own arm because the user doubted the first:
@@ -398,7 +543,7 @@ every still cell. BASE anchors on short_sweep's short_4 row (0.9279 /
 0.8553 / 0.8037); gap2's BASE cannot be reused because its gate was
 divided by `span+1`, doubling `GAP1_GATE_UM` at span 1. Fixed.
 
-**`biohub-thr5`** — the gate TIGHTENED for the first time: 0.15, 0.18,
+**`biohub-thr5`** — FINISHED 2026-08-26, result in the entry above. The gate TIGHTENED for the first time: 0.15, 0.18,
 0.22, 0.26, `SHORT_MIN` 4, ~4.5 h. And it prints the metric decomposed:
 
 ```
@@ -416,7 +561,21 @@ while the node count moves a lot, tightening could win on the hidden
 test even while losing locally — and that judgement is impossible from
 adj_J alone.
 
-## 2026-08-26 -- ⭐⭐⭐⭐⭐ THE NODE-COUNT PENALTY IS THE STORY. Local is UNDER target, so it rewards what the leaderboard punishes.
+## 2026-08-26 -- ⭐⭐ SUPERSEDED by thr5 (above): the node-count penalty is NOT the story
+
+> **SUPERSEDED 2026-08-26 by `thr5`.** The arithmetic below is right
+> and the interpretation is wrong in two places. (1) Being UNDER
+> target does not make adding nodes free -- moving toward the target
+> shrinks the bonus, so adding nodes has always cost us locally.
+> (2) The term is linear with slope `-0.1 * dN/N_true`, independent
+> of the current ratio, so local and hidden pay the SAME rate and
+> the asymmetry this entry is built on does not exist. Both
+> leaderboard results are therefore unexplained by it, and the local
+> deltas quoted below were already net of the node cost. Also, the
+> 0.977 figure is 6bba ALONE; 44b6 is 0.913 and Zebrahub 0.919.
+> Kept in full because its measurements are sound.
+
+### ORIGINAL HEADING: THE NODE-COUNT PENALTY IS THE STORY. Local is UNDER target, so it rewards what the leaderboard punishes.
 
 ### The two leaderboard results, and the number that explains both
 

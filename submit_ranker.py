@@ -115,8 +115,15 @@ SCALE = np.array([1.625, 0.40625, 0.40625])
 POOL = 4
 REPAIR = True
 CAND_THR = 0.05
-# ---- THE ONLY CHANGE vs ref 55772253 (LB 0.920) ------------------------
-# The detection gate. 0.15 was inherited from the public solution and
+# ---- REVERTED 2026-08-26. The block below argued for 0.12; ref
+# 55780773 shipped it and scored 0.918 against its own control's 0.920.
+# Three ticks is the only clear LOSS of the three submissions on record
+# (55757064 0.920 -> 55772253 0.920 was a true zero, not a loss), and
+# thr3's own warning -- +8.7% nodes costing about -0.0080 of J -- is the
+# most likely reason. The argument is kept in full because thr5 is
+# measuring the OPPOSITE direction and will need it.
+# ------------------------------------------------------------------------
+# SUPERSEDED 2026-08-26: The detection gate. 0.15 was inherited from the public solution and
 # swept downward for the first time by biohub-thr-sweep, then in three
 # domains by biohub-thr3:
 #
@@ -151,7 +158,7 @@ CAND_THR = 0.05
 #    60%. thr3 measured the whole pool 111,937 -> 64,202. Lowering the
 #    gate does not create detections, it MOVES them out of the repair
 #    pool into primary nodes, exactly conserved.
-UNET_THRESH = 0.12
+UNET_THRESH = 0.15      # reverted from 0.12, see the block above
 NMS_UM = 4.0
 DETECT_THRESH = min(UNET_THRESH, CAND_THR) if REPAIR else UNET_THRESH
 
@@ -199,6 +206,39 @@ GAP1_GATE_UM = 9.0
 GAP1_SNAP_UM = 3.2
 GAP1_MIN_CAND_SCORE = 0.10
 GAP1_CAP_FRAC = 0.003
+# ---- THE ONLY CHANGE vs ref 55772253 (LB 0.920) ------------------------
+# biohub-gap3's `len8` arm, and it is TWO things measured as one unit:
+#
+#   1. the bridge no longer REQUIRES a real sub-threshold candidate at
+#      the missing frame -- if none qualifies it inserts the midpoint,
+#      which at a one-frame gap IS the constant-velocity prediction;
+#   2. it refuses unless BOTH joined fragments are at least GAP_MIN_LEN
+#      nodes long.
+#
+#   arm                    6bba      44b6        zh
+#   BASE (shipped)       0.9279    0.8553    0.8037
+#   nocand (1 only)     +0.0009   +0.0012   +0.0034
+#   len4                +0.0010   +0.0035   +0.0028
+#   len8                +0.0013   +0.0043   +0.0019   <- this
+#
+# Same sign in all three domains, which is the pre-registered rule, and
+# len8 is the best arm BY ITS WEAKEST DOMAIN -- the reading the rule
+# asks for. It also beats the ungated `nocand` in 6bba and by 3.6x in
+# 44b6: dropping the requirement alone adds good bridges and bad ones
+# that partly cancel, and the length gate removes the bad ones.
+#
+# WHY THIS ONE IS NOT THE PREVIOUS TWO SUBMISSIONS AGAIN. Both of those
+# grew the node count (+1.61%, +10.3%) and the metric's adjustment term
+# 0.1 * (N_pred - N_true)/N_true plausibly ate both. `max_gaps` caps
+# insertions at GAP1_CAP_FRAC = 0.003 of nodes and each bridge adds
+# exactly one, so **node count can grow by at most 0.3%** and the
+# adjustment is worth <= 0.0003. This change lives in the EDGES.
+#
+# ⚠ The weakest domain is +0.0013 against holdout noise of roughly
+# 0.002-0.003, after six comparisons. It can read 0.000 without meaning
+# anything. `_frag_len` caps at 12, so len12 is the last testable point
+# on a curve that is monotone UP in 44b6 and monotone DOWN in Zebrahub.
+GAP_MIN_LEN = 8
 DIV_PARENT_UM = 12.0
 DIV_SISTER_UM = 15.0
 DIV_CHILD_UM = 10.0
@@ -492,6 +532,26 @@ def pair_features(dets, vels, T):
 
 # ---- post-link patches (ranker-diag verbatim: the 0.9345 path) --------
 
+def _frag_len(nid, link, cap=12):
+    """How many nodes the fragment containing `nid` runs for, walking
+    through `link` (`pred` backward from a track's end, `succ` forward
+    from a track's start). Capped so a long track costs nothing to
+    measure -- the gate only ever asks "at least N", never "how many".
+
+    gap3's copy carried an unused `back` argument; dropped here, the
+    walk is identical.
+    """
+    n = 1
+    cur = nid
+    while n < cap:
+        nxt = link.get(cur)
+        if nxt is None:
+            break
+        cur = nxt
+        n += 1
+    return n
+
+
 def _gap_close(nodes, edges, cand, cand_sc, cand_trees, next_id):
     T = len(cand)
     succ = {}
@@ -525,16 +585,27 @@ def _gap_close(nodes, edges, cand, cand_sc, cand_trees, next_id):
             ge, gs = ends[r_], starts[c_]
             if ge in succ or gs in pred:
                 continue
+            # ---- gap3's len8 gate --------------------------------------
+            # Joining two long tracks is a safer bet than joining two
+            # three-node crumbs. Both sides must clear it.
+            if _frag_len(ge, pred) < GAP_MIN_LEN or \
+                    _frag_len(gs, succ) < GAP_MIN_LEN:
+                continue
             mid = 0.5 * (nodes[ge]["xyz"] + nodes[gs]["xyz"])
+            # ---- gap3's `nocand`: a candidate is preferred, not required.
+            # The old code did `continue` on every miss below; now a miss
+            # falls through to the midpoint. At a ONE-frame gap the
+            # midpoint is the constant-velocity prediction, not a guess.
+            use = None
             tree = cand_trees[t + 1]
-            if tree is None:
-                continue
-            dist, idx = tree.query(mid * SCALE)
-            if dist > GAP1_SNAP_UM or cand_used[t + 1][idx] or \
-                    cand_sc[t + 1][idx] < GAP1_MIN_CAND_SCORE:
-                continue
-            use = np.asarray(cand[t + 1][idx], float)
-            cand_used[t + 1][idx] = True
+            if tree is not None:
+                dist, idx = tree.query(mid * SCALE)
+                if dist <= GAP1_SNAP_UM and not cand_used[t + 1][idx] \
+                        and cand_sc[t + 1][idx] >= GAP1_MIN_CAND_SCORE:
+                    use = np.asarray(cand[t + 1][idx], float)
+                    cand_used[t + 1][idx] = True
+            if use is None:
+                use = np.asarray(mid, float)
             ng = next_id
             next_id += 1
             nodes[ng] = {"t": t + 1, "xyz": use}

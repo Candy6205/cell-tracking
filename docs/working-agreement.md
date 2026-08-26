@@ -109,6 +109,45 @@ step.
 **An offline AUC is not a score.** On 2026-08-24 edge AUC anti-predicted
 the pipeline three times running. Measure adj_J.
 
+## Before claiming a term behaves differently in two regimes, differentiate it (2026-08-26)
+
+On 2026-08-26 I wrote a five-star entry arguing that the metric's
+node-count term explained both leaderboard failures. The argument:
+
+> the local holdout is UNDER the estimated cell count, so the term is a
+> BONUS; adding nodes moves toward the target and is rewarded twice.
+> On the hidden test, if we are at or over target, it is rewarded once
+> and punished once.
+
+The term is `1 - 0.1 * (N_pred - N_true)/N_true`. **Its derivative with
+respect to added nodes is `-0.1/N_true`, a constant.** Where the ratio
+currently sits does not enter. Local and hidden pay the same rate,
+adding nodes always costs, and the entire asymmetry was imaginary.
+
+Two things went wrong and both are cheap to prevent:
+
+1. **I reasoned about the term's SIGN when the question was about its
+   SLOPE.** "It is a bonus here and a penalty there" is a statement
+   about the value; "adding nodes helps here and hurts there" is a
+   statement about the change. A one-line derivative separates them.
+2. **I read "under target" as "adding nodes is free".** That would be
+   true of `1 - 0.1 * max(0, ratio)`. `reference.md` records the actual
+   form, `max(0, J * (1 - 0.1 * ratio))`, where the floor is on the
+   whole product. **I had the formula written down correctly and still
+   reasoned from a clamp that is not in it.**
+
+**The rule: when an argument turns on "X behaves differently in regime
+A than regime B", write down the derivative before writing anything
+else. If it is constant, there is no regime.** And when a formula has a
+`max` or a `min` in it, say out loud what it is wrapping — the
+difference between clamping a factor and clamping a product is the
+difference between an effect and no effect.
+
+Cost of not doing this: a five-star entry, a submission argued for on
+its basis, and a run (`thr5`) designed to exploit a regime that does
+not exist. `thr5` was not wasted — its decomposition closed the
+tightening line on its own evidence — but that was luck, not design.
+
 ## Use the scorer's own constants (2026-08-26)
 
 **`MATCH_UM` was 5.0 in every diagnostic in this project. The official
