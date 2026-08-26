@@ -134,6 +134,113 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-26 -- ⭐⭐⭐⭐⭐ THE NODE-COUNT PENALTY IS THE STORY. Local is UNDER target, so it rewards what the leaderboard punishes.
+
+### The two leaderboard results, and the number that explains both
+
+| submission | change | local, three domains | output | **LB** |
+|---|---|---|---|---|
+| 55772253 | `SHORT_MIN` 6→4 | +0.0025 / +0.0054 / +0.0045 | +1.61% | **0.920** (0.000) |
+| 55780773 | + gate 0.15→0.12 | **+0.0055 / +0.0045 / +0.0121** | +10.3% | **0.918** (−0.002) |
+
+The second was submitted with a **pre-registered prediction of 0.919**,
+derived from the output growth alone. It landed at 0.918 — direction
+right, magnitude slightly understated.
+
+**The three-domain rule is now 0 for 2**, exactly like the single-domain
+holdout it was built to replace. And the second result is the strongest
+local number this project has ever produced.
+
+### Why: `N_pred / N_true` on the holdout is 0.977, so the penalty is a BONUS
+
+`J_adj = max(0, J · (1 − 0.1 · (N_pred − N_true)/N_true))`, and on the
+12-dataset holdout **11 of 12 datasets sit UNDER the target node count**:
+
+| dataset | true/fr | N_true | N_pred | ratio | penalty factor |
+|---|---|---|---|---|---|
+| 7b5d3b2c | 58 | 5,780 | 4,990 | **0.863** | **1.0137** |
+| 3a1849c2 | 70 | 7,003 | 6,223 | 0.889 | 1.0111 |
+| 2312ac41 | 120 | 11,950 | 11,523 | 0.964 | 1.0036 |
+| 283bf9f1 | 209 | 20,861 | 20,811 | 0.998 | 1.0002 |
+| **3abfe10a** | 521 | 52,065 | 53,504 | **1.028** | 0.9972 |
+| **TOTAL** | | 164,698 | 160,857 | **0.977** | **1.0023** |
+
+**Locally, adding nodes helps TWICE** — more correct edges, and a move
+toward the target that makes the adjustment term better. On the hidden
+test, if `N_pred` is already at or over target, adding nodes helps once
+and hurts once. That is a mechanism, and it needs no assumption about
+density.
+
+`corr(true cells/frame, N_pred/N_true) = +0.7498`, n=12, p≈0.005 — the
+DENSE dataset is the one over target, not the sparse ones.
+
+### ⚠ The user's correction: this is a WARNING, not a conclusion
+
+Two limits, both theirs:
+
+1. **The public split's composition is unknown and need not be
+   adversarial to be skewed.** Taking the first or last N datasets is
+   enough to give the public set a narrow density band while the hidden
+   set spans wider. So LB 0.918 says "adding nodes loses on *that*
+   subset" and nothing about the private set, which is what ranks.
+2. **The penalty CONTAMINATES every judgement about edges and
+   divisions**, because node count and edge quality are multiplied
+   together inside `adj_edge_jaccard`. A change that improved the edges
+   and a change that merely improved the node count are indistinguishable
+   in the only column this project has been reading.
+
+**And they are separable — the metric already reports them apart.**
+`METRIC_COLUMNS` carries `edge_jaccard` (raw J), `total_node_ratio`
+((N_pred − N_true)/N_true) and `adj_edge_jaccard` as three columns.
+**Every sweep in this log read only the third.** All future sweeps must
+report all three.
+
+### The direction this opens: TIGHTEN the gate, which nobody has tried
+
+Every threshold sweep so far went DOWN (0.15 → 0.12 → 0.10 → 0.08).
+**0.18, 0.22, 0.26 have never been run.** And the asymmetry favours it:
+
+| | local (ratio 0.977) | hidden (inferred: at/over target) |
+|---|---|---|
+| loosen | edges better **+** penalty better → **helped twice** | edges better **−** penalty worse → cancels |
+| **tighten** | edges worse **−** penalty worse → **hurt twice** | edges worse **+** penalty better → cancels |
+
+**Tightening is the only direction where looking bad locally is
+compatible with scoring well on the leaderboard** — the mirror image of
+the two failures already measured.
+
+## 2026-08-26 -- ⭐⭐⭐ thr4: on D187 the gate SURVIVES the rule, 44b6's dissent was a D32 artefact, and the two knobs are ADDITIVE
+
+`biohub-thr4`, 22,911 s = 6.4 h, 6 arms × 3 domains. **Both anchors held
+exactly**: `g0.15_s6` reproduced post_sweep's BASE (0.9254 / 0.8499 /
+0.7992) and `g0.15_s4` reproduced short_sweep's short_4 (0.9279 / 0.8553
+/ 0.8037).
+
+| config | 6bba | 44b6 | zebrahub |
+|---|---|---|---|
+| gate 0.12, `SHORT_MIN` 6 | +0.0033 | **+0.0006** | +0.0080 |
+| gate 0.10, `SHORT_MIN` 6 | +0.0024 | +0.0027 | +0.0086 |
+| `SHORT_MIN` 4, gate 0.15 | +0.0025 | +0.0054 | +0.0045 |
+| **both** | **+0.0055** | **+0.0045** | **+0.0121** |
+
+**thr3's 44b6 dissent (−0.0006) was a property of the D32 ranker, not
+the data.** On D187 it is +0.0006. The ranker changed and the sign
+flipped, which is why measuring on a model you do not ship is expensive.
+
+**The two knobs are ADDITIVE**, unlike `gap2`'s, which were substitutes:
+
+| | predicted if additive | measured |
+|---|---|---|
+| 6bba | 0.0033 + 0.0025 = 0.0058 | 0.0055 |
+| zebrahub | 0.0080 + 0.0045 = 0.0125 | 0.0121 |
+
+Two crossed experiments, two opposite answers. That is exactly why
+independence cannot be assumed — recorded in `working-agreement.md`.
+
+⚠ **This run has TWO independent domains, not three.** Every 44b6
+dataset is inside D187's training pool, so that arm reports fit rather
+than transfer. The log says so at the top.
+
 ## 2026-08-26 -- ⭐⭐⭐⭐ gap2: the CROSS was right, the gap line is dead, and the BASE anchor caught my own bug.
 
 `biohub-gap2`, 204 min CPU, 10 arms × 3 domains. Built from the user's
