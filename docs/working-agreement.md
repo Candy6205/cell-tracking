@@ -132,6 +132,35 @@ arm of that weight without saying so.** The rule counts domains; it does
 not weigh them. Print the n for each arm, every time, so a reader can
 see when "three domains" is really two and a rumour.
 
+## An unconditional arm is not a ceiling (2026-08-26)
+
+`gap2` had an arm that dropped the candidate requirement entirely and
+bridged **every** gap. It measured +0.0018 / −0.0016 / +0.0013, and I
+wrote that down as the upper bound of the gap-closing line: a more
+careful selector accepts a subset of those bridges, so it can only land
+below.
+
+That is wrong, and the user said so:
+
+> 理想情况下应该是直接插入一个点在一定的情况下可以触发,
+> 而不是直接插入一个没有检测出来的点这种条件可以随时触发
+
+**An unconditional arm measures the SUM of its good and bad cases, which
+have opposite signs. What it reports is what survives the cancellation,
+not the best available.** A gated version sits above it whenever the
+gate removes more harm than help — and it can sit above the *original*
+too, because it is not a subset of the original's behaviour either.
+
+`gap3` measured it: requiring both joined fragments to be at least 8
+nodes long beat the unconditional arm in 6bba (+0.0013 vs +0.0009) and
+in 44b6 by 3.6× (+0.0043 vs +0.0012), while both stayed above the
+shipped BASE.
+
+**So "drop the condition entirely" answers a different question from
+"what is the best condition", and only the first one is cheap.** When
+an ungated arm comes back near zero, that is a reason to look for the
+cancellation, not a reason to close the line.
+
 ## Cross the knobs whose mechanisms touch (2026-08-26)
 
 **Sweeping one thing at a time is not neutral. It is a claim that the

@@ -134,6 +134,93 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-26 -- ⭐⭐⭐⭐⭐ gap3: a GATED bridge beats the ungated one, six of seven arms agree in all three domains, and this line does NOT move the node count
+
+`biohub-gap3`, 166 min, 8 arms × 3 domains, D187 ranker, `SHORT_MIN` 4.
+
+**BASE reproduced all three anchors to the digit** — 0.9279 / 0.8553 /
+0.8037, exactly short_sweep's `short_4` row. The `span+1` normalisation
+bug that broke gap2's BASE is fixed and stayed fixed.
+
+### The result
+
+| arm | 6bba | 44b6 | zh | weakest domain |
+|---|---|---|---|---|
+| `nocand` (no gate at all) | +0.0009 | +0.0012 | +0.0034 | +0.0009 |
+| `vel0.0` | +0.0004 | +0.0026 | +0.0033 | +0.0004 |
+| `vel0.5` | +0.0005 | +0.0036 | +0.0029 | +0.0005 |
+| `len4` | +0.0010 | +0.0035 | +0.0028 | +0.0010 |
+| **`len8`** | **+0.0013** | **+0.0043** | **+0.0019** | **+0.0013** |
+| `clear4` | +0.0009 | **−0.0002** | +0.0034 | **fails the rule** |
+| `all` | +0.0009 | +0.0020 | +0.0025 | +0.0009 |
+
+`div_J` is +0.0000 in 6bba and 44b6 for every arm and +0.0001…+0.0010 in
+Zebrahub. Gap closing does not touch divisions in the competition
+domains.
+
+### The user was right: `nocand` is not an upper bound
+
+I had called gap2's `nocand1` the ceiling of this line and concluded a
+selector could only land below it. The user corrected that — it is the
+**unconditional** case, not the best case, and its measured value is
+what survives after good bridges and bad bridges cancel.
+
+**`len8` is above `nocand` in two of three domains, and in 44b6 by
+3.6×** (+0.0043 against +0.0012). That is the cancellation being
+undone: requiring both fragments to be at least 8 nodes long removes
+bridges that were subtracting.
+
+**And 44b6 is monotone in the length gate**: nocand +0.0012 → len4
++0.0035 → len8 +0.0043. Zebrahub is monotone the OTHER way: +0.0034 →
++0.0028 → +0.0019. The two domains want different values and len8 is
+the compromise that still clears every domain. `_frag_len` is capped at
+12, so len12 is the last testable point on that curve.
+
+### The user's objection to the velocity gate was half right
+
+Recorded before the run: *cells in an embryo turn, so a velocity gate
+may reject good bridges.* In **6bba that is exactly what happens** —
+`vel0.0` is +0.0004, BELOW the completely ungated +0.0009 and the worst
+of the surviving arms. In **44b6 the same gate more than doubles the
+gain** (+0.0026 against +0.0012). The gate's sign is domain-dependent;
+the objection holds where the user aimed it and not elsewhere.
+
+### `clear4` is the one rejection, and it has a physical reading
+
+Refusing a bridge when a PRIMARY node already sits within 4 µm is
+identical to `nocand` in 6bba and Zebrahub (+0.0009, +0.0034) and
+−0.0002 in 44b6. Reading, labelled as inference — the gate essentially
+never fires in the sparse domains, and in 44b6 at **327 cells/frame**
+the nearest neighbour is genuinely inside 4 µm often enough that the
+gate blocks real repairs. The bridge counts were not printed, so this
+is unconfirmed.
+
+### Why this line is not contaminated by the node-count mechanism
+
+`max_gaps = max(1, int(GAP1_CAP_FRAC * len(nodes)))` with
+`GAP1_CAP_FRAC = 0.003`, and at span 1 each bridge inserts exactly one
+node. **Node count can grow by at most 0.3%.** The two leaderboard
+failures grew output by **+1.61%** and **+10.3%**. The adjustment term
+`(1 − 0.1 × node_ratio)` is therefore worth ≤0.0003 here — two orders
+of magnitude below the submission cases.
+
+**This is the first candidate in days whose local gain is not
+mechanically entangled with the thing that plausibly ate both previous
+submissions.** Whatever `len8` measures, it measures in the edges.
+
+### The cost, stated plainly
+
+The weakest-domain gain is **+0.0013** against holdout noise of roughly
+0.002–0.003, after six comparisons. It can read 0.000 on the
+leaderboard without meaning anything. The three-domain rule is
+satisfied, and the rule itself is still 0 for 2.
+
+**Proposed submission**, one variable from ref 55772253 (LB 0.920):
+`UNET_THRESH` back to **0.15** (0.12 cost three ticks and is the only
+clear LB loss of the three), `SHORT_MIN` stays **4** (0.920 vs 0.921 is
+one tick, and every gap3 arm was measured at 4), plus **`len8`**. That
+matches the measured configuration exactly.
+
 ## 2026-08-26 -- ⭐⭐⭐⭐⭐ THE RULER WAS WRONG ALL ALONG. MATCH_UM 5.0 against the scorer's 7.0.
 
 Every diagnostic in this project matched detections to GT at **5.0 µm**.
@@ -291,9 +378,9 @@ refuses and refuses bridges `nocand1` accepts.
 gap2 measured "always" and "only with a candidate". **The entire space
 between them was untested** — `biohub-gap3` tests it.
 
-## 2026-08-26 -- RUNNING: gap3 and thr5
+## 2026-08-26 -- RUNNING: thr5 (gap3 DONE, see the gap3 entry above)
 
-**`biohub-gap3`** — pure interpolation, GATED. 8 arms × 3 domains, ~2.7 h.
+**`biohub-gap3`** — FINISHED 2026-08-26, result in the entry above. Pure interpolation, GATED. 8 arms × 3 domains, ~2.7 h.
 Each condition is its own arm because the user doubted the first:
 
 | arm | candidate? | velocity cosine | fragment length | primary-node clearance |
