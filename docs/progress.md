@@ -40,8 +40,10 @@ entry proposed does not exist. What remains is the plain reading: **a
 +0.002 to +0.007 local gain, however many domains agree, is not
 evidence that the hidden test will move.**
 
-The live candidate is `gap4`'s **`nocand_cap20`** (+0.0013 / +0.0113 /
-+0.0056): drop the candidate requirement AND raise `GAP1_CAP_FRAC`
+The live candidate is `gap4`'s **`nocand_cap20`**, SUBMITTED as ref
+55817630 (+0.0013 / **+0.0085** / +0.0056 — the 44b6 figure is
+`wide44`'s, over all 71 datasets; gap4's +0.0113 came from a
+twelve-dataset prefix and overstated by a third): drop the candidate requirement AND raise `GAP1_CAP_FRAC`
 0.003 -> 0.02. No gate of any kind. It supersedes `len8`, which ties it
 on the weakest domain (+0.0013) but is 2.6x worse in 44b6 and **3x
 worse in Zebrahub, the only dense-GT domain**, whose rates describe all
@@ -166,6 +168,106 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-27 -- ⭐⭐⭐⭐⭐ wide44: the 12-dataset 44b6 sample OVERSTATED by a third, that arm DOES have divisions, and gap closing RAISES div_J
+
+`biohub-wide44`, 145 min, BASE vs `nocand_cap20`, **all 71** 44b6 plus
+the 12 6bba holdout. Zebrahub dropped on purpose; not a three-domain run.
+Anchors held: 6bba BASE adj_J **0.9279**, `nocand_cap20` **+0.0013**.
+
+### 1. The answer to the user's question
+
+| | 12 datasets (`sorted(...)[:12]`) | **all 71** |
+|---|---|---|
+| 44b6 adj_J delta | +0.0113 | **+0.0085** |
+
+**The prefix sample overstated by a third.** +0.0085 is now measured on
+the whole population, so the sampling question is closed rather than
+re-drawn.
+
+**And the effect is not carried by one dataset:**
+
+| | 6bba (12) | 44b6 (71) |
+|---|---|---|
+| largest single contribution | **42.9%** | **8.5%** |
+| improved / worsened | 4 / 8 | 37 / 34 |
+
+⚠ **The fragile arm turns out to be 6bba, not 44b6.** Read the
+magnitudes before the counts, though: **7 of the 8 "worsened" 6bba
+datasets moved by ≤0.0003**, which is the change doing nothing at all;
+only `6bba_61dd1e0d` at −0.0021 is a real loss, against four gains of
++0.0028…+0.0054. So the honest description is **"inert in 7 of 12,
+clearly helps in 4, hurts in 1"**, not "helps less than half".
+
+44b6's extremes are wider: `44b6_0c582fdc` **+0.1002** (0.8357 →
+0.9359, but weight 77, so 2nd by contribution), against
+`44b6_9bfa6a0a` −0.0223 and `44b6_144b256d` −0.0168. Everything else
+sits inside ±0.008.
+
+### 2. RETRACTION: 44b6 is not division-free. Those twelve were.
+
+| | 12 datasets | all 71 |
+|---|---|---|
+| 44b6 `div_J` at BASE | **0.0000** | **0.0455** |
+
+The entry above says *"44b6's div_J is also exactly 0.0000 in every arm
+of every run — that arm has essentially no annotated divisions either"*
+and calls it a sign of a degenerate measurement. **That was a property
+of the twelve-dataset prefix, not of 44b6.** Withdrawn.
+
+### 3. The user's correction, confirmed directly
+
+**44b6's `div_J` RISES by +0.0148** (0.0455 → 0.0602) under
+`nocand_cap20`.
+
+I had written that a bridge removes `gs` from the orphan pool and so
+"destroys a division candidate", framed as a cost. The user corrected
+the sign: `gs` is an orphan because its predecessor was MISSED, so
+making it a second daughter manufactures a FALSE division, and bridging
+it removes a false candidate. **A +0.0148 rise in div_J is that
+statement measured.**
+
+It read +0.0000 before only because the twelve datasets in use had
+`div_J` identically zero — **a quantity fixed at zero cannot show a
+change**, which is a second, separate way the prefix sample was hiding
+things.
+
+### 4. The metric decomposed, measured rather than derived
+
+| | `edge_J` BASE → new | delta | node_ratio |
+|---|---|---|---|
+| 6bba | 0.9258 → 0.9275 | **+0.0017** | −0.0215 → −0.0179 |
+| 44b6 | 0.8490 → 0.8579 | **+0.0089** | −0.1545 → −0.1480 |
+
+The derived estimate given to the user for 6bba was **+0.0017** —
+exact. The 44b6 estimate was +0.0116, and the whole discrepancy is the
++0.0113 → +0.0085 shrink, not the derivation.
+
+**44b6's node_ratio over all 71 is −0.1545**, far more negative than the
+prefix sample's −0.0875: the pipeline emits **15.5% fewer nodes than the
+estimated cell count** there. Several datasets therefore score `adj_J`
+above 1.0 (`44b6_808952d6` 1.0093, `44b6_8f9ecab4` 1.0144), which is
+`reference.md`'s "no upper clamp" showing up in real output.
+
+### 5. NEW: the shipped configuration is itself budget-starved
+
+| arm | made | allowed | demand | capped |
+|---|---|---|---|---|
+| BASE (candidate required, 0.003) | 4,735 | 6,637 | **13,146** | **30 / 83** |
+| `nocand_cap20` | 17,286 | 44,473 | 17,286 | **0** |
+
+**BASE repairs 36% of demand and is stopped by the BUDGET, not by the
+candidate requirement, in 30 of 83 datasets.** That is worse than gap4's
+pooled figure suggested (4 of 32). The budget was never a safety margin;
+it has been the binding constraint on the shipped pipeline all along.
+
+### Where this leaves ref 55817630
+
+Submitted before this run, on exactly `nocand_cap20`. Still supported in
+all three domains — **6bba +0.0013, 44b6 +0.0085 (71 datasets),
+Zebrahub +0.0056 (8 crops, from gap4)** — with 44b6 a third smaller than
+the number in the submission description, and div_J now known to rise
+rather than stay flat.
+
 ## 2026-08-27 -- ⭐⭐⭐⭐⭐ TWO THINGS THE USER CAUGHT: the 44b6 arm is `sorted(...)[:12]` of 71, and every submission since 08-23 has been built on the WORSE base
 
 Both from one exchange, neither measured before, both cheap to fix.
@@ -200,8 +302,13 @@ error; its thinnest dataset has **49 edges**; annotation coverage is
 0.77% against 9.71%. **A +0.0113 swing on 2,526 annotated edges is
 about thirty edges changing hands**, and `gap4` printed no per-dataset
 deltas, so one or two datasets could be carrying all of it invisibly.
-`44b6`'s `div_J` is also exactly 0.0000 in every arm of every run —
-that arm has essentially no annotated divisions either.
+~~`44b6`'s `div_J` is also exactly 0.0000 in every arm of every
+run — that arm has essentially no annotated divisions either.~~
+**RETRACTED 2026-08-27 by `wide44`: over all 71, 44b6's `div_J` at
+BASE is 0.0455, and `nocand_cap20` RAISES it by +0.0148. The zero
+was a property of the twelve-dataset prefix, and a quantity pinned
+at zero cannot show a change — a second way that sample was
+hiding things.**
 
 **The fix is cheap and there is no longer a reason not to.** The
 12-dataset limit existed for runtime, and the ranker-leak rule does not
@@ -442,7 +549,7 @@ within `DIV_SISTER_UM` 15 µm, both daughters must have exactly one
 successor each, and they must diverge by more than `DIV_DIVERGE_UM`
 2.25 µm.
 
-## 2026-08-27 -- ⭐⭐⭐⭐⭐ gap4: THE BUDGET WAS THE WHOLE PROBLEM. Raise it, drop every gate, and 44b6 gains +0.0113.
+## 2026-08-27 -- ⭐⭐⭐⭐⭐ gap4: THE BUDGET WAS THE WHOLE PROBLEM. Raise it, drop every gate, and 44b6 gains +0.0113 (REVISED to +0.0085 by `wide44` above — that arm was 12 of 71)
 
 `biohub-gap4`, 177 min, 8 arms × 3 domains, D187, `SHORT_MIN` 4.
 
