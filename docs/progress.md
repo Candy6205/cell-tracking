@@ -400,24 +400,47 @@ divisions**. The explanation ("a ranker that is more CORRECT rather than
 merely more confident feeds the mechanism instead of starving it") may
 be true but it was never measured.
 
-### The coupling to gap closing, which nobody had noticed
+### The coupling to gap closing — I had the SIGN backwards
 
-`_gap_close` executes `pred[gs] = ng` for every bridge it makes. **A
-bridge gives `gs` a predecessor, so it removes `gs` from the orphan
-pool — every bridge destroys one division candidate.**
+I first wrote: `_gap_close` executes `pred[gs] = ng`, so every bridge
+removes `gs` from the orphan pool and **destroys a division candidate**,
+framed as a cost to watch. **The user corrected it and they are right:**
 
-`nocand_cap20` goes from 2,195 bridges to 4,772, so it removes ~2,577
-more orphans. On that mechanism it should depress div_J.
+> 你不能认为 gap_close 会消灭分裂候选，它本来就是连边的，它反而在消灭
+> 分裂错误的候选…说白了这个点本来也不太会成为分裂候选
 
-**Measured: it does not.** gap4's div_J deltas are exactly +0.0000 in
-6bba and 44b6 for every arm, and +0.0001…+0.0010 in Zebrahub. With
-twelve annotated divisions in the 6bba holdout, one event moves div_J by
-about +0.008, so "+0.0000" means **not one event changed**.
+**`gs` is an orphan because its predecessor was MISSED, not because the
+cell was born there.** Turning it into a second daughter would
+manufacture a FALSE division — grafting a continuing cell onto a
+neighbouring track. So bridging it removes a **false** division
+candidate. The sign is a benefit, not a cost.
 
-The coupling is real and it measured zero in the competition domains.
-Keep it in mind before raising the bridge count much further, and note
-that `div_J` carries a 0.1 weight in the score, so it would take a lot
-of lost divisions to matter against the edge gains.
+**And structurally gap closing cannot even reach a TRUE division
+candidate:**
+
+```python
+ends = [g for g in by_t.get(t, []) if g not in succ and g in pred]
+```
+
+A bridge starts only from a node with **no successor at all**. A real
+mother has already linked at least one daughter, so she is in `succ` and
+can never be an `ends` node. The "gap closing steals a missed second
+daughter from her mother" case is off the normal path by construction.
+
+**Why it is invisible in the numbers, quantified.** 6bba at BASE is
+5 TP / 26 FP / 7 FN, `div_J` = 5/38 = 0.1316. Removing just **three** of
+those 26 false divisions would give 5/35 = 0.1429, **+0.0113 of div_J
+and +0.0011 of score**. gap4 measured exactly **+0.0000** for every arm
+in 6bba and 44b6. So not even three false divisions were touched: **the
+bridged orphans and the division proposals barely intersect**, which is
+what the user said — those nodes were never likely to become division
+candidates in the first place.
+
+`_add_safe_divisions`'s gates are why: the parent must have exactly one
+child, the orphan within `DIV_PARENT_UM` 12 µm of the parent, the sister
+within `DIV_SISTER_UM` 15 µm, both daughters must have exactly one
+successor each, and they must diverge by more than `DIV_DIVERGE_UM`
+2.25 µm.
 
 ## 2026-08-27 -- ⭐⭐⭐⭐⭐ gap4: THE BUDGET WAS THE WHOLE PROBLEM. Raise it, drop every gate, and 44b6 gains +0.0113.
 
