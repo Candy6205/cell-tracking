@@ -32,7 +32,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 from skimage.feature import peak_local_max
 
-SCRIPT_VERSION = "2026-08-28a-detcmp"
+SCRIPT_VERSION = "2026-08-28b-detcmp2"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 DEVICE = "cpu"
@@ -393,6 +393,25 @@ assert DC_CKPT is not None, (
     "DeepCenter checkpoint not mounted. Attach "
     "pilkwang/biohub-deepcenter-unet3d-center-prior-v1")
 _dc_ck = torch.load(DC_CKPT, map_location=DEVICE)
+# v1 GUESSED the normalisation from the public notebook's fallback
+# defaults and got 0.4 detections per frame with a logit overflow. Read
+# what is actually recorded before assuming anything.
+print("  checkpoint keys:", flush=True)
+for _k, _v in (_dc_ck.items() if isinstance(_dc_ck, dict) else []):
+    if hasattr(_v, "shape") or (isinstance(_v, dict) and len(_v) > 20):
+        print(f"    {_k}: <{type(_v).__name__}"
+              f"{' len ' + str(len(_v)) if isinstance(_v, dict) else ''}>",
+              flush=True)
+    else:
+        print(f"    {_k}: {str(_v)[:200]}", flush=True)
+for _mf in sorted(DC_CKPT.parent.parent.parent.rglob("*.json"))[:8]:
+    try:
+        _txt = _mf.read_text()[:1200]
+    except Exception:                                          # noqa: BLE001
+        continue
+    if any(w in _txt for w in ("norm", "pct", "clip", "pool", "percentile")):
+        print(f"  --- {_mf.name} ---", flush=True)
+        print("   ", _txt.replace(chr(10), " ")[:900], flush=True)
 assert isinstance(_dc_ck, dict) and "model_state" in _dc_ck, (
     f"{DC_CKPT} has no 'model_state' key; keys are "
     f"{list(_dc_ck)[:8] if isinstance(_dc_ck, dict) else type(_dc_ck)}")
@@ -405,16 +424,28 @@ for _k in ("epoch", "val_loss", "val_recall", "best_metric"):
         print(f"  {_k}: {_dc_ck[_k]}", flush=True)
 
 
-def dc_detect(vol, flips=False):
-    """DeepCenter's network, OUR post-processing.
+# The candidate normalisations. v1 bet the run on the first one.
+# `ours` is our own pool_norm, included because if DeepCenter was trained
+# on the official pipeline's preprocessing rather than its own, that is
+# the one that will work.
+DC_NORMS = {
+    "pct50_995": lambda v: _dc_normalize(v, 50.0, 99.5, -0.5, 6.0),
+    "pct1_999": lambda v: _dc_normalize(v, 1.0, 99.9, -0.5, 6.0),
+    "pct0_100": lambda v: _dc_normalize(v, 0.0, 100.0, 0.0, 1.0),
+    "ours": lambda v: v,          # replaced below by pool_norm's output
+}
 
-    Everything downstream of the sigmoid is identical to `detect()` --
-    the same peak extraction, the same sub-voxel refine, the same 4.0 um
-    physical NMS -- so the comparison isolates the network and its
-    normalisation. `flips` adds the same 4-view averaging our detector
-    gets, because otherwise this compares an ensemble to a single pass.
+
+def dc_heatmap(vol, norm="pct50_995", flips=False):
+    """DeepCenter's heatmap, plus the statistics that diagnose it.
+
+    Returns (heatmap, stats). A saturated heatmap is visible in the
+    logit range alone and needs no recall number to be recognised.
     """
-    x = _dc_normalize(_dc_pool_xy(vol))
+    if norm == "ours":
+        x = pool_norm(vol, "")
+    else:
+        x = DC_NORMS[norm](_dc_pool_xy(vol))
     views = _FLIP_VIEWS if flips else _FLIP_VIEWS[:1]
     acc = None
     for i in views:
@@ -424,7 +455,17 @@ def dc_detect(vol, flips=False):
                     )[0, 0].float().cpu().numpy()
         lg = _flip(lg, i)
         acc = lg if acc is None else acc + lg
-    h = 1.0 / (1.0 + np.exp(-(acc / len(views))))
+    lg = acc / len(views)
+    h = 1.0 / (1.0 + np.exp(-np.clip(lg, -60.0, 60.0)))
+    st = dict(in_lo=float(x.min()), in_hi=float(x.max()),
+              in_mean=float(x.mean()),
+              lg_lo=float(lg.min()), lg_hi=float(lg.max()),
+              h_hi=float(h.max()), h_mean=float(h.mean()),
+              n_over_05=int((h > 0.05).sum()))
+    return h, st
+
+
+def _peaks_from(h, vol):
     pk = peak_local_max(h, min_distance=1, threshold_abs=CAND_THR,
                         exclude_border=False)
     if len(pk) == 0:
@@ -435,6 +476,19 @@ def dc_detect(vol, flips=False):
     coords[:, 2] = coords[:, 2] * POOL + (POOL - 1) / 2
     ref = np.array([_refine(vol, c)[0] for c in coords])
     return _physical_nms(ref, sc, NMS_UM)
+
+
+def dc_detect(vol, flips=False):
+    """DeepCenter's network, OUR post-processing.
+
+    Everything downstream of the sigmoid is identical to `detect()` --
+    the same peak extraction, the same sub-voxel refine, the same 4.0 um
+    physical NMS -- so the comparison isolates the network and its
+    normalisation. `flips` adds the same 4-view averaging our detector
+    gets, because otherwise this compares an ensemble to a single pass.
+    """
+    h, _ = dc_heatmap(vol, _DC_NORM, flips=flips)
+    return _peaks_from(h, vol)
 
 
 # ======================= the comparison ================================
@@ -464,6 +518,45 @@ print("  ⚠ our detector is 3 branches x 4 flip views; DeepCenter as "
       "shipped is ONE forward pass. Both are reported.", flush=True)
 print(f"  recall/precision at MATCH_UM {MATCH_UM} (official). Our arm is "
       f"the SHIPPED threshold {UNET_THRESH}.", flush=True)
+
+# ---- STOP AND DIAGNOSE before spending the run ------------------------
+print(f"{chr(10)}=== IS DEEPCENTER EVEN RUNNING? one frame, every "
+      f"normalisation ===", flush=True)
+print("  v1 got 0.4 detections/frame against our 272.7 and a logit "
+      "overflow, which is a broken input pipeline, not a weak model. "
+      "A sane heatmap has logits in single or low double digits and a "
+      "max near 1. A saturated one has |logit| in the hundreds.",
+      flush=True)
+_probe = np.asarray(np.load(files[0])["image"][0])
+print(f"  probe volume {_probe.shape}, dtype {_probe.dtype}, "
+      f"range {float(_probe.min()):.4g}..{float(_probe.max()):.4g}, "
+      f"mean {float(_probe.mean()):.4g}", flush=True)
+print(f"  {'norm':<12} {'input lo..hi':>22} {'logit lo..hi':>22} "
+      f"{'h max':>8} {'h mean':>9} {'>0.05':>9}", flush=True)
+_DC_NORM = None
+for _nm in DC_NORMS:
+    try:
+        _h, _st = dc_heatmap(_probe, _nm, flips=False)
+    except Exception as _e:                                    # noqa: BLE001
+        print(f"  {_nm:<12} FAILED {type(_e).__name__}: {str(_e)[:70]}",
+              flush=True)
+        continue
+    print(f"  {_nm:<12} {_st['in_lo']:>10.3g}..{_st['in_hi']:<10.3g} "
+          f"{_st['lg_lo']:>10.3g}..{_st['lg_hi']:<10.3g} "
+          f"{_st['h_hi']:>8.4f} {_st['h_mean']:>9.5f} "
+          f"{_st['n_over_05']:>9,}", flush=True)
+    # a working normalisation puts SOME voxels above the candidate floor
+    # without saturating; take the first that does
+    if _DC_NORM is None and _st['n_over_05'] > 50 and abs(_st['lg_hi']) < 60:
+        _DC_NORM = _nm
+if _DC_NORM is None:
+    print("  ⚠ NO normalisation produced a usable heatmap. The remaining "
+          "tables are NOT a verdict on DeepCenter -- they are a record "
+          "that this integration does not work yet. Read the checkpoint "
+          "dump above.", flush=True)
+    _DC_NORM = "pct50_995"
+else:
+    print(f"  -> using '{_DC_NORM}' for the comparison", flush=True)
 
 _ROWS = []
 _t0 = time.time()
