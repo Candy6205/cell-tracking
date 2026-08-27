@@ -85,10 +85,24 @@ the assembled scripts are what gets committed.
 
 Two rules learned the hard way:
 
+- **Write every patch script to a FILE and run the file. Never pipe a
+  patch through a heredoc or `py -c`.** The old rule here said "use the
+  file tools for any patch containing an escape", and that condition is
+  the bug: it asks me to notice, while writing a string, that the string
+  contains an escape. I get that wrong. Four times on 2026-08-24 and
+  **three more on 2026-08-27**.
+  - The worst was silent. `py -c "…"` with DOUBLE quotes let the shell
+    run command substitution on the backticks inside a `progress.md`
+    entry, and it wrote **"SUPERSEDED by ."** and **"slope , independent"**
+    — no error, no exit code, just a corrupted log that only turned up on
+    a re-read. **A silently corrupted note is worse than a crash.**
+  - Writing the script with the file tool and running the file skips the
+    shell entirely: there is no quoting layer left to get wrong. It costs
+    one extra call.
 - **Locate cuts by line content, never by a search string containing an
-  escape** — heredocs through the tool layer eat one level of escaping
-  (toolchain trap 8, hit four times on 2026-08-24 alone). Use the file
-  editing tools for any patch containing `\n` or `\\`.
+  escape** (toolchain trap 8). And match on what is actually in the file:
+  on 2026-08-27 a patch failed because the text used an em dash and the
+  search string used `--`. `grep -n … | cat -A` shows the difference.
 - **Run a static undefined-name pass before every push, and do not push
   when it is dirty.** It caught `root`, `GATE_XY`/`GATE_Z` and `POOL`
   missing from assemblies on 2026-08-24, each of which would have died
