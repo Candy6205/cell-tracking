@@ -171,6 +171,47 @@ arm of that weight without saying so.** The rule counts domains; it does
 not weigh them. Print the n for each arm, every time, so a reader can
 see when "three domains" is really two and a rumour.
 
+## Find the binding constraint before sweeping anything behind it (2026-08-27)
+
+`_gap_close` caps repairs at `GAP1_CAP_FRAC = 0.003` of node count and
+hands the allowance out in frame order, breaking the moment it runs
+out. Across 32 datasets the true demand is **4,772** bridges and the
+allowance is **2,297**. The cap bound in **24 of 32 datasets**.
+
+Three separate sweeps ran behind that constraint without noticing:
+
+| run | swept | what it actually measured |
+|---|---|---|
+| `gap2` | the bridge SPAN | who gets a fixed allowance |
+| `gap3` | four bridge GATES | who gets a fixed allowance |
+| `gap4` arms 1-4 | the user's policy | who gets a fixed allowance |
+
+`gap2` concluded "the span never mattered" and the line was closed.
+`gap3` concluded four gates were selecting good bridges. **Raising the
+cap to 0.02 and removing every gate beat all of them: +0.0013 / +0.0113
+/ +0.0056, roughly ten times `nocand`'s 44b6 delta.** The gates were
+not selecting quality; they were rationing scarcity more sensibly than
+frame order did, and once the scarcity was gone they were pure loss —
+`len8` discards 62% of the repairable gaps.
+
+**The rule: before sweeping a knob, ask what limits the thing the knob
+feeds. If a fixed budget, a cap, a `max`, a `break`, or a fixed-size
+pool sits downstream, the sweep measures allocation, not quality, and
+every verdict it produces is provisional on that limit.**
+
+Two cheap habits that would have caught this on day one:
+
+1. **Count what the stage actually did, every run.** `gap4` was the
+   first script in this project to print bridges made / allowed /
+   demand. One line of output, and it made the whole thing obvious.
+   Any stage with a budget should report its utilisation.
+2. **Include one arm with the constraint removed.** Not as a candidate
+   to ship — as a control that says whether the constraint is binding.
+   If it is, every other arm in the run needs re-reading.
+
+And when a limit turns out to bind, **the lines closed behind it are
+not closed.** `gap2`'s span verdict was reopened by this.
+
 ## An unconditional arm is not a ceiling (2026-08-26)
 
 `gap2` had an arm that dropped the candidate requirement entirely and

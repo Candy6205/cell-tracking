@@ -40,9 +40,12 @@ entry proposed does not exist. What remains is the plain reading: **a
 +0.002 to +0.007 local gain, however many domains agree, is not
 evidence that the hidden test will move.**
 
-The live candidate is `gap3`'s **`len8`** (+0.0013 / +0.0043 / +0.0019,
-same sign in all three domains). It is prepared in `submit_ranker.py`
-and NOT submitted.
+The live candidate is `gap4`'s **`nocand_cap20`** (+0.0013 / +0.0113 /
++0.0056): drop the candidate requirement AND raise `GAP1_CAP_FRAC`
+0.003 -> 0.02. No gate of any kind. It supersedes `len8`, which ties it
+on the weakest domain (+0.0013) but is 2.6x worse in 44b6 and **3x
+worse in Zebrahub, the only dense-GT domain**, whose rates describe all
+cells rather than annotated ones.
 
 ⚠ **gap3 and thr5 both ran on D187, and only ONE of them has a usable
 44b6 arm.** Every 44b6 dataset is inside D187's training pool, so the
@@ -65,7 +68,8 @@ question is whether the leak cancels in the delta:
 | `SHORT_MIN` curve, 1→7 | a curve, not a spike; deleting length-4 and length-5 tracks loses in **all three** domains |
 | NMS radius / density | **closed.** 2 of 3 domains, none significant |
 | detector depth | **closed.** signs disagree, nothing significant |
-| gap closing (span, interpolation) | **closed.** all arms fail the rule; the span never mattered |
+| gap closing (span, interpolation) | **REOPENED 2026-08-27 by `gap4`.** The "closed" verdict came from `gap2`, which ran entirely at a BINDING budget, where more demand can only reshuffle a fixed allowance. Must be re-run at `GAP1_CAP_FRAC` 0.02 |
+| **the gap-closing BUDGET** | **`GAP1_CAP_FRAC` 0.003 -> 0.02 is the largest local gain on record: +0.0013 / +0.0113 / +0.0056, and it needs NO gate at all** |
 | detection gate, LOOSER (0.12) | **tried.** Local +0.0055/+0.0045/+0.0121, LB 0.918 against control 0.920. Reverted |
 | detection gate, TIGHTER (0.18–0.26) | **closed 2026-08-26 by `thr5`.** Monotone loss in both independent domains; Zebrahub −0.2204 at 0.26. It deletes real cells, not marginal false positives |
 | the node-count term as an explanation | **closed 2026-08-26 by `thr5`.** Linear, constant slope, no local/hidden asymmetry |
@@ -162,7 +166,106 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
-## 2026-08-27 -- RUNNING: gap4, and the ALLOCATOR is the real problem (the user's call)
+## 2026-08-27 -- ⭐⭐⭐⭐⭐ gap4: THE BUDGET WAS THE WHOLE PROBLEM. Raise it, drop every gate, and 44b6 gains +0.0113.
+
+`biohub-gap4`, 177 min, 8 arms × 3 domains, D187, `SHORT_MIN` 4.
+
+**All three anchors reproduced to the digit** — BASE 0.9279 / 0.8553 /
+0.8037, `nocand` +0.0009 / +0.0012 / +0.0034, `len8` +0.0013 / +0.0043
+/ +0.0019 — so the gate REORDERING is confirmed behaviour-preserving on
+real data, not just on the 400 synthetic movies.
+
+### The result
+
+| arm | 6bba | 44b6 | zh | bridges made |
+|---|---|---|---|---|
+| `nocand` | +0.0009 | +0.0012 | +0.0034 | 2,195 |
+| `len8` | +0.0013 | +0.0043 | +0.0019 | 1,689 |
+| `or4` (the user's, ≥4) | +0.0010 | +0.0034 | +0.0028 | 2,143 |
+| `or8` (the user's, ≥8) | +0.0012 | +0.0020 | +0.0023 | 1,962 |
+| **`nocand_cap20`** | **+0.0013** | **+0.0113** | **+0.0056** | **4,772** |
+| `len8_cap20` | +0.0013 | +0.0043 | +0.0019 | 1,816 |
+| `or8_cap20` | +0.0012 | +0.0040 | +0.0024 | 2,858 |
+
+`div_J` is +0.0000 in 6bba and 44b6 for every arm; Zebrahub moves
++0.0001…+0.0010.
+
+### The bridge counts say why, and they close the argument
+
+| need_cand | min_len | mode | cap_frac | made | allowed | demand | capped |
+|---|---|---|---|---|---|---|---|
+| False | 0 | always | 0.003 | 2,195 | 2,297 | 2,195 | **24 / 32** |
+| False | 0 | always | **0.02** | **4,772** | 15,420 | 4,772 | **0** |
+| False | 4 | if_nocand | 0.003 | 2,143 | 2,297 | 2,503 | 22 |
+| False | 8 | always | 0.003 | 1,689 | 2,297 | 4,339 | 5 |
+| False | 8 | always | 0.02 | 1,816 | 15,420 | 4,772 | 0 |
+| False | 8 | if_nocand | 0.003 | 1,962 | 2,297 | 3,406 | 12 |
+| False | 8 | if_nocand | 0.02 | 2,858 | 15,420 | 4,772 | 0 |
+| True | 0 | always | 0.003 | 1,107 | 2,297 | 4,214 | 4 |
+
+- **True demand is 4,772 bridges. `nocand` at the shipped budget made
+  2,195** — more than half of every repairable gap went unrepaired
+  purely because the budget ran out, in 24 of 32 datasets.
+- `len8` at a budget that cannot bind still makes only 1,816. **The
+  length gate discards 62% of what is repairable.**
+- **More bridges is monotonically better in the two domains that move.**
+  4,772 → +0.0113 / +0.0056; 2,858 → +0.0040 / +0.0024; 1,816 →
+  +0.0043 / +0.0019.
+
+**Every gate this project invented — the candidate requirement, the
+velocity cosine, the fragment length, the clearance radius — was
+rationing a budget that was too small, not selecting good bridges.**
+Give the repair enough budget and taking everything beats all of them.
+
+### What this costs in nodes
+
+4,772 bridges against the 765,667 nodes implied by the 0.003 allowance
+is **+0.62% of nodes**, a node-count multiplier cost of **0.00062** —
+already inside the deltas above, which are net. Compare the two failed
+submissions at +1.61% and +10.3%.
+
+### The user called the mechanism before the run
+
+> 其实预算绑死的情况下,最好是打分,算更优
+
+Right about the diagnosis; the fix turned out to be simpler than the
+remedy. Under a binding budget the allocator hands out `max_gaps` in
+frame order, so what gets repaired is whatever sits at a low frame
+number. **But the budget does not have to bind at all.** At
+`GAP1_CAP_FRAC = 0.02` the allowance is 15,420 against 4,772 demand and
+there is nothing left to ration. The scoring allocator recorded in the
+entry below is therefore NOT the next step — it only matters if a
+budget is reintroduced, or if demand is grown past 15,420.
+
+### ⚠ THIS REOPENS A CLOSED LINE
+
+`progress.md`'s summary table carries:
+
+> gap closing (span, interpolation) — **closed.** all arms fail the
+> rule; the span never mattered
+
+**That verdict came from `gap2`, which ran entirely at
+`GAP1_CAP_FRAC = 0.003` with the cap binding.** Widening the span
+creates more demand, and under a binding budget more demand only
+reshuffles who gets the fixed allowance — it cannot show a gain. The
+same applies to `GAP1_GATE_UM = 9.0`, which is what holds demand at
+4,772 in the first place. **Both were measured behind a constraint that
+has now been shown to dominate the result, and both should be re-run at
+the raised budget.**
+
+### Reading the (C, L) decomposition — with a caveat that voids it
+
+`or8 − BASE = d`, `nocand − BASE = d + e`, `len8 − BASE = d − b`, so
+b = +0.0012−0.0013 / +0.0020−0.0043 / +0.0023−0.0019 = −0.0001 /
+**−0.0023** / +0.0004 and e = −0.0003 / −0.0008 / +0.0011.
+
+**Do not use these.** Every arm in that system ran at the shipped
+budget with the cap binding in 5 to 24 of 32 datasets, so each group's
+apparent "value" includes how much of the allowance it displaced from
+other groups. It is not a measurement of bridge quality. Redo it at
+cap 0.02 if it is ever needed.
+
+## 2026-08-27 -- the DESIGN of gap4 (FINISHED; result in the entry above) (the user's call)
 
 `biohub-gap4` pushed 2026-08-27, 8 arms × 3 domains, D187, `SHORT_MIN` 4.
 
