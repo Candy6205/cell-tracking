@@ -164,6 +164,33 @@ crash, and silence is indistinguishable from still-running.
 
 `Start-Sleep` in the foreground is blocked by the harness, deliberately.
 
+### 6b. A SUBMISSION needs a waiter too (2026-08-27)
+
+This rule was applied to kernels only, for days. **A submission's hidden
+-test rescore is a second long-running job with no notification**, and it
+was being checked by hand -- the user caught it: *"那么两个任务为什么只
+有一个等待器呢?!"*
+
+```bash
+while true; do
+  line=$(py kag.py competitions submissions <comp> 2>&1 | grep -m1 '^ *<ref>')
+  if echo "$line" | grep -qE "SubmissionStatus\.(COMPLETE|ERROR)"; then
+    echo "$line"; break
+  fi
+  sleep 300
+done
+```
+
+Two details that are not optional:
+
+- **Match `SubmissionStatus.COMPLETE`, never a score-shaped pattern.**
+  The submission DESCRIPTION sits on the same line, and ours routinely
+  contain numbers like `0.920` and `0.921` (pre-registered predictions),
+  so grepping for a score matches the description and fires instantly.
+- **Poll at 300 s, not 60.** The rescore takes hours; a 60-second loop
+  is 60 CLI calls an hour for nothing. Kernel waiters stay at 60 s
+  because CPU sweeps finish in one to two hours.
+
 ### 7. Every completed kernel run emails the account owner
 
 Batch experiments into one kernel where they share a mount and a wheel
