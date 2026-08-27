@@ -83,8 +83,9 @@ question is whether the leak cancels in the delta:
 | `SHORT_MIN` curve, 1→7 | a curve, not a spike; deleting length-4 and length-5 tracks loses in **all three** domains |
 | NMS radius / density | **closed.** 2 of 3 domains, none significant |
 | detector depth | **closed.** signs disagree, nothing significant |
-| gap closing (span, interpolation) | **REOPENED 2026-08-27 by `gap4`.** The "closed" verdict came from `gap2`, which ran entirely at a BINDING budget, where more demand can only reshuffle a fixed allowance. Must be re-run at `GAP1_CAP_FRAC` 0.02 |
-| **the gap-closing BUDGET** | **`GAP1_CAP_FRAC` 0.003 -> 0.02 is the largest local gain on record: +0.0013 / +0.0113 / +0.0056, and it needs NO gate at all** |
+| gap closing, the SPAN | **RE-CLOSED 2026-08-28 by `span4`**, this time at a budget that does not bind. span 2 fails the three-domain rule (6bba −0.0014), its 6bba `edge_J` equals BASE's while adding 1.4% nodes, and it costs −0.0173 of `div_J` there. The reopening was correct; the answer did not change |
+| gap closing, `GAP1_GATE_UM` 9 → 12 | **closed 2026-08-28.** Passes the rule but is below `cap20` in all three domains: 28% more bridges, slightly worse everywhere. 9.0 is right |
+| **the gap-closing BUDGET** | **SHIPPED. `GAP1_CAP_FRAC` 0.003 -> 0.02 with no gate at all: +0.0013 / +0.0085 / +0.0056 locally and **LB 0.920 -> 0.922**, ref 55817630. The only knob in this line that ever mattered** |
 | detection gate, LOOSER (0.12) | **tried.** Local +0.0055/+0.0045/+0.0121, LB 0.918 against control 0.920. Reverted |
 | detection gate, TIGHTER (0.18–0.26) | **closed 2026-08-26 by `thr5`.** Monotone loss in both independent domains; Zebrahub −0.2204 at 0.26. It deletes real cells, not marginal false positives |
 | the node-count term as an explanation | **closed 2026-08-26 by `thr5`.** Linear, constant slope, no local/hidden asymmetry |
@@ -180,6 +181,100 @@ has been tried.
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-08-28 -- ⭐⭐⭐⭐ span4: the reopening was justified and the answer is still NO. The gap-closing line is now closed on evidence.
+
+`biohub-span4`, 167 min, 5 arms × 3 domains, all 71 44b6, D187.
+**Both anchors held**: 6bba BASE adj_J 0.9279, and `cap20` reproduced
++0.0013 / +0.0085 / +0.0056 exactly, matching gap4 and wide44.
+
+### The result: what we already shipped is the best of the five
+
+| arm | 6bba | 44b6 | zh | verdict |
+|---|---|---|---|---|
+| **`cap20`** (ref 55817630, LB 0.922) | **+0.0013** | **+0.0085** | **+0.0056** | passes |
+| `span2` | **−0.0014** | +0.0066 | +0.0068 | **signs disagree, discard** |
+| `gate12` (9 → 12 µm) | +0.0012 | +0.0069 | +0.0053 | passes, but below `cap20` in all three |
+| `span2_gate12` | −0.0024 | +0.0026 | +0.0013 | signs disagree, discard |
+
+**Neither a wider span nor a wider distance gate pays.** `gate12` minus
+`cap20` is −0.0001 / −0.0016 / −0.0003: widening the gate admits 28%
+more bridges (23,322 against 18,248) and gets slightly worse everywhere.
+**9.0 µm is right.**
+
+### Why span 2 loses, from the decomposition
+
+| 6bba | `edge_J` | node_ratio | `div_J` |
+|---|---|---|---|
+| BASE | 0.9258 | −0.0215 | 0.1316 |
+| `cap20` | **0.9275** | −0.0179 | 0.1316 |
+| `span2` | **0.9257** | −0.0074 | **0.1143** |
+
+**span2's edges are BASE's** (0.9257 against 0.9258) **while its node
+count is 1.4% higher.** In 6bba the two-frame bridges add nodes and no
+correct edges — they are simply wrong. Zebrahub disagrees: its `edge_J`
+is HIGHEST at span2 (0.8055 against `cap20`'s 0.8036). Two domains want
+opposite things, which is what the three-domain rule exists to catch.
+
+### ⚠ The user's division correction does NOT extend to span 2
+
+Recorded 2026-08-27: *"你不能认为 gap_close 会消灭分裂候选…它反而在消灭
+分裂错误的候选"*, and `wide44` confirmed it for span 1 — 44b6's `div_J`
+rose +0.0148.
+
+**At span 2 the sign flips: `div_J` −0.0173 in 6bba and −0.0039 in
+Zebrahub** (and +0.0178 in 44b6). A longer bridge is likelier to be
+wrong, and a wrong bridge consumes an orphan that may have been a real
+second daughter. The structural protection that made span 1 safe —
+`ends` requires `g not in succ`, so a mother is never a bridge source —
+still holds, but it does not stop a 3-frame-distant WRONG pairing from
+eating a genuine daughter.
+
+**So: span 1 removes false division candidates; span 2 destroys real
+divisions.** Two different claims, and only the first one is true.
+
+### The reopening was correct even though the answer did not change
+
+`gap2` closed this line with "the span never mattered", and that verdict
+WAS measured behind a binding budget — `wide44` counted the cap binding
+in 30 of 83 datasets. Reopening it was right. **The answer is the same
+and it is now known for a reason instead of by accident.**
+
+⚠ One residual: span2 makes 35,711 bridges against an allowance of
+48,690 and **still caps in 23 datasets** (`span2_gate12` in 38). So the
+span arms are partly budget-bound again. Not worth re-running at a
+higher cap: span2's 6bba `edge_J` is already BELOW `cap20`'s, so more
+two-frame bridges would push the wrong way.
+
+### The bridge counts
+
+| need_cand | span | gate µm | cap | made | allowed | demand | capped |
+|---|---|---|---|---|---|---|---|
+| False | 1 | 9.0 | 0.02 | 18,248 | 48,690 | 18,248 | 0 |
+| False | 1 | 12.0 | 0.02 | 23,322 | 48,690 | 23,322 | 0 |
+| False | 2 | 9.0 | 0.02 | 35,711 | 48,690 | 35,711 | **23** |
+| False | 2 | 12.0 | 0.02 | 40,270 | 48,690 | 40,270 | **38** |
+| True | 1 | 9.0 | 0.003 | 4,883 | 7,266 | 14,108 | **30** |
+
+### A gap in the instrumentation
+
+**Zebrahub's `node_ratio` column comes back `nan`** — that domain's rows
+carry no `estimated_number_of_nodes`, so `_with_ratio` finds nothing to
+average. Its `edge_J` is still printed and readable; only the
+decomposition into edges-versus-node-count is unavailable there. Worth
+knowing before designing a run that depends on it.
+
+### Where the gap-closing line now stands
+
+**Closed, with the budget as the only thing in it that ever mattered.**
+
+| knob | verdict |
+|---|---|
+| **`GAP1_CAP_FRAC` 0.003 → 0.02** | **the win. +0.002 on the leaderboard** |
+| the candidate requirement | drop it — part of the same win |
+| `GAP_SPAN` 1 → 2 | fails the rule, and destroys divisions in 6bba |
+| `GAP1_GATE_UM` 9 → 12 | passes the rule, loses to `cap20` in all three |
+| the four gates of gap3 (candidate, velocity, length, clearance) | all were rationing a too-small budget, none selected quality |
 
 ## 2026-08-28 -- ⭐⭐⭐⭐⭐ 0.922. FIRST SUBMISSION EVER TO BEAT 0.921, and the leaderboard turns out not to mean what we thought
 
