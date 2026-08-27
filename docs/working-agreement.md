@@ -231,6 +231,49 @@ training pool, so there is no sample to draw.
 drawn and WHAT was drawn.** "12 of 71" is not a description a reader can
 audit; a seed and a name list is.
 
+## Submit a MECHANISM, not a local number (2026-08-28)
+
+Five paired local-vs-leaderboard comparisons now exist, and the pattern
+in them is not the one this project spent two weeks assuming.
+
+| change | local | LB |
+|---|---|---|
+| windowing | +0.0019 | −0.001 |
+| ranker pool 32 → 187 | **+0.0073** | −0.001 |
+| `SHORT_MIN` 6 → 4 | +0.0025 / +0.0054 / +0.0045 | 0.000 |
+| detection gate 0.15 → 0.12 | +0.0055 / +0.0045 / **+0.0121** | −0.002 |
+| **gap budget 0.003 → 0.02** | **+0.0013** / +0.0085 / +0.0056 | **+0.002** |
+
+**The one that worked had the SMALLEST weakest-domain delta of the
+five.** Local magnitude predicted nothing. What separates the last row
+from the other four is not its size, it is that something was PROVABLY
+broken: `wide44` counted the repair budget binding in **30 of 83
+datasets** and leaving **64% of demand unrepaired**. The other four were
+constant tuning, where the local number was the entire argument for the
+change.
+
+**The rule: before spending a submission, be able to state what is
+provably going wrong, in a unit that is not the score.** A count of
+work not done, a resource exhausted, a stage rejecting inputs it should
+accept. If the only argument is "this value tests better on the
+holdout", the record says that is worth nothing.
+
+Two corollaries:
+
+- **Instrument the stage before sweeping it.** `gap4` was the first
+  script here to print bridges made / allowed / demand, and that one
+  line is what turned a knob-sweep into a diagnosis. Any stage with a
+  budget, a cap, a `break`, or a fixed-size pool should report its
+  utilisation on every run. (This is the operational half of *Find the
+  binding constraint before sweeping anything behind it*.)
+- **A small delta with a mechanism outranks a large delta without one**
+  when choosing what to submit — which is the opposite of how the
+  first four were chosen.
+
+n = 1 on the positive side, so this is a hypothesis. It is the first
+thing that has ever distinguished a leaderboard success from a
+leaderboard failure here, and it costs nothing to apply.
+
 ## Find the binding constraint before sweeping anything behind it (2026-08-27)
 
 `_gap_close` caps repairs at `GAP1_CAP_FRAC = 0.003` of node count and

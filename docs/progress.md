@@ -10,14 +10,22 @@
 
 ## HANDOFF (2026-08-26, replacing the 2026-08-24 one below)
 
-**Best confirmed LB is still 0.921, ref 55707206** (D32 ranker). Three
-submissions have landed since and none beat it:
+**BEST IS NOW 0.922, ref 55817630** (2026-08-28) — the first submission ever to beat 0.921. Full history:
 
 | ref | change | its own control | LB | verdict |
 |---|---|---|---|---|
-| 55757064 | — | — | 0.920 | the control for the next row |
+| 55707206 | D32 ranker, global solve | — | 0.921 | held the record 08-23 to 08-28 |
+| 55757064 | ranker pool 32 → 187 | 55707206 = 0.921 | 0.920 | indistinguishable, not a loss |
 | 55772253 | `SHORT_MIN` 6 → 4 | 55757064 = **0.920** | **0.920** | a TRUE ZERO, not a loss |
 | 55780773 | + gate 0.15 → 0.12 | 55772253 = 0.920 | **0.918** | the only clear loss on record |
+| **55817630** | **gap budget 0.003 → 0.02, candidate requirement dropped** | 55772253 = 0.920 | **0.922** | **+0.002, NEW BEST** |
+
+**Two final-selection slots. 55817630 (0.922) takes one.** The other is
+free — 55707206 (0.921) no longer needs to hold it.
+
+⚠ **The daily submission limit is FIVE, not two.** `max_daily_submissions:
+5`. Days of rationing at two were based on confusing the daily cap with
+the final-selection cap.
 
 ⚠ Read 55772253 against **55757064 = 0.920**, not against 0.921. It
 differs from 55757064 by one non-comment line. Calling it "0.921 →
@@ -27,10 +35,15 @@ differs from 55757064 by one non-comment line. Calling it "0.921 →
 
 **Does a three-domain-agreeing result appear on the leaderboard?**
 
-The 12-dataset holdout is **0 for 3** against the LB: windowing +0.0019
-→ −0.001, ranker pool +0.0073 → −0.001, and now `SHORT_MIN` 6 → 4,
-which is the first candidate the three-domain rule ever produced
-(+0.0025 / +0.0054 / +0.0045) and which scored **0.000**.
+**ANSWERED 2026-08-28: yes, once — and the SIZE of the local delta was
+not what predicted it.** The holdout is 1 for 4. The four failures
+(windowing +0.0019, ranker pool +0.0073, `SHORT_MIN` +0.0025/+0.0054/
++0.0045, gate 0.12 +0.0055/+0.0045/+0.0121) were all CONSTANT TUNING
+where the local number was the whole argument. The one success had the
+SMALLEST weakest-domain delta of the five (+0.0013) and the only
+measured MECHANISM: `wide44` proved the repair budget bound in 30 of 83
+datasets and left 64% of demand unrepaired. See the 0.922 entry at the
+top.
 
 **And as of `thr5` there is no longer a mechanism excusing that.** The
 node-count term is linear with slope `-0.1 * dN/N_true`, independent of
@@ -167,6 +180,109 @@ has been tried.
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-08-28 -- ⭐⭐⭐⭐⭐ 0.922. FIRST SUBMISSION EVER TO BEAT 0.921, and the leaderboard turns out not to mean what we thought
+
+**Ref 55817630 = 0.922.** Control ref 55772253 = 0.920, so **+0.002**.
+Previous all-time best was 55707206 = 0.921, held since 2026-08-23.
+
+| | |
+|---|---|
+| change | `GAP1_CAP_FRAC` 0.003 → 0.02 **and** the candidate requirement dropped |
+| local, three domains | +0.0013 / +0.0085 / +0.0056 |
+| **pre-registered prediction** | **0.920 (no change), 0.921 the upside** |
+| **actual** | **0.922 — above my own upside** |
+| hidden-test bytes | 267,030,255 → **268,154,477 (+0.42%)** |
+| local node growth | +0.62% |
+
+The output grew on the hidden test by roughly what it grew locally, so
+the change behaved there the way it behaved here. **I under-predicted,
+and that is the first time in this project that a local gain arrived
+LARGER than forecast.** Every previous prediction erred optimistic.
+
+### The holdout is now 1 for 4, and the one that worked is a different KIND of change
+
+| change | local | LB |
+|---|---|---|
+| windowing | +0.0019 | −0.001 |
+| ranker pool 32 → 187 | +0.0073 | −0.001 (indistinguishable) |
+| `SHORT_MIN` 6 → 4 | +0.0025 / +0.0054 / +0.0045 | 0.000 |
+| gate 0.15 → 0.12 | +0.0055 / +0.0045 / +0.0121 | −0.002 |
+| **budget 0.003 → 0.02, no gate** | **+0.0013 / +0.0085 / +0.0056** | **+0.002** |
+
+**The four failures were all CONSTANT TUNING, where the local number was
+the entire argument. The success was a CONSTRAINT REMOVAL with a
+measured mechanism** — `wide44` showed the budget bound in 30 of 83
+datasets and repaired 36% of demand, so work that should have happened
+provably was not happening. And note it had the SMALLEST weakest-domain
+delta of the five (+0.0013). **The size of the local delta predicted
+nothing; the presence of a mechanism did.**
+
+n = 1, so this is a hypothesis, not a law. But it is the first thing
+that has ever distinguished a leaderboard success from a leaderboard
+failure in this project, and it is cheap to apply: before submitting,
+ask what is PROVABLY going wrong, not how big the local number is.
+
+### ⚠ CORRECTION: the daily submission limit is FIVE, not two
+
+`max_daily_submissions: 5`. I have been rationing submissions at two a
+day for days and saying so out loud. **The "two" is the FINAL SELECTION
+limit and I conflated the two things.** The submission history already
+contradicted me — 3 submissions on 08-23 and 3 on 08-25.
+
+### The leaderboard is not shaped the way rank suggested
+
+Rank is **409 of 2,788**, which is WORSE than the 334 of 2,717 recorded
+a few days ago, despite the score going up. The distribution says why:
+
+| score | teams (top 200 sampled) |
+|---|---|
+| 0.962 | 2 (the lead) |
+| 0.930–0.955 | sparse, a few dozen |
+| **0.927** | **~77 teams at exactly this value** |
+| 0.926 and below | the field |
+| **0.922** | **us, rank 409** |
+
+**Seventy-seven teams share one value to three decimals.** That is not a
+distribution, that is a shared artefact.
+
+### And the clean public baseline is 0.915, not 0.927 — we are ABOVE it
+
+`yusuketogashi/no-hack-biohub-cell-another-approch-3rd` (149 votes, last
+run 2026-08-24) states in its own header:
+
+> Fixed baseline: Biohub 159B, clean leaderboard `0.915`
+> Immediate target: `0.916+`
+
+**So the public "no hack" line sits at 0.915 and ref 55817630 is seven
+ticks above it.** The competition's own notebook titles use "No Hack" as
+a badge — that line, `🧬Clean Approach + Lightweight Local CV | No Hack`,
+`No-Hack | Biohub Cell Another Approch 3rd` — and there is a separate
+`kirneo/metric-hack-last-call-update` at 133 votes, last run the same
+day.
+
+**NOT investigated further, on purpose.** `reference.md` already carries
+this project's position — *"Do not exploit: unmatched forks add no TP,
+and fork-spam is the genre of the hub-node exploit patched
+2026-07-17"* — and one exploit in this competition has already been
+patched by the hosts mid-contest. Whether the 0.927 cluster is that
+genre is **unconfirmed**; what is confirmed is the clean line at 0.915
+and our 0.922 above it. Reading rank 409 as "we are behind the field"
+is therefore wrong: it is "we are behind the field plus whatever 77
+teams are all doing identically".
+
+### One legitimate thing worth stealing from the public line
+
+That notebook's inputs are `pilkwang/biohub-temporal-unet3d-seed314159-v1`
+and `pilkwang/biohub-local-association-ranker-unet300-v1` — a **temporal
+UNet3D** and a **300-epoch** local-association ranker — plus a two-model
+detection ensemble blending independently seeded temporal models at
+α ≈ 1/2. **We run the 50-epoch support pack and a single detector
+stack.** Their end-to-end result is lower than ours (0.915 vs 0.922),
+which says their LINKING is behind, not necessarily their DETECTION.
+`logbase` already measured that our detector is worth +0.0566 over the
+best classical filter, so detection is the expensive half and we have
+never tried a better one.
 
 ## 2026-08-27 -- ⭐⭐⭐⭐⭐ wide44: the 12-dataset 44b6 sample OVERSTATED by a third, that arm DOES have divisions, and gap closing RAISES div_J
 
