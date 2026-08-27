@@ -205,40 +205,48 @@ LINEFIT_WINDOW = 2
 GAP1_GATE_UM = 9.0
 GAP1_SNAP_UM = 3.2
 GAP1_MIN_CAND_SCORE = 0.10
-GAP1_CAP_FRAC = 0.003
 # ---- THE ONLY CHANGE vs ref 55772253 (LB 0.920) ------------------------
-# biohub-gap3's `len8` arm, and it is TWO things measured as one unit:
+# biohub-gap4's `nocand_cap20` arm. TWO constants, no new gate:
 #
-#   1. the bridge no longer REQUIRES a real sub-threshold candidate at
-#      the missing frame -- if none qualifies it inserts the midpoint,
-#      which at a one-frame gap IS the constant-velocity prediction;
-#   2. it refuses unless BOTH joined fragments are at least GAP_MIN_LEN
-#      nodes long.
+#   1. GAP1_CAP_FRAC 0.003 -> 0.02, the repair BUDGET;
+#   2. the bridge no longer REQUIRES a real sub-threshold candidate --
+#      with none, it inserts the midpoint, which at a one-frame gap IS
+#      the constant-velocity prediction.
 #
-#   arm                    6bba      44b6        zh
-#   BASE (shipped)       0.9279    0.8553    0.8037
-#   nocand (1 only)     +0.0009   +0.0012   +0.0034
-#   len4                +0.0010   +0.0035   +0.0028
-#   len8                +0.0013   +0.0043   +0.0019   <- this
+#   arm                       6bba      44b6        zh   bridges
+#   BASE (shipped)          0.9279    0.8553    0.8037     1,107
+#   nocand, budget 0.003   +0.0009   +0.0012   +0.0034     2,195
+#   len8,   budget 0.003   +0.0013   +0.0043   +0.0019     1,689
+#   nocand, budget 0.02    +0.0013   +0.0113   +0.0056     4,772  <- this
 #
-# Same sign in all three domains, which is the pre-registered rule, and
-# len8 is the best arm BY ITS WEAKEST DOMAIN -- the reading the rule
-# asks for. It also beats the ungated `nocand` in 6bba and by 3.6x in
-# 44b6: dropping the requirement alone adds good bridges and bad ones
-# that partly cancel, and the length gate removes the bad ones.
+# THE BUDGET WAS THE WHOLE PROBLEM. `max_gaps` is handed out in FRAME
+# ORDER and the loop breaks the moment it runs out, so under any
+# loosened policy what gets repaired is whatever sits at a low frame
+# number. Across gap4's 32 datasets true demand is 4,772 bridges, the
+# 0.003 allowance is 2,297, and the cap bound in 24 of them. More than
+# half of every repairable gap went unrepaired for no reason but the
+# budget.
 #
-# WHY THIS ONE IS NOT THE PREVIOUS TWO SUBMISSIONS AGAIN. Both of those
-# grew the node count (+1.61%, +10.3%) and the metric's adjustment term
-# 0.1 * (N_pred - N_true)/N_true plausibly ate both. `max_gaps` caps
-# insertions at GAP1_CAP_FRAC = 0.003 of nodes and each bridge adds
-# exactly one, so **node count can grow by at most 0.3%** and the
-# adjustment is worth <= 0.0003. This change lives in the EDGES.
+# Every gate this project invented -- the candidate requirement, the
+# velocity cosine, the fragment length, the clearance radius -- was
+# rationing that scarcity rather than selecting good bridges. With the
+# budget lifted, len8 still makes only 1,816 of 4,772 and LOSES: it
+# discards 62% of what is repairable.
 #
-# ⚠ The weakest domain is +0.0013 against holdout noise of roughly
-# 0.002-0.003, after six comparisons. It can read 0.000 without meaning
-# anything. `_frag_len` caps at 12, so len12 is the last testable point
-# on a curve that is monotone UP in 44b6 and monotone DOWN in Zebrahub.
-GAP_MIN_LEN = 8
+# Same sign in all three domains. It ties len8 on the weakest domain
+# (+0.0013) and is 2.6x better in 44b6 and 3x better in ZEBRAHUB, the
+# only arm whose ground truth is dense -- its rates describe all cells,
+# not the annotated ones.
+#
+# NODE COST: 4,772 bridges against the 765,667 nodes implied by the
+# 0.003 allowance is +0.62% of nodes, a node-count multiplier cost of
+# 0.00062 -- already inside the deltas above, which are net. The two
+# failed submissions grew output by +1.61% and +10.3%.
+#
+# WARNING: the weakest domain is +0.0013 against holdout noise of
+# roughly 0.002-0.003. 6bba barely moves; the case rests on 44b6 and
+# Zebrahub.
+GAP1_CAP_FRAC = 0.02
 DIV_PARENT_UM = 12.0
 DIV_SISTER_UM = 15.0
 DIV_CHILD_UM = 10.0
@@ -532,26 +540,6 @@ def pair_features(dets, vels, T):
 
 # ---- post-link patches (ranker-diag verbatim: the 0.9345 path) --------
 
-def _frag_len(nid, link, cap=12):
-    """How many nodes the fragment containing `nid` runs for, walking
-    through `link` (`pred` backward from a track's end, `succ` forward
-    from a track's start). Capped so a long track costs nothing to
-    measure -- the gate only ever asks "at least N", never "how many".
-
-    gap3's copy carried an unused `back` argument; dropped here, the
-    walk is identical.
-    """
-    n = 1
-    cur = nid
-    while n < cap:
-        nxt = link.get(cur)
-        if nxt is None:
-            break
-        cur = nxt
-        n += 1
-    return n
-
-
 def _gap_close(nodes, edges, cand, cand_sc, cand_trees, next_id):
     T = len(cand)
     succ = {}
@@ -585,12 +573,10 @@ def _gap_close(nodes, edges, cand, cand_sc, cand_trees, next_id):
             ge, gs = ends[r_], starts[c_]
             if ge in succ or gs in pred:
                 continue
-            # ---- gap3's len8 gate --------------------------------------
-            # Joining two long tracks is a safer bet than joining two
-            # three-node crumbs. Both sides must clear it.
-            if _frag_len(ge, pred) < GAP_MIN_LEN or \
-                    _frag_len(gs, succ) < GAP_MIN_LEN:
-                continue
+            # ---- NO GATE. biohub-gap4 removed the len8 gate that stood
+            # here: with the budget lifted it discards 62% of the
+            # repairable gaps (1,816 bridges made of 4,772 available)
+            # and loses 2.6x in 44b6 and 3x in Zebrahub.
             mid = 0.5 * (nodes[ge]["xyz"] + nodes[gs]["xyz"])
             # ---- gap3's `nocand`: a candidate is preferred, not required.
             # The old code did `continue` on every miss below; now a miss
