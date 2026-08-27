@@ -166,6 +166,259 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-27 -- ⭐⭐⭐⭐⭐ TWO THINGS THE USER CAUGHT: the 44b6 arm is `sorted(...)[:12]` of 71, and every submission since 08-23 has been built on the WORSE base
+
+Both from one exchange, neither measured before, both cheap to fix.
+
+### 1. The 44b6 arm is the first 12 of 71, alphabetically, never varied
+
+```python
+SET_44B6 = sorted(n for n in CACHES if n.startswith("44b6_"))[:12]
+```
+
+**There are 71 `44b6_` datasets** (`reference.md`: DeepCenter's split
+manifest is exactly 71 `44b6_` + 128 `6bba_`), all 199 detection caches
+are mounted, and every sweep this project has run used the same twelve
+lowest hex ids: `0113de3b 0b24845f 0c582fdc 0db75fae 12dfb391 144b256d
+1574802b 18ced818 1d530831 24264f12` and two more, all inside
+0x01–0x2f. **Whether those ids encode anything — acquisition order,
+embryo, session — has never been checked.** If they are content-free
+hashes the subset is arbitrary; if not, it is systematically skewed.
+
+The user's trigger was `gap4`'s **+0.0113** on that arm: *"这个波动不太
+正常"*. It is out of line with every other number this project has
+produced (typically 0.001–0.005), and **the log already carried the
+reason and nobody connected it**:
+
+| domain | datasets | GT edges | per dataset |
+|---|---|---|---|
+| `6bba` | 12 | 10,313 | 859 |
+| `44b6` | 12 | **2,526** | **210** |
+
+44b6 carries **24% of 6bba's ground truth**, so ~2x the standard
+error; its thinnest dataset has **49 edges**; annotation coverage is
+0.77% against 9.71%. **A +0.0113 swing on 2,526 annotated edges is
+about thirty edges changing hands**, and `gap4` printed no per-dataset
+deltas, so one or two datasets could be carrying all of it invisibly.
+`44b6`'s `div_J` is also exactly 0.0000 in every arm of every run —
+that arm has essentially no annotated divisions either.
+
+**The fix is cheap and there is no longer a reason not to.** The
+12-dataset limit existed for runtime, and the ranker-leak rule does not
+bind here: gap closing is POST-LINK, so all arms share one ranker, one
+detection set and one ILP solution and the leak cancels in the delta.
+At gap4's measured 28 s per dataset-config, BASE vs `nocand_cap20` over
+**all 71** 44b6 plus 12 6bba plus 8 Zebrahub is **~1.8 h**. It answers
+three questions at once: is +0.0113 a property of these twelve; is it
+one dataset or spread; and what is the `edge_J` gain MEASURED rather
+than derived (carry thr5's `_with_ratio()`, which gap4 should have had
+and did not).
+
+### 2. Every submission since 2026-08-23 has been built on the 0.920 branch
+
+The user: *"我们为什么不以 0.921 分数的那个为基底"*.
+
+Their stated mechanism does not hold — D32 and D187 emitted **262,623,879
+vs 262,803,696 bytes on the hidden test, +0.07%**, so D187 does not
+select meaningfully more points, and `thr5` showed the node-count term is
+linear with a constant slope, so there is no boundary to hit at all.
+
+**But the conclusion is right, for a stronger reason, and it is a cost
+nobody has been accounting for.**
+
+| | 55707206 (D32) | 55757064 (D187) |
+|---|---|---|
+| LB | **0.921** | 0.920 |
+| hidden-test bytes | 262,623,879 | +0.07% |
+| local 12-dataset 6bba | 0.9313 | 0.9386 (**+0.0073**) |
+| **edge AUC** | **0.9884** | **0.9864 (LOWER)** |
+
+**Two independent signals say D187 is not better** — the leaderboard
+tick and its own lower edge AUC, which `biohub-poolsize` explained away
+as "a bigger pool means a harder validation split" and which this log
+later retracted. The only thing supporting D187 is the local
+12-dataset 6bba number, which is the class of measurement now 0 for 3.
+
+**And final selection allows TWO submissions, one of which is already
+committed to 55707206 = 0.921.** So everything built on the D187 branch
+must first repay the tick spent switching rankers before it buys
+anything. Ref 55817630, submitted today, would have to fully deliver its
+local +0.001 just to TIE a submission we already hold — and it would
+consume the second final slot doing it.
+
+**Proposal: put `nocand_cap20` on a D32 base.** That is a clean
+single-variable test against the 0.921 anchor, and only 0.922 counts as
+progress.
+
+⚠ `submit_ranker.py` actively refuses D32:
+
+```python
+MIN_POOL = 100
+assert _pool is not None and len(_pool) >= MIN_POOL, ...
+```
+
+added deliberately so a stale 32-dataset pkl could not be shipped by
+accident. Going back is a conscious change to that guard, not a
+constant tweak.
+
+### The general lesson
+
+**Improvements compound on the base you SHIP, not the base you measure
+on.** Four submissions of work have been accumulating on a branch whose
+own leaderboard point is one tick below a submission already banked.
+Nothing measured on that branch was wrong; it was just being added to
+the wrong starting number.
+
+
+### 3. Why D187 "lost": more than half of its local gain was TWO division events
+
+The user: *"为什么 D187 反而比 D32 差呢,实在是太奇怪了"*. It is not
+strange, and "worse" is not established either — one tick is the LB's
+reporting resolution and the two emitted output within 0.07%. What IS
+established is that the +0.0073 did not appear. Decomposed:
+
+| | D32 | D187 | delta |
+|---|---|---|---|
+| local score | 0.9313 | 0.9386 | **+0.0073** |
+| `adj_J` | 0.9222 | 0.9254 | +0.0032 |
+| `0.1 x div_J` | 0.0091 | 0.0132 | **+0.0041 (56%)** |
+
+| | div TP | div FP | div FN |
+|---|---|---|---|
+| D32 | **3** | 21 | 9 |
+| D187 | **5** | 26 | 7 |
+
+`div_J` = TP/(TP+FP+FN): 3/33 = 0.0909 against 5/38 = 0.1316.
+
+**The 12-dataset holdout contains TWELVE annotated divisions in total**
+(3+9 = 5+7 = 12). D187 caught five, D32 caught three. **The entire
++0.0041 — 56% of the headline gain — is two events.**
+
+And proposing more forks is nearly free on sparse ground truth: the
+user's own verified observation is that **a fork lying entirely among
+unannotated cells enters no FP set, so ~97% of extra forks are
+INVISIBLE** (913 extra forks cost only -0.0027 adj_J, ~30 visible edge
+FPs). D187 proposes ~30% more matched forks (31 against 24) and two
+more happened to land.
+
+**So the genuinely measured part of D187's advantage is +0.0032 of
+adj_J** — inside the range this holdout has already inverted twice.
+Nothing anomalous needs explaining; the anomaly was reading +0.0073 as
+an improvement in the first place.
+
+⚠ **CORRECTION to this entry's own section 2**: it called the lower edge
+AUC (0.9864 vs 0.9884) an independent signal against D187. That is too
+strong. The two AUCs were measured on validation splits drawn from
+different pools — different populations, the denominator trap again —
+and the log only ever marked the "bigger pool, harder split"
+rationalisation as *may have been wrong*. Correct statement: **the AUC
+is not evidence FOR D187**, not that it is evidence against.
+
+**Which leaves the slot arithmetic as the whole argument**, and it does
+not depend on either ranker being better: the two are indistinguishable,
+55707206 = 0.921 already occupies a final-selection slot, so anything
+built on the D187 branch must climb a tick merely to TIE something
+already banked while consuming the second slot.
+
+### 4. STANDING INSTRUCTION 2026-08-27: sample 44b6 at random
+
+> 你后面,所有测试集的 44b6 都要随机抽
+
+Implemented in `gap4.py`, which is the template every later assembly is
+cut from:
+
+```python
+N_44B6 = 12
+SEED_44B6 = 20260827
+_ALL_44B6 = sorted(n for n in CACHES if n.startswith("44b6_"))
+SET_44B6 = sorted(random.Random(SEED_44B6).sample(
+    _ALL_44B6, min(N_44B6, len(_ALL_44B6))))
+```
+
+**Seeded, not freshly random**, so a recorded anchor still reproduces —
+a sample that changes every run makes every anchor meaningless. **The
+chosen names print every run**: a sample nobody can see is a sample
+nobody can check. To test whether a result depends on the sample,
+change `SEED_44B6`; that is a different question from changing
+`N_44B6`, which changes the precision.
+
+`SET_ZH = sorted(ZH)[:8]` is left alone — 8 is every Zebrahub crop
+there is, so the prefix is the whole population. `SET_6BBA` is the
+recorded 12-dataset holdout and must stay exactly those twelve, because
+they are the only 6bba datasets outside D187's training pool.
+## 2026-08-27 -- ⭐⭐⭐⭐ how an EDGE ranker moves DIVISIONS, and the coupling gap closing has to it
+
+The user: *"为啥边检测器会抓分裂"*. The name misleads — the ranker does
+not score edges in isolation, it decides the shape of the whole graph,
+and **a division IS a graph shape: one node with two outgoing edges.**
+
+### The split, measured on the 4 visible datasets (ref 55817630's run)
+
+| dataset | ILP forks | final forks |
+|---|---|---|
+| 44b6_0113de3b | 11 | 54 |
+| 44b6_0b24845f | 15 | 130 |
+| 6bba_05b6850b | 6 | 18 |
+| 6bba_05db0fb1 | 15 | 143 |
+| **total** | **47** | **345** |
+
+**The ILP makes 14% of the forks. `_add_safe_divisions` adds 86%.**
+
+### Path 1 — the ILP, 14%
+
+The solve is **capacity 2**: a node may take two outgoing edges, and
+`div_w = 0.55` is what opening a fork costs in the objective. Whether it
+is worth paying depends on the ranker's probabilities for both child
+edges. So the ranker buys these forks directly.
+
+### Path 2 — the orphan pool, 86%, and it is the main road
+
+`_add_safe_divisions` opens with
+
+```python
+orph = [g for g in ids if not pred.get(g)]
+```
+
+**An orphan is a node with no predecessor, and which nodes have a
+predecessor is decided entirely by what the ILP linked** — that is,
+entirely by the ranker. The patch then takes each node with exactly one
+child and looks for a nearby orphan to serve as the second daughter,
+subject to `DIV_CHILD_UM` 10, `DIV_PARENT_UM` 12, `DIV_SISTER_UM` 15
+and a requirement that the two daughters actually diverge
+(`DIV_DIVERGE_UM` 2.25).
+
+**So: the harder the linker links, the fewer orphans survive, and the
+less raw material the division patch has.** This is exactly the worry
+`ranker_fine`'s header recorded — a more confident 1:1 linker "steals
+second daughters into wrong continuations, draining the orphan pool the
+division patch mines".
+
+For D187 that worry appeared not to materialise: div_J 0.0909 → 0.1316.
+⚠ **Discount that reading.** As decomposed in the entry above, the whole
+of that move is **two events out of the holdout's twelve annotated
+divisions**. The explanation ("a ranker that is more CORRECT rather than
+merely more confident feeds the mechanism instead of starving it") may
+be true but it was never measured.
+
+### The coupling to gap closing, which nobody had noticed
+
+`_gap_close` executes `pred[gs] = ng` for every bridge it makes. **A
+bridge gives `gs` a predecessor, so it removes `gs` from the orphan
+pool — every bridge destroys one division candidate.**
+
+`nocand_cap20` goes from 2,195 bridges to 4,772, so it removes ~2,577
+more orphans. On that mechanism it should depress div_J.
+
+**Measured: it does not.** gap4's div_J deltas are exactly +0.0000 in
+6bba and 44b6 for every arm, and +0.0001…+0.0010 in Zebrahub. With
+twelve annotated divisions in the 6bba holdout, one event moves div_J by
+about +0.008, so "+0.0000" means **not one event changed**.
+
+The coupling is real and it measured zero in the competition domains.
+Keep it in mind before raising the bridge count much further, and note
+that `div_J` carries a 0.1 weight in the score, so it would take a lot
+of lost divisions to matter against the edge gains.
+
 ## 2026-08-27 -- ⭐⭐⭐⭐⭐ gap4: THE BUDGET WAS THE WHOLE PROBLEM. Raise it, drop every gate, and 44b6 gains +0.0113.
 
 `biohub-gap4`, 177 min, 8 arms × 3 domains, D187, `SHORT_MIN` 4.

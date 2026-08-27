@@ -171,6 +171,52 @@ arm of that weight without saying so.** The rule counts domains; it does
 not weigh them. Print the n for each arm, every time, so a reader can
 see when "three domains" is really two and a rumour.
 
+## An arbitrary sort key is not a random sample (2026-08-27)
+
+Every sweep in this project selected its second-batch arm as
+
+```python
+SET_44B6 = sorted(n for n in CACHES if n.startswith("44b6_"))[:12]
+```
+
+**the twelve LOWEST hex ids out of 71**, identical in every run, and
+nobody checked whether those ids encode acquisition order, embryo or
+session. A hash-looking key FEELS random; a fixed prefix of a sort on it
+is not a sample, and if the ids carry any structure then every
+three-domain verdict this project has issued shares one skew.
+
+The user's standing instruction, 2026-08-27: **"所有测试集的 44b6 都要
+随机抽"**. Implemented in `gap4.py`, the template later assemblies are
+cut from:
+
+```python
+N_44B6 = 12
+SEED_44B6 = 20260827
+_ALL_44B6 = sorted(n for n in CACHES if n.startswith("44b6_"))
+SET_44B6 = sorted(random.Random(SEED_44B6).sample(
+    _ALL_44B6, min(N_44B6, len(_ALL_44B6))))
+```
+
+Three properties, each deliberate:
+
+- **Seeded, not freshly random.** A sample that changes every run makes
+  every must-reproduce anchor meaningless, and anchors are what caught
+  the gap2 normalisation bug and proved gap4's reorder safe.
+- **The chosen names PRINT every run.** A sample nobody can see is a
+  sample nobody can check.
+- **Changing `SEED_44B6` asks "does this result depend on the sample";
+  changing `N_44B6` asks "how precise is it".** Different questions, do
+  not conflate them.
+
+`SET_ZH = sorted(ZH)[:8]` is left alone because 8 is every Zebrahub crop
+that exists, so the prefix is the whole population. `SET_6BBA` must stay
+the recorded twelve: they are the only 6bba datasets outside D187's
+training pool, so there is no sample to draw.
+
+**Generally: whenever a subset is taken, say in the output HOW it was
+drawn and WHAT was drawn.** "12 of 71" is not a description a reader can
+audit; a seed and a name list is.
+
 ## Find the binding constraint before sweeping anything behind it (2026-08-27)
 
 `_gap_close` caps repairs at `GAP1_CAP_FRAC = 0.003` of node count and

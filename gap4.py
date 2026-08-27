@@ -63,6 +63,7 @@ from __future__ import annotations
 import gc
 import pathlib
 import pickle
+import random
 import subprocess
 import sys
 import time
@@ -1074,9 +1075,31 @@ print(f"  ranker loaded from {_pk}, pool {len(_pool)}", flush=True)
 # whatever caches are mounted, sorted, so no dataset name is invented
 # here and a missing mount fails loudly instead of silently shrinking the
 # comparison.
+#
+# ⚠ 2026-08-27, THE USER'S STANDING INSTRUCTION: "所有测试集的 44b6 都要
+# 随机抽". Every sweep before this one used `sorted(...)[:12]` -- the
+# twelve LOWEST hex ids out of 71, identical in every run, and nobody
+# ever checked whether those ids encode acquisition order, embryo or
+# session. An arbitrary-looking sort key is not a random sample, and a
+# fixed prefix of it is the worst case: if the ids carry any structure,
+# every three-domain verdict this project has issued shares one skew.
+#
+# Random, but SEEDED, so the sample is reproducible and a recorded
+# anchor still means something. The chosen names are PRINTED every run
+# -- a sample nobody can see is a sample nobody can check.
+#
+# To test whether a result depends on the sample, change SEED_44B6 and
+# re-run; that is a different question from changing N_44B6, which
+# changes the precision.
 N_44B6 = 12
+SEED_44B6 = 20260827
 SET_6BBA = [n for n in HOLDOUT if n in CACHES]
-SET_44B6 = sorted(n for n in CACHES if n.startswith("44b6_"))[:N_44B6]
+_ALL_44B6 = sorted(n for n in CACHES if n.startswith("44b6_"))
+SET_44B6 = sorted(random.Random(SEED_44B6).sample(
+    _ALL_44B6, min(N_44B6, len(_ALL_44B6))))
+print(f"  44b6: {len(SET_44B6)} sampled at random (seed {SEED_44B6}) "
+      f"from {len(_ALL_44B6)} available", flush=True)
+print(f"    {' '.join(SET_44B6)}", flush=True)
 assert len(SET_6BBA) == len(HOLDOUT), (
     f"only {len(SET_6BBA)} of {len(HOLDOUT)} holdout caches are mounted; "
     f"the 6bba row would not be comparable to the recorded anchor")
