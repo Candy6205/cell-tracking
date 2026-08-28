@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-detcmp",
-  "title": "Biohub detcmp",
-  "code_file": "detcmp.py",
+  "id": "faustine649/biohub-dcprobe",
+  "title": "Biohub dcprobe",
+  "code_file": "dcprobe.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
