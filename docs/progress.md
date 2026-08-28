@@ -198,6 +198,71 @@ weak, which needs a test-time weakness signal nobody has proposed.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-29 -- ⭐⭐⭐ detfuse: the learned-fusion idea has real but modest signal, and every road points at down-weighting B2
+
+`biohub-detfuse` v1, 10 min T4, 41 Zebrahub crops, 101,615 GT points.
+**Anchors digit-exact against det_ablate3** (FULL@5um 0.7738/0.7350/
+0.7539 at gate 0.15; B01 0.7585 at 0.20).
+
+### 1. Scalar weights: +0.004 F1, a PLATEAU, all of it "suppress B2"
+
+At the scorer's 7 um radius, each arm at its own best gate:
+
+| arm (w0,w1,w2) | recall | prec | F1* |
+|---|---|---|---|
+| FULL (1,1,1) | 0.7979 | 0.7579 | 0.7774 |
+| **B01 (1,1,0)** | 0.7935 | 0.7701 | **0.7816** |
+| **W110h (1,1,0.5)** | **0.8217** | 0.7453 | **0.7816** |
+| W210h (2,1,0.5) | 0.8179 | 0.7482 | 0.7815 |
+| W311 (3,1,1) | 0.8079 | 0.7563 | 0.7813 |
+| W121 (1,2,1) | 0.8232 | 0.7362 | 0.7772 |
+| W112 (1,1,2) control | 0.8247 | 0.7222 | 0.7700 |
+
+Four different weightings tie at 0.7811-0.7816: the surface is FLAT
+once B2 is suppressed, so finer scalar tuning is exhausted. Note
+**W110h ties B01's F1 while keeping +2.8 points of recall** -- if this
+line ever gets a pipeline test, that is the arm to prefer (the node
+penalty is weak, recall feeds the repair pool).
+
+### 2. The 11% churn is NOT in the sub-threshold band (det_ablate3's open question, closed)
+
+Peaks where branches disagree by >= 0.30 (7.9% of 128k): score
+q25/50/75 = 0.204/0.230/0.261, only 2.0% sub-threshold against 16.5%
+for all peaks. **The disagreement sits AT the operating band, not below
+it** -- branch disagreement is live exactly where the gate decides.
+
+### 3. Per-peak fusion ceiling: +0.0215 AUC, and B2's learned weight is ZERO
+
+Logistic on the three branch logits, fit even crops / scored odd:
+AUC 0.7939 (mean score) -> **0.8153** (+0.0215). Learned weights
+**(0.94, 1.68, 0.07)** -- the third branch contributes nothing to
+ranking real-vs-spurious. Signal for a learned combiner exists and its
+per-peak ceiling is ~2 AUC points. `fuse_rows.npz` (128k peaks) and
+`fuse_miss.npz` in the kernel output allow offline fusion training with
+no new inference.
+
+### 4. Miss headroom: ~2.5% of all cells are seen by ONE branch and suppressed by the mean
+
+Of 15,774 GT cells unmatched at 7 um (floor 0.05): some single branch
+has window-max >= 0.15 near **98.3%** of them, the branch MEAN near
+82.0%. ⚠ The 82% column is NOT "mean sees it and still misses" pure:
+unmatched includes peaks lost to the 1:1 greedy competition and to the
+4-um NMS, so only the **16.3-point gap** (~2,570 cells, ~2.5% of GT) is
+the fusion-specific recall a per-voxel combiner could recover. Those
+are single-branch-visible cells -- the flicker population.
+
+### Verdict
+
+Precondition confirmed, ceiling priced, and it is modest: scalar fusion
+is worth at most ~+0.004 detection F1 (all from B2), per-peak learned
+fusion ~+0.02 AUC. All DETECTION numbers, one domain -- offline numbers
+have anti-predicted adj_J eight times, so nothing here earns a pipeline
+run on its own yet. The line holds until the retrained DeepCenter
+lands: it is the strongest candidate fourth input, and the eval
+machinery (re-cache + ranker retrain + three-domain solve) is the same
+spend either way. Decide then whether to test W110h / a learned
+combiner / DC-as-input together, not three times separately.
+
 ## 2026-08-28 -- DCTRAIN LAUNCHED: retrain DeepCenter on a split we control (user's call)
 
 `biohub-dctrain` v1 pushed, T4, RUNNING. Design settled with the user:
