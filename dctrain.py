@@ -1,6 +1,6 @@
 """dctrain.py -- retrain DeepCenter on a 175-dataset split we control.
 
-SCRIPT_VERSION 2026-08-28a-dctrain
+SCRIPT_VERSION 2026-08-29a-dctrain
 
 WHY. The published DeepCenter was trained on the 71 `44b6_` movies and
 model-selected on the 128 `6bba_` -- not by design but by a split bug
@@ -70,7 +70,7 @@ import time
 
 import numpy as np
 
-SCRIPT_VERSION = "2026-08-28a-dctrain"
+SCRIPT_VERSION = "2026-08-29a-dctrain"
 print(f"SCRIPT_VERSION {SCRIPT_VERSION}", flush=True)
 
 # ---------------------------------------------------------------- GPU gate
@@ -117,6 +117,9 @@ assert trainer_py is not None, (
     "pilkwang/biohub-deepcenter-unet3d-center-prior-v1")
 spec = importlib.util.spec_from_file_location("dc_trainer", trainer_py)
 dc = importlib.util.module_from_spec(spec)
+# dataclasses resolves the @dataclass fields via sys.modules[cls.__module__];
+# an unregistered module makes that lookup None and the import dies (v1 did).
+sys.modules["dc_trainer"] = dc
 spec.loader.exec_module(dc)
 print(f"trainer loaded from {trainer_py}", flush=True)
 
