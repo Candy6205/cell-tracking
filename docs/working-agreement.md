@@ -231,6 +231,52 @@ training pool, so there is no sample to draw.
 drawn and WHAT was drawn.** "12 of 71" is not a description a reader can
 audit; a seed and a name list is.
 
+## A constant belongs to the stage that READS it (2026-08-28)
+
+Every sweep script in this project descends from `post_sweep`, and they
+all share one loop:
+
+```python
+for name in names:
+    dets = load_dets(name)                  # ONCE per dataset
+    nodes0, edges0, pool = solve_one(...)   # ONCE per dataset
+    for cfg in SWEEP:
+        apply_config(key, val)              # constants take effect HERE
+        patch_and_save(...)
+```
+
+**`apply_config` runs AFTER the detections and the ILP.** That is the
+whole point — the solve is expensive and every arm shares it, which is
+also why the ranker leak cancels in the delta for a post-link sweep.
+
+**So a constant read by `load_dets` or `solve_one` is fixed before the
+sweep touches it, and is silently not swept.** `dcmerge` v1 put
+`DC_TAU` — a detection-time constant — into that sweep. Every arm shared
+one detection set, and because the inner loop leaves the constant at the
+last arm's value, datasets 2 onward were all merged at the LAST
+threshold. Four arms, identical numbers, and BASE contaminated.
+
+**Every run in this family prints "POST-LINK SWEEP" in its own header,
+including that one.** Knowing the name of the harness did not prevent
+putting the wrong kind of constant in it.
+
+**The rule: before adding a constant to a sweep, find the line that
+READS it and check whether that line runs inside or outside the arm
+loop.** If outside, the loop has to be inverted — solve per arm, at
+roughly Nx the compute — or the constant cannot be swept at all.
+
+Two supports worth carrying:
+
+- **Name the detection-time constants in the file.** `dcmerge` now
+  carries `DETECTION_TIME_CONSTANTS = {"DC_TAU", "DC_MERGE_UM",
+  "DC_ADD_SCORE", "UNET_THRESH", "CAND_THR", "NMS_UM"}` next to
+  `apply_config`, so the next assembly sees the list before it sees the
+  loop.
+- **The anchor is what caught it**, again: BASE returned adj_J 0.8897
+  against the required 0.9292, and `node_ratio` flipped from −0.0215 to
+  **+0.1336**. Without the must-reproduce arm, four identical rows would
+  have read as "the threshold does not matter".
+
 ## Submit a MECHANISM, not a local number (2026-08-28)
 
 Five paired local-vs-leaderboard comparisons now exist, and the pattern

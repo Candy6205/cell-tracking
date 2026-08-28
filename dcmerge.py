@@ -1378,8 +1378,25 @@ BASE_VALUES = {k: globals()[k] for k in
                 "GAP_LEN_MODE", "DC_TAU")}
 
 
+DETECTION_TIME_CONSTANTS = {"DC_TAU", "DC_MERGE_UM", "DC_ADD_SCORE",
+                            "UNET_THRESH", "CAND_THR", "NMS_UM"}
+
+
 def apply_config(key, val):
-    """Rebind post-link constants, or restore all of them for BASE.
+    """Rebind swept constants, or restore all of them for BASE.
+
+    ⚠ A CONSTANT BELONGS TO THE STAGE THAT READS IT. This function runs
+    inside the arm loop, and in the ORIGINAL post-link order that loop
+    sits INSIDE the per-dataset solve -- so anything read by `load_dets`
+    or `solve_one` is fixed before this is ever called and is silently
+    NOT swept. `DC_TAU` is such a constant, and v1 of this run put it in
+    the sweep anyway: BASE came back at adj_J 0.8897 against the required
+    0.9292 with its node_ratio flipped from -0.0215 to +0.1336, and all
+    four arms returned identical numbers.
+
+    Both loops in this file are therefore INVERTED -- the solve is inside
+    the arm loop -- at a cost of one solve per arm rather than per
+    dataset. `DETECTION_TIME_CONSTANTS` names the ones that require it.
 
     The patch functions read these as module globals, so this is what
     "changing one thing" means here.
@@ -1501,15 +1518,23 @@ t_all = time.time()
 for domain, names in (("6bba", SET_6BBA), ("44b6", SET_44B6)):
     td0 = time.time()
     for name in names:
-        dets = load_dets(name)
-        T = len(dets)
-        nodes0, edges0, pool = solve_one(dets, T)
+        # ⚠ THE ARM LOOP IS OUTSIDE AND THE SOLVE IS INSIDE IT.
+        # This harness has read "POST-LINK SWEEP" since post_sweep, and
+        # `apply_config` runs AFTER `load_dets` -- so a constant that
+        # acts during DETECTION is never actually swept, and every arm
+        # silently shares one detection set. v1 did exactly that: BASE
+        # came back at adj_J 0.8897 against the required 0.9292 with its
+        # node_ratio flipped from -0.0215 to +0.1336. DC_TAU is a
+        # detection-time constant, so it costs one solve per ARM.
         for cfg, key, val in SWEEP + [(c, d, None) for c, d in COMBOS]:
             apply_config(key, val)
+            dets = load_dets(name)
+            T = len(dets)
+            nodes0, edges0, pool = solve_one(dets, T)
             patch_and_save(nodes0, edges0, pool,
                            pdir(cfg, domain) / f"{name}.geff")
-        del dets, nodes0, edges0, pool
-        gc.collect()
+            del dets, nodes0, edges0, pool
+            gc.collect()
     apply_config(None, None)
     for cfg, key, val in SWEEP + [(c, d, None) for c, d in COMBOS]:
         res[(cfg, domain)], PER[(cfg, domain)] = \
@@ -1524,14 +1549,20 @@ if SET_ZH:
     GT_DIR.mkdir(parents=True, exist_ok=True)
     zrows = {cfg: [] for cfg, _, _ in SWEEP}
     for name in SET_ZH:
-        dets, T, gt_arr, gt_e, n_cross = zh_load(name)
+        # The ground truth does not depend on DC_TAU, so read it once
+        # with the merge OFF; only the DETECTIONS are re-read per arm.
+        apply_config(None, None)
+        _d0, T, gt_arr, gt_e, n_cross = zh_load(name)
+        del _d0
         gp = GT_DIR / f"{name}.geff"
         dr._save(str(gp), gt_arr, gt_e)
         r_ = td.graph.IndexedRXGraph.from_geff(str(gp))
         gtg = r_[0] if isinstance(r_, tuple) else r_
-        nodes0, edges0, pool = solve_one(dets, T)
         for cfg, key, val in SWEEP + [(c, d, None) for c, d in COMBOS]:
             apply_config(key, val)
+            # same inversion as the competition loop above
+            dets, T, _ga, _ge, _nc = zh_load(name)
+            nodes0, edges0, pool = solve_one(dets, T)
             outp = pdir(cfg, "zh") / f"{name}.geff"
             patch_and_save(nodes0, edges0, pool, outp)
             rr = td.graph.IndexedRXGraph.from_geff(str(outp))
@@ -1541,7 +1572,8 @@ if SET_ZH:
                    if g.num_edges() > 0 and g.num_nodes() > 0 else 0.0)
             zrows[cfg].append(per_sample_metrics(er, float(len(gt_arr)),
                                                  rec))
-        del dets, nodes0, edges0, pool
+            del dets, nodes0, edges0, pool
+            gc.collect()
         gc.collect()
     apply_config(None, None)
     for cfg, _, _ in SWEEP:
