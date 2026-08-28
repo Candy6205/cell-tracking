@@ -2901,12 +2901,35 @@ accel_one_step:  246,780
 
 against **225,861 candidate pairs**. Acceleration needs THREE
 consecutive positions; the backward chain is built by `pass1_tracks`, a
-greedy linker, and for most candidates it cannot produce three. All five
-columns are then filled with 0 -- which the model reads as "no
-acceleration", not as "unknown".
+greedy linker, and for most candidates it cannot produce three. ~~All
+five columns are then filled with 0 -- which the model reads as "no
+acceleration", not as "unknown".~~
 
 **So this is not evidence that multi-frame information does not help. It
 is evidence that this implementation could not compute it.**
+
+> ⚠ **TWO ERRORS IN THE PARAGRAPH ABOVE, both found 2026-08-28 after the
+> user asked whether the zero fill was even firing correctly.**
+>
+> **1. The zeros ARE labelled.** `accel_of`'s own docstring: *"return
+> zero and say how many steps there were, so the model can split on the
+> count instead of reading 0 as 'not accelerating'"*. The fifth
+> acceleration column is `acc_hist` — 0 = no backward link, 1 = one step,
+> 2 = full — and `biohub-accel`'s ACC arm used all 23 columns, so the
+> indicator was present and the model still lost by −0.0019. The
+> "reads 0 as no acceleration" diagnosis is wrong, and a later session
+> built on it, proposing a NaN fill that would have changed nothing.
+>
+> **2. The denominators do not match.** `accel_of` is called once per
+> SEED per FRAME; 225,861 is a count of candidate PAIRS. Comparing
+> 316,658 to it says nothing, so **"for most candidates it cannot produce
+> three" is unsupported** — the real fraction has never been measured.
+>
+> What is actually unknown, and what `accdiag` measures: the share of
+> seeds with `acc_hist == 2`; the per-frame MEDIAN acceleration, which is
+> global stage drift and is not subtracted anywhere; and whether the
+> backward chain from a greedy linker is right often enough for the
+> second difference to mean anything.
 
 Note also, by 2026-08-25's standard, that -0.0019 sits inside the range
 where the holdout has inverted against the leaderboard twice. "It hurt"

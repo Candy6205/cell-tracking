@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-dcmerge",
-  "title": "Biohub dcmerge",
-  "code_file": "dcmerge.py",
+  "id": "faustine649/biohub-accdiag",
+  "title": "Biohub accdiag",
+  "code_file": "accdiag.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -14,9 +14,7 @@
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
-    "faustine649/biohub-poolsize",
-    "faustine649/biohub-zh-detect",
-    "faustine649/biohub-dccache"
+    "faustine649/biohub-poolsize"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
