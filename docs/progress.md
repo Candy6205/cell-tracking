@@ -198,6 +198,121 @@ weak, which needs a test-time weakness signal nobody has proposed.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-28 -- DCTRAIN LAUNCHED: retrain DeepCenter on a split we control (user's call)
+
+`biohub-dctrain` v1 pushed, T4, RUNNING. Design settled with the user:
+
+**Why.** DeepCenter's shipped trainer contains the split bug in plain
+sight: `split_samples` groups by name prefix, the prefix has two values
+(44b6/6bba), and "hold out 10% of groups" held out one whole batch. So
+44b6 is its training set (eval forever nan) and 6bba its selection set
+(tainted), and dcmerge's opposite signs could never be settled. The
+user: repair only helps when both endpoints exist, a union always loses
+on the node surplus -- so retrain it on our split and re-measure, or
+drop it.
+
+**The split (199 = 167 train + 8 val + 24 excluded), all names printed
+in the log:**
+
+- excluded: the 12 6bba holdout (verbatim) + 12 44b6 drawn
+  `random.Random(20260827).sample` from the 44b6 OUTSIDE D32's pool
+  (random per the user's standing rule; outside-D32 because a detection
+  change needs the D32 ranker and the leak rule). All three eval
+  domains are clean -- the first detector here that can face the full
+  three-domain rule.
+- val: 4+4 from the remaining 175, seed 20260828, excluded from
+  training; best.pt selects on it, not on any eval domain.
+
+**Recipe: the author's defaults verbatim** (checked against their run
+wrapper line by line), except `--snapshot-interval 5 --snapshot-final`
+(their 500-epoch run diverged with best at epoch 2, so every 5-epoch
+state is kept) and epochs 30 not 50 (167 movies/epoch = 2.35x their
+per-epoch exposure; `--resume` continues if history says still
+improving). Labels read via `viz_cells.read_geff` (zarr-free); frames
+via the trainer's own per-chunk blosc2 path, which matches the
+competition layout exactly. Smoke-read asserted at startup.
+
+**Cost, an ESTIMATE not a measurement:** ~5-7 h GPU. 8.8 h of quota
+remained at launch and the week refreshes 2026-08-29 00:00 UTC
+mid-run. Waiter at 300 s.
+
+**Next after it lands:** cache detections for the 24 excluded + 8 zh,
+detcmp-style coverage + recall, then dcmerge-style arms with the
+retrained weights -- now readable in all three domains.
+
+## 2026-08-28 -- forum + leaderboard recon (second pass, evening session)
+
+Read via the MCP connector; everything below is what OTHER PEOPLE claim,
+not our measurements, except the leaderboard which is read directly.
+
+### The leaderboard moved since 2026-08-20
+
+#1 is now **0.962 held by TWO teams** (Soheil Ayati, z7777); #3 Tang
+0.955; **#20 is ~0.943** (was 0.935). Our 0.922 is rank ~409, and the
+~77-team cluster at exactly 0.927 (see the 0.922 entry) still sits
+between us and the clean field.
+
+### Two frontier teams named their bottleneck order, and it is DETECTION
+
+- **The #1 (Soheil Ayati), /737101:** "many 'linking' issues actually
+  originated earlier during node selection, so improving the edge model
+  won't necessarily help. Break missed edges into missing-endpoint vs
+  incorrect-association and focus exclusively on the dominant one."
+- **The #3 (Tang, /737543):** "detection -> linking -> division.
+  detection should come first."
+
+Both consistent with this project's own record: `logbase` priced the
+detector at +0.0566, and the 0.922 entry already flagged the public
+temporal-UNet3D + 300-epoch ranker as "the one legitimate thing worth
+stealing". Nobody at the frontier says the win is in post-processing.
+
+⚠ **CORRECTED same day, user's catch: the temporal UNet3D was already
+tried, and it LOST.** The official pipeline's detector IS the
+TemporalUNet3D (competition-brief.md), i.e. the whole 0.876→0.898 line
+ran it. The head-to-head is recorded at the 2026-08-22 Branch C entry:
+on Zebrahub, both models naive, xl 0.766/0.736 recall/precision vs
+temporal 0.650/0.637, and **dim-quartile recall 0.73 vs 0.52** — worst
+exactly where a temporal model was supposed to help. LB agreed (xl
+family 0.917, official family 0.898; the chimera buried). What was
+never inspected is only the `seed314159` SECOND SEED + the 300-epoch
+ranker + two-seed blending; given the 50ep result and Togashi's 0.915
+end-to-end, not worth a run. "We never tried a better detector" in the
+0.922 entry means never tried one better than xl — the temporal one was
+tried and is worse. The detector idea still standing is DeepCenter as a
+repair-pool source (measured coverage, different bias, no temporal
+claim).
+
+### ⭐ A rank-58 competitor reports LB div_J ~0.28, and names a mechanism
+
+**Lime1123, /737543** (team-up intro claims div_J ~0.28 on LB with
+adj_J ~0.89, i.e. the division term alone worth ~+0.028): "divisions
+seemed much more sensitive to SPATIAL ACCURACY, roughly within 3 um,
+even though the metric uses 7 um." The thread author (k3v1npark,
+div_J 0.1176 — our level) then measured his own predictions: **39% of
+his division nodes sit more than 3 um from GT while all pass 7 um.**
+
+Plausible mechanism (mine, unverified): sister separation at t+1 has
+p50 ~7-9 um, so around a division there are 2-3 GT nodes inside one
+7-um match ball; a node a few um off can match the WRONG GT node and
+the directed-topology check then fails the whole division. If true,
+div FN/FP are partly a LOCALISATION problem, not a proposal problem —
+a channel none of our division work (gates, rankers, mass, kinematics)
+ever touched. **Nothing in this project has ever measured the
+localisation error of division-adjacent nodes.** Cheap to measure from
+caches + GT on CPU. Related transplant never run: the public tier's
+linefit smoothing and full-resolution centroid refinement
+(`public-solutions-recon.md` addenda) both exist to improve exactly
+this quantity.
+
+### Small corroborations
+
+- /737896: a GT track visibly at background intensity ("very dim
+  nodes") — consistent with `gap2`'s 79.8%-vanished-response finding.
+- /737103 + Theo Viel: hand-labeling own training data is probably
+  allowed (test data prohibited); no host ruling yet.
+- /737577: yet another team stuck at div_J ~0 via ILP division-weight
+  tuning — the field-wide pattern our own 8:1 measurement predicted.
+
 ## 2026-08-28 -- DCMERGE v2: DeepCenter as primary nodes WINS +0.0379 on Zebrahub and LOSES -0.0413 on 6bba, monotonically, in both directions
 
 **The result WAS read in session; what it never got was an entry here.**
