@@ -1,24 +1,25 @@
 {
-  "id": "faustine649/biohub-rank5",
-  "title": "Biohub rank5",
-  "code_file": "rank5.py",
+  "id": "faustine649/biohub-dccache",
+  "title": "Biohub dccache",
+  "code_file": "dccache.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": false,
+  "enable_gpu": true,
   "enable_internet": true,
   "dataset_sources": [
     "pilkwang/biohub-tracking-support-pack-50ep-v1",
+    "pilkwang/biohub-deepcenter-unet3d-center-prior-v1",
+    "xiaoleilian/biohub-unet3d-weights",
+    "xiaoleilian/biohub-unet3d-weights-v2models",
     "faustine649/cell-tracking"
   ],
   "kernel_sources": [
-    "faustine649/biohub-edge-ranker",
-    "faustine649/biohub-cache-train",
-    "faustine649/biohub-poolsize",
-    "faustine649/biohub-zh-detect"
+    "faustine649/biohub-zebrahub-extract"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
-  "model_sources": []
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
 }
