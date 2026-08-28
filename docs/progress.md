@@ -183,6 +183,103 @@ has been tried.
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-28 -- ACCELERATION IS COMPUTABLE 87.3% OF THE TIME, AND IT STILL DOES NOT HELP. The line closes on measurement, and progress.md's own account of it was wrong twice.
+
+`biohub-accdiag`, 9 min, CPU, 12 6bba holdout datasets, 173,269 seeds.
+The user asked two things about `biohub-accel`: **does the acceleration
+column subtract camera shake, and is the exact-zero even firing for a
+real reason.** Neither had an answer in this file, and looking for one
+turned up two errors in the entry that recorded the failure. Both are
+marked in place below.
+
+### 1. How often is acceleration computable -- with the right denominator
+
+| `acc_hist` | meaning | seeds | share |
+|---|---|---|---|
+| 0 | no backward link at all | 13,384 | 7.7% |
+| 1 | one backward step, needs two | 8,703 | 5.0% |
+| 2 | **full, three positions** | **151,182** | **87.3%** |
+
+**"For most candidates it cannot produce three" was wrong by a wide
+margin.** It is computable for seven cells in eight. The old paragraph
+compared a per-seed-per-frame counter (316,658) against a count of
+candidate PAIRS (225,861) -- two different things, so the fraction had
+never been measured at all. It is measured now.
+
+⚠ The run's own degradation counters, 31,594 and 25,885, are STILL
+per-seed-per-frame and still accumulate across the sweep, stage B and
+the diagnostic. **They are not comparable to 173,269 either.** The table
+above is the measurement; the counters are not.
+
+### 2. Stage motion against cell motion -- the user's first question
+
+Nothing anywhere in the pipeline subtracts global stage motion. A
+constant drift is absorbed by the velocity column; a CHANGING drift
+appears as the same spurious acceleration on every cell at once, which
+is exactly what the per-frame median of the acceleration vectors
+estimates.
+
+| | median | p90 |
+|---|---|---|
+| \|median acceleration\| per frame (THE STAGE) | 0.4845 | 1.9795 um/frame^2 |
+| per-cell \|acc - median\| (THE CELLS) | 2.0187 | 2.8265 |
+| **ratio stage/cell** | **0.240** | |
+
+**The stage is real but small -- a quarter of the per-cell residual.**
+It is not what the column is mostly measuring. 1,176 frames had the
+>=5 usable seeds needed to estimate a median at all.
+
+### 3. Does de-meaning fix anything -- the one-line fix, measured instead of assumed
+
+Single-column AUC against `poolsize`'s own labels, 14,817 labelled
+pairs, 0.6588 positive. **Below 0.5 means informative with the sign
+flipped**; 0.5 means nothing.
+
+| col | raw | de-meaned | flipped-equivalent (raw) |
+|---|---|---|---|
+| `acc_len` | 0.4968 | 0.4919 | -- |
+| `acc_cos` | 0.5136 | 0.5068 | -- |
+| `md_acc` | **0.0624** | 0.0582 | 0.9376 |
+| `md-md_acc` | 0.3013 | 0.3097 | 0.6987 |
+| `acc_hist` | 0.5217 | 0.5217 | -- |
+| for scale: `d` | 0.0319 | | 0.9681 |
+| for scale: `md` | 0.0364 | | 0.9636 |
+| for scale: `score_c` | 0.7955 | | -- |
+
+**Every de-meaned column moves by at most 0.0084, and they do not even
+agree on direction** -- `md_acc` improves, `md-md_acc` and `acc_cos` get
+worse. **The one-line fix does nothing. The line closes here, on its own
+evidence rather than on the wrong note this file used to carry.**
+
+### ⭐⭐⭐⭐ Why it never helped, which is neither missing data nor stage drift
+
+Read the scale row. `md` -- distance from the CONSTANT-VELOCITY
+prediction -- is 0.9636 flipped. `md_acc`, the same distance from the
+acceleration-corrected prediction, is **0.9376**. **Adding acceleration
+moves the prediction AWAY from the true child.** It is a strictly worse
+version of a column the ranker already has.
+
+The arithmetic says the same thing, and it is arithmetic, not a
+measurement. With `vels[t+1][ci] = (C[ci] - P[pi]) * SCALE`, the two
+predictors are
+
+```
+pred     = 2.0*x_t - 1.0*x_{t-1}                        var  5.00 * sigma^2
+pred_acc = 2.5*x_t - 2.0*x_{t-1} + 0.5*x_{t-2}          var 10.50 * sigma^2
+```
+
+under independent per-detection position noise `sigma`. **The
+acceleration term slightly more than DOUBLES the variance of the
+predictor** (2.1x, 1.45x in standard deviation). Real frame-to-frame
+acceleration would have to beat that to pay for itself, and at 2.0
+um/frame^2 median against a 10 um gate it does not. **A second-order
+extrapolator needs a smoother position estimate than single-frame
+centroids provide.**
+
+That is a general result, not a fact about this implementation: it also
+explains why `biohub-accel`'s permutation importance was +0.0000 to
++0.0017 with the indicator column present and working.
+
 ## 2026-08-28 -- ⭐⭐⭐⭐ span4: the reopening was justified and the answer is still NO. The gap-closing line is now closed on evidence.
 
 `biohub-span4`, 167 min, 5 arms × 3 domains, all 71 44b6, D187.
@@ -2930,6 +3027,15 @@ is evidence that this implementation could not compute it.**
 > global stage drift and is not subtracted anywhere; and whether the
 > backward chain from a greedy linker is right often enough for the
 > second difference to mean anything.
+>
+> **ANSWERED 2026-08-28 by `biohub-accdiag`, top entry.** Computable
+> **87.3%** of the time, so the "cannot produce three" story is dead.
+> Stage drift is real but only **0.240** of the per-cell residual, and
+> subtracting it changes every column by at most 0.0084 with no
+> consistent sign. **The actual reason: `md_acc` (0.9376 flipped AUC) is
+> a strictly WORSE version of `md` (0.9636) -- the acceleration term
+> doubles the predictor's noise variance. Closed, negative, on
+> measurement.**
 
 Note also, by 2026-08-25's standard, that -0.0019 sits inside the range
 where the holdout has inverted against the leaderboard twice. "It hurt"
