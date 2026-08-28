@@ -268,16 +268,66 @@ printed column is missing. Between BASE and `dc0.05` the surplus grows
 twice the surplus in 6bba, which is what "our detector already found
 them there" looks like.
 
-### ⭐⭐⭐⭐ The mechanism, and it is not about DeepCenter
+### ⭐⭐⭐⭐⭐ The mechanism, settled by `N_true` --- and it refutes the sparse-GT reading
 
-We are at **0.9293 on 6bba and 0.8093 on Zebrahub**. A second detector's
-extra points are real cells where our own detector is weak and false
-positives where it is strong. DeepCenter has SEEN 6bba (validation
-split) and has NEVER seen Zebrahub --- and it loses on the one it has
-seen. **So this is not leakage; it is our own ceiling.** The same
-finding as `thr5` and `wide44`, arrived at from the other side: on 6bba
-detection has no headroom left, so anything that adds nodes there is
-subtracting.
+The obvious explanation, and the one this session first reached for, is
+**sparse annotation**: 6bba labels only 9.71% of its cells, so most of
+what DeepCenter adds there would be *unannotated real cells* --- absent
+from the numerator, present in the node-count denominator, and stealing
+links from annotated cells. Zebrahub is densely annotated, so every
+recovered cell pays.
+
+**That reading is wrong, and `N_true` is what kills it.** The denominator
+is `estimated_number_of_nodes`, which `competition-brief.md` and
+`reference.md` both record as **the true TOTAL cell count, not the
+annotated count**. Unannotated real cells are already in it. So
+recovering one moves `node_ratio` toward 0 from below; it cannot push it
+above 0.
+
+Run the arithmetic on the printed rows (treating `N_true` as exact):
+
+| domain | `node_ratio` BASE | `node_ratio` `dc0.05` | added, as a share of `N_true` | of that, SURPLUS past the true count |
+|---|---|---|---|---|
+| 6bba | −0.0179 | **+0.1471** | 16.50% | **14.71% — 89% of everything it added** |
+| Zebrahub | −0.0709 | **+0.0224** | 9.33% | **2.24% — 24% of what it added** |
+
+**On 6bba at most 11% of DeepCenter's additions can be real cells; the
+other 89% overshoot the estimated total number of cells that exist.
+On Zebrahub at least 76% of them close a genuine 7.1% detection
+deficit.** Same model, same thresholds, opposite calibration --- and it
+is calibration against the IMAGES, not against the annotation density.
+
+That also explains the edge half. `edge_J` is measured only where
+annotation exists, so an FP in an unannotated region is invisible to it
+while still counting in `node_ratio`. 6bba's `edge_J` fell **2.6
+points** anyway, which means enough of the surplus landed close enough
+to annotated cells to steal their links under the capacity-2
+assignment --- and by the metric's FP rule, one matched endpoint is
+enough to make the resulting edge count against us.
+
+⚠ **Not leakage, and the direction proves it.** 6bba is DeepCenter's
+own validation split; Zebrahub it has never seen. A leak would make it
+look BETTER on 6bba. It looks worse. **The 6bba loss is real.**
+
+⚠ This treats `estimated_number_of_nodes` as accurate. It is an
+estimate. But 89% against 24% is not a margin an estimate's error
+plausibly closes.
+
+### ⚠ 6bba is the domain with standing, and that is stronger than the rule here
+
+The three-domain rule discards this for disagreeing signs, and 44b6 can
+never be recruited to break the tie --- all 71 are DeepCenter's training
+set. But the rule is not even the binding argument. **The hidden test is
+competition data** (`test/` holds 4 sample datasets and the real set is
+swapped in at rescore time), **not Zebrahub.** 6bba is the domain that
+predicts the leaderboard, and 6bba says −0.0110 to −0.0413,
+monotonically. That is not uncertainty; it is a clear negative.
+
+**So the line closes --- but not as "the model is useless."** Its
+Zebrahub `edge_J` gain of **+0.0455** is the largest single edge
+improvement anything has produced in this project. What is wrong is its
+operating point on competition images, and nothing short of retraining
+or recalibrating it changes that.
 
 ### ⭐⭐⭐⭐⭐ The two routes fail together, and that is the finding
 
@@ -295,9 +345,11 @@ cap20. dcmerge's base already IS cap20.)
 
 **Both routes lose on 6bba and win on Zebrahub. The sign is decided by
 the domain, not by the method** --- and the two methods have nothing in
-common except that they add nodes. We sit at **0.9293 on 6bba and 0.8093
-on Zebrahub**: where our detector is at its ceiling every added node is
-a false positive, and where it is weak every added node is a cell.
+common except that they add nodes. The `N_true` arithmetic above says
+why: on 6bba our node count is already within **1.8%** of the estimated
+true total, so there is almost nothing left to find and additions
+overshoot; on Zebrahub we are **7.1% short**, so additions land on cells
+that exist.
 
 **So the recovery of multi-frame dropouts is not a technique problem.**
 Two unrelated techniques, one crude and one a trained network 30x
