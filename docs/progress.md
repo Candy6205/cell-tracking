@@ -200,10 +200,13 @@ weak, which needs a test-time weakness signal nobody has proposed.**
 
 ## 2026-08-28 -- DCMERGE v2: DeepCenter as primary nodes WINS +0.0379 on Zebrahub and LOSES -0.0413 on 6bba, monotonically, in both directions
 
-**This run finished and its result was never read.** 115 min of compute,
-`bbd386f` committed, no entry. That is the exact failure this file's
-preamble warns about, and it happened while the session moved on to
-`accdiag`. Recorded now, in full.
+**The result WAS read in session; what it never got was an entry here.**
+`bbd386f` committed, the conclusion carried forward as "DeepCenter merge:
+closed" — and none of the numbers written down. A later session
+(2026-08-28) searched `docs/` for them, found nothing, and re-derived
+the whole thing from the Kaggle log. **Reading a result and recording it
+are two separate acts, and only the second one survives the session.**
+Recorded now, in full.
 
 `biohub-dcmerge` v2, 108 min, 4 arms x 2 usable domains. DeepCenter
 peaks added as PRIMARY nodes, strictly add-only: our peaks untouched, a
