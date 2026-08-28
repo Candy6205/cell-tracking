@@ -279,6 +279,32 @@ finding as `thr5` and `wide44`, arrived at from the other side: on 6bba
 detection has no headroom left, so anything that adds nodes there is
 subtracting.
 
+### ⭐⭐⭐⭐⭐ The two routes fail together, and that is the finding
+
+Put both routes on the SAME base --- the shipped configuration, `cap20`
+--- and the pattern is not about guessing versus measuring at all:
+
+| | 6bba | Zebrahub |
+|---|---|---|
+| `span2`, GUESS the position | **−0.0027** | **+0.0012** |
+| `dc0.05`, MEASURE the position | **−0.0413** | **+0.0379** |
+
+(span4 reported against the pre-`cap20` base: span2 −0.0014 / +0.0068
+and cap20 +0.0013 / +0.0056, so the differences above are span2 minus
+cap20. dcmerge's base already IS cap20.)
+
+**Both routes lose on 6bba and win on Zebrahub. The sign is decided by
+the domain, not by the method** --- and the two methods have nothing in
+common except that they add nodes. We sit at **0.9293 on 6bba and 0.8093
+on Zebrahub**: where our detector is at its ceiling every added node is
+a false positive, and where it is weak every added node is a cell.
+
+**So the recovery of multi-frame dropouts is not a technique problem.**
+Two unrelated techniques, one crude and one a trained network 30x
+stronger, produce the same sign pattern at 30x the magnitude. What
+decides the outcome is whether the detector had headroom in that domain,
+which is the same wall `thr5` and `wide44` hit from the other side.
+
 ### The pre-registered check that could NOT be read
 
 The run asked: if DeepCenter fills the holes where tracks break,
