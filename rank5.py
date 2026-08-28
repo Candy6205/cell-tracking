@@ -1,6 +1,6 @@
 """The seven post-link constants nobody has ever touched, in THREE domains.
 
-SCRIPT_VERSION 2026-08-28a-rank5
+SCRIPT_VERSION 2026-08-28f-rank5b
 
 WHAT IS BEING SWEPT. Reading `submit_ranker.py`, the 0.921 pipeline's
 post-link tail carries seven constants inherited verbatim from the public
@@ -69,7 +69,7 @@ import sys
 import time
 from collections import defaultdict
 
-SCRIPT_VERSION = "2026-08-28a-rank5"
+SCRIPT_VERSION = "2026-08-28f-rank5b"
 # v4, after the daughter-stealing diagnosis (user's): the ranker's edge
 # gain (+0.0055 adj_J) was cancelled by divisions because 1:1 Hungarian
 # steals second daughters into wrong continuations, draining the orphan
@@ -198,9 +198,14 @@ BRIDGE_STRIDE = 2
 # as a literal because NFEAT_BASE is defined ~800 lines below; the assert
 # next to that definition is what keeps the two in step.
 BRIDGE_COLS = list(range(18))
+# Tolerance for matching a seed to its graph node. NOT 1e-6: the graph
+# stores np.round(...).astype(np.int16) of the seed position. See
+# _seed_to_node.
+SEED_MATCH_VOX = 1.0
 BRIDGE_CLF = None          # set by STAGE A
 BRIDGE_P = {}              # (ge, gs) -> probability, set per dataset
 _BRIDGE_MISS = [0, 0]      # pairs looked up, pairs with no probability
+_BRIDGE_MAP = [0, 0]       # seeds seen, seeds mapped to a graph node
 GAP_VEL_COS = -1.0
 GAP_MIN_LEN = 0
 GAP_CLEAR_UM = 0.0    # REBOUND per configuration
@@ -1464,11 +1469,25 @@ def _seed_to_node(t, seeds_xyz, nodes0, by_t_nodes):
     """Map a bridge_features seed index at frame t to a graph node id.
 
     Matched BY POSITION rather than by trusting that the graph's node
-    order equals `seeds_of`'s order. They should be the same points --
-    the graph is built from those seeds -- but "should" is what anchors
-    exist to catch, and a KD-tree lookup with a 1e-6 tolerance cannot be
-    subtly wrong: either it matches exactly or the pair is dropped, and
-    dropped pairs are COUNTED.
+    order equals `seeds_of`'s order.
+
+    ⚠ v1 used a 1e-6 tolerance and missed **100% of 54,744 lookups**,
+    so every bridge was rejected and the three tau arms measured "reject
+    everything" -- returning identical numbers at 0.2, 0.5 and 0.8,
+    which is the signature of a threshold that never fires. The cause is
+    in `solve_one`:
+
+        coords = np.asarray(np.round(coords_rows), np.int16)
+
+    A graph node's xyz is the seed position ROUNDED TO AN INTEGER, while
+    `seeds_of` returns the sub-voxel refined float.
+
+    SEED_MATCH_VOX = 1.0 is safe, not merely convenient: rounding moves
+    a coordinate by at most 0.5 per axis, so at most sqrt(3)/2 = 0.87
+    voxels in Euclidean distance, while `_physical_nms` has already
+    forced 4.0 um between any two kept seeds -- 2.46 voxels in z and 9.8
+    in xy. The nearest wrong candidate is more than twice the tolerance
+    away.
     """
     ids = by_t_nodes.get(t, [])
     if not ids or len(seeds_xyz) == 0:
@@ -1477,7 +1496,7 @@ def _seed_to_node(t, seeds_xyz, nodes0, by_t_nodes):
     d, k = cKDTree(arr).query(np.asarray(seeds_xyz, float))
     out = {}
     for si in range(len(seeds_xyz)):
-        if d[si] < 1e-6:
+        if d[si] < SEED_MATCH_VOX:
             out[si] = ids[int(k[si])]
     return out
 
@@ -1505,6 +1524,8 @@ def bridge_probs(dets, T, nodes0):
         pr = BRIDGE_CLF.predict_proba(rows[:, BRIDGE_COLS])[:, 1]
         ida = _seed_to_node(t, Pp, nodes0, by_t_nodes)
         idb = _seed_to_node(t + BRIDGE_STRIDE, Cc, nodes0, by_t_nodes)
+        _BRIDGE_MAP[0] += len(Pp) + len(Cc)
+        _BRIDGE_MAP[1] += len(ida) + len(idb)
         for (i_, j_), p_ in zip(pairs, pr):
             a_, b_ = ida.get(i_), idb.get(j_)
             if a_ is not None and b_ is not None:
@@ -1915,11 +1936,18 @@ except Exception as _exc:                                  # noqa: BLE001
     traceback.print_exc()
 
 print(f"\n=== the learned gate's LOOKUP HEALTH ===", flush=True)
+print(f"  seeds seen {_BRIDGE_MAP[0]:,}, MAPPED to a graph node "
+      f"{_BRIDGE_MAP[1]:,} ({100.0 * _BRIDGE_MAP[1] / max(1, _BRIDGE_MAP[0]):.2f}%)", flush=True)
 print(f"  bridge pairs looked up {_BRIDGE_MISS[0]:,}, of which "
       f"{_BRIDGE_MISS[1]:,} had NO probability "
       f"({100.0 * _BRIDGE_MISS[1] / max(1, _BRIDGE_MISS[0]):.2f}%)",
       flush=True)
-print("  A miss means a seed did not map to a graph node within 1e-6 um. "
+print(f"  A miss means a seed did not map to a graph node within "
+      f"{SEED_MATCH_VOX} voxel. v1 used 1e-6 and missed 100% of 54,744 "
+      f"lookups, because the graph stores the seed position ROUNDED to "
+      f"int16 while seeds_of returns the sub-voxel float; the three tau "
+      f"arms then measured 'reject everything' and returned identical "
+      f"numbers at 0.2, 0.5 and 0.8. "
       "Misses are REJECTED, so a high rate would make the tau arms strict "
       "rather than selective and the comparison would be meaningless. "
       "Read this before reading the scores.", flush=True)

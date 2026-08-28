@@ -276,6 +276,99 @@ knowing before designing a run that depends on it.
 | `GAP1_GATE_UM` 9 → 12 | passes the rule, loses to `cap20` in all three |
 | the four gates of gap3 (candidate, velocity, length, clearance) | all were rationing a too-small budget, none selected quality |
 
+## 2026-08-28 -- ⭐⭐⭐⭐ THE EDGE RANKER IS NOT MARGINAL: 0.9693 AUC against the ruler's 0.8829. (The pipeline arms were void and the instrumentation said so.)
+
+`biohub-rank5`, 233 min CPU. Anchors held — `cap20` reproduced +0.0013 /
++0.0085 / +0.0056 exactly.
+
+### The user's question, answered
+
+> 这个边排序器看起来有点鸡肋，你先去试试吧，如果不行，我反而觉得这个边
+> 排序器可能有点问题
+
+A ranker was trained on **two-frame** pairs (`poolsize`'s label rule with
+one extra hop through `child_of`: positive when j matches a GT
+GRANDCHILD of i's GT node), on 116 6bba non-holdout datasets only.
+
+```
+138,734 two-frame pairs, 60.65% positive
+18-feature ranker AUC   0.9693
+distance alone   AUC    0.8829
+the ranker buys         +0.0863
+```
+
+**Column 0 is the physical distance — exactly what `_gap_close`'s
+Hungarian already sorts on.** The ranker beats it by 8.6 AUC points at
+the decision gap closing actually makes. **The fallback hypothesis is
+not triggered: the ranker is sound.**
+
+Single-column AUCs (below 0.5 means informative with the sign flipped):
+
+| col | AUC | flipped |
+|---|---|---|
+| `d` distance | 0.117 | **0.883** |
+| `md` distance from the velocity prediction | 0.129 | **0.871** |
+| `rank` among the parent's candidates | 0.132 | **0.868** |
+| `n_cand_i` | 0.160 | 0.840 |
+| `dxy` | 0.170 | 0.830 |
+| **`score_c` child detection score** | **0.757** | — |
+| `score_p` parent detection score | 0.697 | — |
+| `d-md` | 0.612 | — |
+| `t/T`, `\|v\|` | 0.508, 0.491 | ~nothing |
+
+Three geometric columns sit at ~0.87 individually and the combination
+reaches 0.969. **`score_c` at 0.757 is the strongest NON-geometric
+feature**, which is a second reason the detector line matters: a better
+detection score feeds straight into this.
+
+Probability quantiles (1/10/25/50/75/90/99%): **0.007 0.020 0.076 0.863
+0.985 0.996 0.999** — strongly bimodal, median 0.863.
+
+### The pipeline arms were VOID, and the run said so itself
+
+```
+bridge pairs looked up 54,744, of which 54,744 had NO probability (100.00%)
+```
+
+Every bridge was rejected, so `tau0.2`, `tau0.5` and `tau0.8` measured
+"reject everything", not the ranker — and they returned **identical**
+deltas (+0.0001 / −0.0004 / −0.0006) at all three thresholds, which is
+the signature of a threshold that never fires. The decomposition agrees:
+their 6bba `node_ratio` is −0.0223 against BASE's −0.0215, i.e. slightly
+FEWER nodes than the shipped configuration, which is what "no gap
+closing at all" looks like.
+
+**THE CAUSE.** `solve_one` builds the ILP's node coordinates with
+
+```python
+coords = np.asarray(np.round(coords_rows), np.int16)
+```
+
+so a graph node's xyz is the seed position **rounded to an integer**,
+while `seeds_of` returns the sub-voxel refined float. `_seed_to_node`
+matched at a 1e-6 tolerance and therefore never matched anything.
+
+**Fixed at `SEED_MATCH_VOX = 1.0`, which is safe rather than merely
+convenient**: rounding moves a coordinate by at most 0.5 per axis, so at
+most √3/2 = 0.87 voxels, while `_physical_nms` has already forced 4.0 µm
+between any two kept seeds — 2.46 voxels in z and 9.8 in xy. The nearest
+wrong candidate is more than twice the tolerance away.
+
+### The instrumentation is the finding
+
+`_BRIDGE_MISS` was added while writing the script, on the reasoning that
+*"a high miss rate would make the tau arms strict rather than selective
+and the comparison would be meaningless"*. It was 100%. Without it, three
+identical rows would have been read as "the threshold does not matter"
+and the ranker would have been wrongly convicted — **which is exactly
+the conclusion the user pre-registered as the interesting one, so the
+error would have been believed.**
+
+**Generalise it: when an arm can silently degenerate into a different
+arm, print the count that distinguishes them.** A gate that rejects
+everything, a budget that binds, a lookup that misses — each looks like
+a result and reads like one.
+
 ## 2026-08-28 -- ⭐⭐⭐⭐⭐ DeepCenter covers 69.5% of our detector's misses against our own repair pool's 20.2%, and flickers 43% less
 
 `biohub-detcmp` v3, 21 min GPU, 8 Zebrahub crops, `best.pt`.
