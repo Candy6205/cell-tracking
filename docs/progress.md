@@ -86,6 +86,7 @@ question is whether the leak cancels in the delta:
 | gap closing, the SPAN | **RE-CLOSED 2026-08-28 by `span4`**, this time at a budget that does not bind. span 2 fails the three-domain rule (6bba −0.0014), its 6bba `edge_J` equals BASE's while adding 1.4% nodes, and it costs −0.0173 of `div_J` there. The reopening was correct; the answer did not change |
 | gap closing, `GAP1_GATE_UM` 9 → 12 | **closed 2026-08-28.** Passes the rule but is below `cap20` in all three domains: 28% more bridges, slightly worse everywhere. 9.0 is right |
 | **the gap-closing BUDGET** | **SHIPPED. `GAP1_CAP_FRAC` 0.003 -> 0.02 with no gate at all: +0.0013 / +0.0085 / +0.0056 locally and **LB 0.920 -> 0.922**, ref 55817630. The only knob in this line that ever mattered** |
+| gap closing, a LEARNED gate | **closed 2026-08-28 by `rank5`.** The two-frame ranker scores 0.9693 AUC against distance-alone 0.8829, and rejecting on it still loses in all three domains, monotonically. FIVE gates now, none selecting. `_short_filter` is why: no bridge deletes the fragment WHOLE, a wrong bridge keeps its correct edges |
 | detection gate, LOOSER (0.12) | **tried.** Local +0.0055/+0.0045/+0.0121, LB 0.918 against control 0.920. Reverted |
 | detection gate, TIGHTER (0.18–0.26) | **closed 2026-08-26 by `thr5`.** Monotone loss in both independent domains; Zebrahub −0.2204 at 0.26. It deletes real cells, not marginal false positives |
 | the node-count term as an explanation | **closed 2026-08-26 by `thr5`.** Linear, constant slope, no local/hidden asymmetry |
@@ -275,6 +276,77 @@ knowing before designing a run that depends on it.
 | `GAP_SPAN` 1 → 2 | fails the rule, and destroys divisions in 6bba |
 | `GAP1_GATE_UM` 9 → 12 | passes the rule, loses to `cap20` in all three |
 | the four gates of gap3 (candidate, velocity, length, clearance) | all were rationing a too-small budget, none selected quality |
+
+## 2026-08-28 -- ⭐⭐⭐⭐⭐ FIVE GATES, INCLUDING A 0.97-AUC LEARNED ONE, ALL LOSE TO NO GATE. The gap-closing line is closed.
+
+`biohub-rank5` v2, 255 min CPU. Lookup healthy this time: **94.64% of
+seeds mapped, 0.90% of bridge pairs missing** (v1 was 100% missing).
+Anchors held — `cap20` reproduced +0.0013 / +0.0085 / +0.0056.
+
+| arm | 6bba | 44b6 | zh |
+|---|---|---|---|
+| **`cap20`** (ref 55817630, LB 0.922) | **+0.0013** | **+0.0085** | **+0.0056** |
+| `tau0.2` | +0.0011 | +0.0080 | +0.0055 |
+| `tau0.5` | +0.0012 | +0.0076 | +0.0052 |
+| `tau0.8` | +0.0007 | +0.0030 | +0.0016 |
+
+**Every threshold is below `cap20` in every domain, monotonically in how
+much it rejects.** The more the ranker refuses, the worse the result.
+
+### The complete answer to the user's question
+
+The ranker is **not** marginal — 0.9693 AUC against distance-alone's
+0.8829 at exactly the decision gap closing makes. **But using it to
+REJECT bridges loses.** Both halves are true and they are not in
+tension: the model ranks pairs well, and rejecting the low-ranked ones
+still costs.
+
+### Five gates, five losses, and now a mechanism
+
+| gate | run | verdict |
+|---|---|---|
+| candidate required | `gap4` | loses |
+| velocity cosine | `gap3` | loses |
+| fragment length | `gap3`/`gap4` | loses |
+| clearance radius | `gap3` | loses, fails the rule |
+| **learned, 0.97 AUC** | `rank5` | **loses, monotonically** |
+
+**A wrong bridge and no bridge are not symmetric, and `_short_filter` is
+why.** With no bridge the fragment falls below `SHORT_MIN` and is
+deleted **whole** — every correct edge inside it disappears with it.
+With a wrong bridge the fragment survives and **keeps all of its correct
+edges**; only the two bridge edges are false. So even a wrong bridge
+nets positive, and any gate that trades away bridges trades away more
+than it saves.
+
+**This also explains `span4`.** `span2` adds MORE bridges and still
+loses, so "more is better" is not the rule. A 2-frame bridge inserts
+**two** nodes, spans three frames, and is likelier to be wrong — its
+cost doubles while the fragment it rescues is the same. **The boundary
+is: every one-frame bridge is worth making; two-frame bridges are not.**
+
+### Instrumentation flaw, harmless here
+
+`_GAP_LOG`'s key is `(need_cand, span, gate_um, cap_frac)` and does NOT
+include `GAP_RANK_TAU`, so all four arms sharing those four values were
+summed into one row — 53,748 bridges is `cap20`'s 18,248 plus the three
+tau arms. Scores are unaffected. **Rule: every constant that
+distinguishes two arms belongs in the accounting key**, or the counts
+silently merge.
+
+### Where gap closing stands, finally
+
+| knob | verdict |
+|---|---|
+| **`GAP1_CAP_FRAC` 0.003 → 0.02** | **the win, +0.002 on the leaderboard** |
+| the candidate requirement | drop it, part of the same win |
+| `GAP_SPAN` 1 → 2 | fails the rule, destroys divisions in 6bba |
+| `GAP1_GATE_UM` 9 → 12 | passes the rule, loses to `cap20` everywhere |
+| four hand-made gates | all rationing, none selecting |
+| **a learned gate at 0.97 AUC** | **loses monotonically** |
+
+**Nothing further to try here.** The shipped `cap20` is the end of this
+line.
 
 ## 2026-08-28 -- ⭐⭐⭐⭐ THE EDGE RANKER IS NOT MARGINAL: 0.9693 AUC against the ruler's 0.8829. (The pipeline arms were void and the instrumentation said so.)
 
