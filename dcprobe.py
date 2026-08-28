@@ -32,7 +32,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 from skimage.feature import peak_local_max
 
-SCRIPT_VERSION = "2026-08-28c-dcprobe"
+SCRIPT_VERSION = "2026-08-28d-dcprobe2"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 DEVICE = "cpu"
@@ -388,46 +388,63 @@ def _dc_find_checkpoint():
     return None
 
 
-DC_CKPT = _dc_find_checkpoint()
-assert DC_CKPT is not None, (
-    "DeepCenter checkpoint not mounted. Attach "
-    "pilkwang/biohub-deepcenter-unet3d-center-prior-v1")
-_dc_ck = torch.load(DC_CKPT, map_location=DEVICE)
-# v1 GUESSED the normalisation from the public notebook's fallback
-# defaults and got 0.4 detections per frame with a logit overflow. Read
-# what is actually recorded before assuming anything.
-print("  checkpoint keys:", flush=True)
-for _k, _v in (_dc_ck.items() if isinstance(_dc_ck, dict) else []):
-    if hasattr(_v, "shape") or (isinstance(_v, dict) and len(_v) > 20):
-        print(f"    {_k}: <{type(_v).__name__}"
-              f"{' len ' + str(len(_v)) if isinstance(_v, dict) else ''}>",
-              flush=True)
-    else:
-        print(f"    {_k}: {str(_v)[:200]}", flush=True)
-for _mf in sorted(DC_CKPT.parent.parent.parent.rglob("*.json"))[:8]:
-    try:
-        _txt = _mf.read_text()[:1200]
-    except Exception:                                          # noqa: BLE001
-        continue
-    if any(w in _txt for w in ("norm", "pct", "clip", "pool", "percentile")):
-        print(f"  --- {_mf.name} ---", flush=True)
-        print("   ", _txt.replace(chr(10), " ")[:900], flush=True)
-assert isinstance(_dc_ck, dict) and "model_state" in _dc_ck, (
-    f"{DC_CKPT} has no 'model_state' key; keys are "
-    f"{list(_dc_ck)[:8] if isinstance(_dc_ck, dict) else type(_dc_ck)}")
-DC = _DCDeepCenterUNet3D(base_channels=int(_dc_ck.get("base_channels", 24)))
-DC.load_state_dict(_dc_ck["model_state"])
-DC = DC.to(DEVICE).eval()
-print(f"DeepCenter loaded from {DC_CKPT}", flush=True)
-for _k in ("epoch", "val_loss", "val_recall", "best_metric"):
-    if _k in _dc_ck:
-        print(f"  {_k}: {_dc_ck[_k]}", flush=True)
+def _dc_all_checkpoints():
+    """Every DeepCenter checkpoint, best.pt FIRST.
+
+    v1 preferred checkpoint_last.pt on the argument that its higher
+    positive-unlabeled validation loss meant it found more unannotated
+    cells. It found nothing at all, on its own validation split. The
+    recorded `best_score` matches roughly epoch 2, so best.pt is what the
+    training actually selected, and reference.md notes the public gate
+    sweep was calibrated on it.
+    """
+    out, seen = [], set()
+    for nm in ("best.pt", "checkpoint_last.pt", "last.pt"):
+        for f in sorted(pathlib.Path("/kaggle/input").glob(
+                "**/full_frame_center/**/" + nm)):
+            if f not in seen:
+                seen.add(f)
+                out.append(f)
+    return out
 
 
-# The candidate normalisations. v1 bet the run on the first one.
-# `ours` is our own pool_norm, included because if DeepCenter was trained
-# on the official pipeline's preprocessing rather than its own, that is
-# the one that will work.
+def _dc_load(ckpt):
+    ck = torch.load(ckpt, map_location=DEVICE)
+    assert isinstance(ck, dict) and "model_state" in ck, (
+        str(ckpt) + " has no 'model_state'")
+    cfg = ck.get("config", {}) or {}
+    m = _DCDeepCenterUNet3D(base_channels=int(cfg.get("base_channels", 24)))
+    m.load_state_dict(ck["model_state"])
+    m = m.to(DEVICE).eval()
+    # SHOW the weights are real rather than assuming it. load_state_dict
+    # is strict and did not raise, but that has never been demonstrated
+    # to produce a working model here. A head bias near -5 is normal for
+    # a task with very few positive voxels; -60 would explain the dead
+    # heatmap by itself.
+    sd = ck["model_state"]
+    hb = sd.get("head.bias")
+    hw = sd.get("head.weight")
+    tot = sum(float(v.float().abs().mean()) for v in sd.values()
+              if hasattr(v, "float") and v.numel())
+    hb_s = ("%.4f" % float(hb[0])) if hb is not None else "n/a"
+    hw_s = ("%.5f" % float(hw.float().abs().mean())) if hw is not None \
+        else "n/a"
+    print("  %s: epoch %s, best_score %s"
+          % (ckpt.name, ck.get("epoch"), ck.get("best_score")), flush=True)
+    print("    head.bias %s   head.weight |mean| %s   "
+          "sum of per-tensor |mean| %.3f" % (hb_s, hw_s, tot), flush=True)
+    return m
+
+
+DC_CKPTS = _dc_all_checkpoints()
+assert DC_CKPTS, ("DeepCenter checkpoints not mounted. Attach "
+                  "pilkwang/biohub-deepcenter-unet3d-center-prior-v1")
+print(chr(10) + "DeepCenter checkpoints: "
+      + ", ".join(c.name for c in DC_CKPTS), flush=True)
+DC_MODELS = {c.name: _dc_load(c) for c in DC_CKPTS}
+DC = DC_MODELS[DC_CKPTS[0].name]      # dc_heatmap reads this module global
+
+
 DC_NORMS = {
     "pct50_995": lambda v: _dc_normalize(v, 50.0, 99.5, -0.5, 6.0),
     "pct1_999": lambda v: _dc_normalize(v, 1.0, 99.9, -0.5, 6.0),
@@ -436,8 +453,6 @@ DC_NORMS = {
 }
 
 
-# The block that used to choose this was cut away for the probe, and
-# dc_detect still names it, so bind the shipped default.
 _DC_NORM = "pct50_995"
 
 
@@ -515,6 +530,21 @@ print("  ⚠ v2 disproved the normalisation hypothesis: four different "
 
 
 def _stats(tag, vol):
+    global DC
+    _oc, osc = detect(vol)
+    ours = int((np.asarray(osc) >= UNET_THRESH).sum())
+    for _nm, _m in DC_MODELS.items():
+        DC = _m
+        h, st = dc_heatmap(vol, "pct50_995", flips=False)
+        c, _sc = _peaks_from(h, vol)
+        print("  %-24s %-19s logit %8.2f..%-8.2f h_max %7.4f  "
+              "DC peaks %6d  OURS %6d"
+              % (tag, _nm, st["lg_lo"], st["lg_hi"], st["h_hi"],
+                 len(c), ours), flush=True)
+    return None
+
+
+def _stats_dead(tag, vol):
     h, st = dc_heatmap(vol, "pct50_995", flips=False)
     c, sc = _peaks_from(h, vol)
     oc, osc = detect(vol)
