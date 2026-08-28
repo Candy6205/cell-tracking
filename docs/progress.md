@@ -276,6 +276,118 @@ knowing before designing a run that depends on it.
 | `GAP1_GATE_UM` 9 → 12 | passes the rule, loses to `cap20` in all three |
 | the four gates of gap3 (candidate, velocity, length, clearance) | all were rationing a too-small budget, none selected quality |
 
+## 2026-08-28 -- ⭐⭐⭐⭐⭐ DeepCenter covers 69.5% of our detector's misses against our own repair pool's 20.2%, and flickers 43% less
+
+`biohub-detcmp` v3, 21 min GPU, 8 Zebrahub crops, `best.pt`.
+
+**The venue was the user's call** — *"在zebrahub上面比就可以了，主打一个
+谁都没看过"* — and it was right for a reason we only learned afterwards:
+DeepCenter finds 0–1 cells on 6bba with the wrong checkpoint, so had we
+tested only there, "it does not work" and "6bba is unfair to it" would
+have been inseparable. A neutral venue kept those apart.
+
+### Coverage — the number this run existed for
+
+| DeepCenter | covers OUR misses | we cover ITS misses |
+|---|---|---|
+| **@ 0.05** | **69.5%** | 49.4% |
+| @ 0.10 | 64.3% | 51.2% |
+| @ 0.15 | 58.1% | 57.9% |
+| @ 0.30 | 28.6% | 84.2% |
+
+**Our own sub-threshold band [0.05, 0.15) covers 20.2%** (`flicker.py`,
+same denominator). DeepCenter covers **69.5%** — 3.4×, and the
+pre-registered bar was "much above 20.2%".
+
+**And it is ASYMMETRIC**: it covers 69.5% of our misses while we cover
+only 49.4% of its. The two detectors fail on genuinely different cells,
+which is the condition this run pre-registered as the case for a union.
+
+### Recall and flicker
+
+| | recall | kept/frame |
+|---|---|---|
+| OURS @ 0.15 | 0.9642 | 272.7 |
+| DeepCenter @ 0.15 | 0.9644 | 281.3 |
+| **DeepCenter @ 0.05** | **0.9784** | 296.4 |
+
+At the same threshold they are level; at 0.05 DeepCenter takes **+1.42
+points of recall** for **+8.7% output**.
+
+| | always | intermittent | never | gap=1 | gap≥2 |
+|---|---|---|---|---|---|
+| OURS @ 0.15 | 67.0% | **32.4%** | 0.6% | 2,660 | **1,465** |
+| DeepCenter @ 0.05 | **76.5%** | **23.2%** | 0.3% | 1,889 | **835** |
+
+**43% fewer long dropouts.** That is the population `_gap_close` exists
+to patch and cannot reach beyond one frame.
+
+### ⚠ CORRECTION: DeepCenter is NOT a temporal model
+
+I told the user a temporal model would be the tool for flicker and that
+this was DeepCenter's likely mechanism. **Wrong** — I conflated it with
+the separate `biohub-temporal-unet3d-seed314159-v1` dataset.
+`_DCDeepCenterUNet3D` takes a single volume, exactly as ours does. So
+the flicker advantage has **no temporal explanation**; it is simply a
+differently-biased per-frame detector. The measurement stands, the
+mechanism I offered for it does not.
+
+### What must be carried into any conclusion
+
+1. **One domain, 8 crops. This does not satisfy the three-domain rule.**
+2. Zebrahub is the only fair venue for DeepCenter (trained on all 71
+   44b6, model-selected on all 128 6bba) and also the domain furthest
+   from the hidden test.
+3. The public solution has this mechanism and **disables** it — as a
+   VETO, the opposite direction from supplying candidates.
+4. **Recall is not the metric.** More detections can cost adj_J through
+   the node-count term and through wrong links. Nothing here measures
+   adj_J.
+
+### The three runs it took to get here, and why
+
+| run | result | cause |
+|---|---|---|
+| `detcmp` v1 | DeepCenter: 0.4 peaks/frame vs our 272.7, logit overflow | wrong checkpoint |
+| `detcmp` v2 | four normalisations, **byte-identical logits** | normalisation was never the variable |
+| `dcprobe` | 0–1 peaks on **6bba**, DeepCenter's own val split | wrong checkpoint, isolated |
+| `dcprobe` v2 | `best.pt` 114–654 peaks, `checkpoint_last.pt` 0–1 | **answered** |
+
+Three things worth keeping:
+
+- **`GroupNorm` after a bias-free convolution erases any affine input
+  transform.** v2's four normalisations returned identical logits to
+  three decimals. That one row disproved the hypothesis faster than any
+  reasoning could, and it was only visible because the run printed input
+  and logit RANGES rather than only a recall number.
+- **"Flip averaging made it worse" is a broken-wiring signal, not a
+  weak-model signal.** v1 went 0.0017 → 0.0000 under 4-view averaging. A
+  working model gets steadier; one whose views disagree gets cancelled.
+  That was visible in v1 and should have stopped the read there.
+- **The DeepCenter arm never had an anchor.** Our arm reproduced
+  `flicker3`'s Zebrahub figures exactly (32.4% intermittent, 0.6%
+  never), which is the only reason the fault was localisable at all.
+  `working-agreement.md`'s "Always anchor" was applied to the inherited
+  arms and not to the new one.
+
+**And the checkpoint error came out of our own notes.** `reference.md`
+said *"Do not read the 7x val_loss as 'got worse' — the loss is
+positive-unlabeled BCE that punishes finding unannotated cells."* That
+is a warning **not to conclude** "worse". It was used as a positive
+argument that the epoch-500 checkpoint therefore finds MORE unannotated
+cells — which is what a repair pool wants — and that picked a checkpoint
+whose weights have grown 2.5× and whose largest logit anywhere in a 64³
+volume is −0.34. **A note saying "do not infer X from this" is not
+evidence for not-X.** `reference.md` now carries the measurement.
+
+### The next step, and its price
+
+Pipe DeepCenter into `_gap_close`'s repair pool as a second candidate
+source — ADD-ONLY, primary detections untouched, so "worse in other
+respects" cannot hurt. That needs DeepCenter detections cached for the
+91 evaluation datasets (12 6bba + 71 44b6 + 8 Zebrahub), roughly **1.8 h
+of GPU** at the measured ~0.7 s/frame, then the usual CPU sweep.
+
 ## 2026-08-28 -- ⭐⭐⭐⭐⭐ 0.922. FIRST SUBMISSION EVER TO BEAT 0.921, and the leaderboard turns out not to mean what we thought
 
 **Ref 55817630 = 0.922.** Control ref 55772253 = 0.920, so **+0.002**.
