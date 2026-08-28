@@ -92,14 +92,29 @@ question is whether the leak cancels in the delta:
 | the node-count term as an explanation | **closed 2026-08-26 by `thr5`.** Linear, constant slope, no local/hidden asymmetry |
 | morphology | closed 2026-08-25 (`MASS_ratio` median 0.994) |
 
-**The one thing OPENED and not yet acted on**: `flicker.py` found that
-**no annotated cell is permanently invisible** — 0.0% of 379 GT tracks
-are never detected, 28.8% are intermittent, and **48% of dropouts are
-longer than the one frame `_gap_close` can bridge**. `gap2` then showed
-the obvious repairs do not work, because at 79.8% of missed frames the
-heatmap response *vanishes* rather than dipping below threshold. So the
-losses are real, identified, and currently unaddressed by anything that
-has been tried.
+**The flicker finding, and BOTH routes out of it, now closed.**
+`flicker.py` found that **no annotated cell is permanently invisible**
+— 0.0% of 379 GT tracks are never detected, 28.8% are intermittent, and
+**48% of dropouts are longer than the one frame `_gap_close` can
+bridge**. There are exactly two ways to recover a multi-frame dropout,
+and **both have been run**:
+
+| route | what it does | run | verdict |
+|---|---|---|---|
+| **GUESS the position** | interpolate 2 nodes across the gap | `span4` | 6bba **−0.0014**; its `edge_J` equals BASE's while adding 1.4% nodes, and `div_J` **−0.0173** — a longer bridge eats real daughters. **Closed** |
+| **MEASURE the position** | a second detector supplies the missing peak | `dcmerge` v2 | zh **+0.0379**, 6bba **−0.0413**, monotone in both. **Closed as an unconditional add** |
+
+⚠ **A correction, 2026-08-28.** This block previously said the losses
+were "currently unaddressed by anything that has been tried", citing
+only `gap2`. That was wrong: **span 2 IS the repair for the >1-frame
+dropouts and it was measured and rejected**, and `dcmerge` then measured
+the other route. What `gap2` adds is only why a cheaper fix is
+unavailable — at 79.8% of missed frames the heatmap response *vanishes*
+rather than dipping below threshold, so no threshold recovers it.
+
+**The losses are real and identified. What is left open is narrow: a
+CONDITIONAL foreign detection, admitted only where our own detector is
+weak, which needs a test-time weakness signal nobody has proposed.**
 
 ### Read these first
 
@@ -182,6 +197,106 @@ has been tried.
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-08-28 -- DCMERGE v2: DeepCenter as primary nodes WINS +0.0379 on Zebrahub and LOSES -0.0413 on 6bba, monotonically, in both directions
+
+**This run finished and its result was never read.** 115 min of compute,
+`bbd386f` committed, no entry. That is the exact failure this file's
+preamble warns about, and it happened while the session moved on to
+`accdiag`. Recorded now, in full.
+
+`biohub-dcmerge` v2, 108 min, 4 arms x 2 usable domains. DeepCenter
+peaks added as PRIMARY nodes, strictly add-only: our peaks untouched, a
+DeepCenter peak admitted only when further than `DC_MERGE_UM` from every
+one of ours, scored at exactly `UNET_THRESH` so it lands primary without
+entering the repair pool.
+
+**The anchor held.** BASE reproduces `span4`'s `cap20` row exactly ---
+`edge_J` 0.9275, `node_ratio` -0.0179, `adj_J` 0.9293 against span4's
+0.9279 + 0.0013 = 0.9292. (The header's "BASE must give adj_J 0.9279" is
+stale text describing the PRE-`cap20` base; this harness's BASE is the
+shipped configuration. v1's broken BASE gave 0.8897 with `node_ratio`
++0.1336, so the difference is not subtle.)
+
+### The result
+
+| arm | 6bba `adj_J` | zh `adj_J` | verdict |
+|---|---|---|---|
+| `dc0.30` | **-0.0110** | **+0.0221** | signs disagree |
+| `dc0.15` | **-0.0315** | **+0.0373** | signs disagree |
+| `dc0.05` | **-0.0413** | **+0.0379** | signs disagree |
+
+**Monotone in the threshold in BOTH domains, in OPPOSITE directions.**
+Six points, perfectly ordered. This is not noise the three-domain rule
+is catching --- it is a real effect with opposite sign in two domains.
+
+⚠ **44b6 is nan and always will be.** All 71 are DeepCenter's training
+set, so **this change can never satisfy the three-domain rule.** Two
+domains is the ceiling for anything built on this model.
+
+### The decomposition, which says WHY
+
+| 6bba | `edge_J` | `node_ratio` | `adj_J` | `div_J` |
+|---|---|---|---|---|
+| BASE | 0.9275 | -0.0179 | 0.9293 | 0.1316 |
+| `dc0.30` | 0.9197 | +0.0169 | 0.9183 | 0.1282 |
+| `dc0.15` | 0.9048 | +0.0773 | 0.8978 | 0.1026 |
+| `dc0.05` | 0.9011 | +0.1471 | 0.8880 | 0.1176 |
+
+| zh | `edge_J` | `node_ratio` (derived) | `adj_J` | `div_J` |
+|---|---|---|---|---|
+| BASE | 0.8036 | -0.0709 | 0.8093 | 0.0230 |
+| `dc0.30` | 0.8279 | -0.0423 | 0.8314 | 0.0333 |
+| `dc0.15` | 0.8463 | -0.0047 | 0.8467 | 0.0369 |
+| `dc0.05` | 0.8491 | +0.0224 | 0.8472 | 0.0381 |
+
+**In 6bba `edge_J` itself falls 2.6 points.** This is not the node-count
+term punishing over-detection --- the EDGES get worse, so the added
+points are actively breaking correct links, presumably by competing in
+the capacity-2 assignment. **In Zebrahub `edge_J` RISES 4.6 points**,
+and `div_J` rises +0.0151 on top.
+
+⚠ The zh `node_ratio` column prints `nan` --- that domain's rows carry no
+`estimated_number_of_nodes`, the instrumentation gap `span4` also hit.
+The values above are DERIVED from `adj_J / edge_J = 1 - 0.1 * ratio`,
+so the official metric does apply the node penalty there; only our own
+printed column is missing. Between BASE and `dc0.05` the surplus grows
+**+0.165 in 6bba against +0.093 in Zebrahub** --- DeepCenter adds nearly
+twice the surplus in 6bba, which is what "our detector already found
+them there" looks like.
+
+### ⭐⭐⭐⭐ The mechanism, and it is not about DeepCenter
+
+We are at **0.9293 on 6bba and 0.8093 on Zebrahub**. A second detector's
+extra points are real cells where our own detector is weak and false
+positives where it is strong. DeepCenter has SEEN 6bba (validation
+split) and has NEVER seen Zebrahub --- and it loses on the one it has
+seen. **So this is not leakage; it is our own ceiling.** The same
+finding as `thr5` and `wide44`, arrived at from the other side: on 6bba
+detection has no headroom left, so anything that adds nodes there is
+subtracting.
+
+### The pre-registered check that could NOT be read
+
+The run asked: if DeepCenter fills the holes where tracks break,
+`_gap_close` has less to do and the bridge count FALLS. **The bridge
+table printed one row --- BASE's 6,587 --- and no DC arm.** The check is
+unanswerable from this log. If the question is reopened, that table has
+to print per-arm.
+
+### What this closes, and what it does not
+
+**Closed: DeepCenter as an unconditional add.** It cannot pass the rule
+by construction, and it loses on the one independent domain where our
+detector is strong.
+
+**NOT closed, and this is the honest residual: a CONDITIONAL add.** The
+effect is monotone and enormous where our detector is weak. A rule that
+admits foreign detections only where our own detector is weak would take
+the Zebrahub gain and skip the 6bba loss --- but it needs a
+weakness signal computable at test time, without labels, and no such
+signal has been proposed, let alone measured. **Nothing about this is
+submittable today.**
 
 ## 2026-08-28 -- ACCELERATION IS COMPUTABLE 87.3% OF THE TIME, AND IT STILL DOES NOT HELP. The line closes on measurement, and progress.md's own account of it was wrong twice.
 
