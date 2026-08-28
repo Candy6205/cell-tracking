@@ -231,9 +231,29 @@ split, and its own traps: `kaggle-toolchain.md`.
   `6bba`-only for that reason.
 - DeepCenter ships `best.pt` (epoch 2) and `checkpoint_last.pt` (epoch 500);
   the gate sweep was calibrated on `best.pt`, the 0.916 notebook loads
-  `checkpoint_last.pt`. No detection-level comparison exists between them.
-  Do not read the 7x val_loss as "got worse" — the loss is
-  positive-unlabeled BCE that punishes finding unannotated cells.
+  `checkpoint_last.pt`. ~~No detection-level comparison exists between
+  them. Do not read the 7x val_loss as "got worse" — the loss is
+  positive-unlabeled BCE that punishes finding unannotated cells.~~
+  **MEASURED 2026-08-28 by `biohub-dcprobe`. USE `best.pt`.
+  `checkpoint_last.pt` IS DEAD:**
+
+  | | head bias | head weight \|mean\| | Σ per-tensor \|mean\| | peaks/frame |
+  |---|---|---|---|---|
+  | `best.pt` (ep 2) | −0.325 | 0.305 | **15.9** | **114 – 654** |
+  | `checkpoint_last.pt` (ep 500) | −0.585 | 0.739 | **39.9** | **0 – 1** |
+
+  Its largest logit anywhere in a 64³ volume is −0.34, i.e. "no cell
+  anywhere", and its weights have grown 2.5×. That is divergence, on
+  6bba, which is DeepCenter's own validation split. Both checkpoints
+  record the same `best_score` (−0.04500306, roughly epoch 2), so
+  training never improved after epoch 2 and ran on to 500.
+
+  ⚠ **The struck-through sentence above caused this.** It is a warning
+  *not to conclude* "worse" from that loss. It was read as a positive
+  argument that the epoch-500 checkpoint finds MORE unannotated cells —
+  which is what a repair pool wants — and that reasoning picked the dead
+  checkpoint and cost three runs and ~70 min of GPU. **A note saying
+  "do not infer X from this" is not evidence for not-X.**
 - The primary U-Net-transformer's split is unknown (`split_0`
   checkpoint carries no file list). See `holdout-split.md`.
 

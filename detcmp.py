@@ -32,7 +32,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 from skimage.feature import peak_local_max
 
-SCRIPT_VERSION = "2026-08-28b-detcmp2"
+SCRIPT_VERSION = "2026-08-28e-detcmp3"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 DEVICE = "cpu"
@@ -369,18 +369,27 @@ def _dc_normalize(volume, lo_pct=50.0, hi_pct=99.5,
 
 
 def _dc_find_checkpoint():
-    """checkpoint_last.pt (epoch 500) is preferred over best.pt (epoch 2).
+    """best.pt (epoch 2). MEASURED, after two runs picked wrong.
 
-    reference.md records that the epoch-500 checkpoint has SEVEN TIMES
-    the validation loss and warns not to read that as "got worse": the
-    loss is positive-unlabeled BCE, so it PUNISHES the model for finding
-    cells that were never annotated. A checkpoint that scores worse on
-    that loss is one that finds more unannotated cells -- which is
-    exactly what a repair pool wants. This run is not looking for a
-    better primary detector, it is looking for coverage of our misses.
+    v1 and v2 preferred checkpoint_last.pt on this argument: reference.md
+    records its 7x validation loss and warns not to read that as "got
+    worse", because the loss is positive-unlabeled BCE that punishes
+    finding unannotated cells -- so the "worse" checkpoint should find
+    MORE, which is what a repair pool wants.
+
+    **That is a warning not to conclude "worse", not evidence for
+    "better".** biohub-dcprobe measured it: checkpoint_last.pt finds 0-1
+    peaks per frame with its largest logit anywhere at -0.34 and weights
+    2.5x larger -- it has diverged. best.pt finds 114-654, in the same
+    regime as ours.
     """
-    pats = ["**/full_frame_center/**/checkpoint_last.pt",
-            "**/full_frame_center/**/best.pt",
+    # best.pt FIRST. biohub-dcprobe measured both: best.pt gives
+    # 114-654 peaks per frame against our 75-730, and
+    # checkpoint_last.pt gives 0-1 with its largest logit anywhere at
+    # -0.34 and its weights 2.5x larger. The epoch-500 checkpoint has
+    # diverged; both record the same best_score, from roughly epoch 2.
+    pats = ["**/full_frame_center/**/best.pt",
+            "**/full_frame_center/**/checkpoint_last.pt",
             "**/biohub-deepcenter-unet3d-center-prior-v1/**/*.pt"]
     for p in pats:
         for f in sorted(pathlib.Path("/kaggle/input").glob(p)):
