@@ -206,6 +206,46 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-30 -- ⭐⭐⭐⭐ fuserows + judge audit: THE EVIDENCE JUDGE LEARNS +0.0018 OVER A FIXED WEIGHTED AVERAGE. The user's design, executed and measured to its edge; no pipeline spend.
+
+`biohub-fuserows` (28.3 min T4) collected 381,405 evidence rows -- union
+candidates of the four heatmaps, 7 response-pattern features (brightness
+deliberately excluded from features), 6,710 competition-GT positives
+from 36 pool datasets (18+18, seed 20260830), 374,695 zh rows from 33
+non-eval crops -- and trained two negative variants. A local CPU audit
+(judge_audit.py on judge_rows.npz) then put every variant and every
+no-learning baseline on the SAME held-out test set (every second zh
+crop, all rows, 223,746 of which 90,161 positive):
+
+| scorer | held-out AUC |
+|---|---|
+| mean3 (shipped) | 0.7380 |
+| hd alone (ep05) | 0.7466 |
+| F4 / W1101 / DCheavy fixed blends | 0.7557 / 0.7632 / **0.7633** |
+| **judge_all (trained)** | **0.7651** |
+| judge_dim_only | 0.7536 |
+| judge_dim+silent | 0.7002, degenerate (comp-pos q10 = 1.0) |
+
+Three findings:
+
+1. **fuserows' judge_filtered AUC 0.9956 was CIRCULAR** -- its test
+   negatives were selected by the model's own input features
+   (ep05-silent + dim). On the honest test it reads 0.7002 and its
+   score distribution is a point mass (uncalibratable). Filtering
+   negatives by features makes the problem trivial and the scorer
+   useless -- a trap now on record.
+2. **The trained judge clears the best FIXED blend by +0.0018** --
+   noise. The joint pattern of the four responses is exhausted, to
+   GBM-visible precision, by a weighted average. Since the fixed
+   blends themselves just lost the pipeline test (fusescore), no
+   variant meets the pre-registered bar for spending fusecache2 +
+   fusescore2. Stopped here, ~0.5 h GPU total for the whole question.
+3. What the direction still owns: only POINT responses were asked --
+   per-map local shape, inter-map peak offsets, and raw-intensity
+   context were never features; the negative-label problem is now
+   precisely priced (zh gap 2.5-7%, each filter's cost measured);
+   judge_rows.npz allows zero-GPU retests of any future feature idea.
+
 ## 2026-08-30 -- ⭐⭐⭐⭐ zhcomplete: ZEBRAHUB IS NOT FULLY LABELED. Gap ~2.5% (bounded above by ~7%), and it is whole-track misses, not flicker. The user's challenge, answered with numbers.
 
 `biohub-zhcomplete` v1, CPU, 0.7 min. Two label-free measurements:
