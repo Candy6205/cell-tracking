@@ -206,6 +206,41 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-29 -- ⭐⭐⭐⭐ divcurve: CROP COUNT IS NOT THE CONSTRAINT. The curve saturates by ~30 crops and the full set sits below the 30-crop draws; the extraction line closes for the price of one CPU kernel.
+
+`biohub-divcurve` v1, CPU. div-train v3's protocol verbatim (same
+triples, 25 features, MATCH_UM 5.0, same GBM), the mixture sweep
+replaced by a crop-count learning curve. Eval set: 33,587 competition
+6bba triples, **83 positives** -- AUC noise at this n is ~±0.02.
+
+| crops | seeds' AUC on held-out 6bba | mean |
+|---|---|---|
+| 10 | 0.8029 / 0.7578 / 0.8215 | 0.794 |
+| 20 | 0.8075 / 0.8100 / 0.8249 | 0.814 |
+| 30 | 0.8326 / 0.8470 / 0.8292 | **0.836** |
+| 39 (all with divisions) | 0.8201 | 0.820 |
+
+10 -> 30 rises +0.042 (ranges barely overlap), but **the full 39-crop
+set lands BELOW all three 30-crop draws**. The marginal crop at the top
+end is worth zero or less; with Zebrahub labels machine-generated (~10%
+on near-background), late-added crops plausibly carry label noise.
+Extrapolating to 3x the crops is NOT supported. **Do not spend GPU on
+extraction; the division model's constraint is the model / features /
+label quality, which is the pixel-route territory that was PARKED.**
+
+### ⚠ The anchor did not reproduce, and CANNOT: div_train's thinning is hash-salted
+
+Full-set AUC read 0.8201 against div-train v3's recorded 0.8083. The
+cause is in div_train.py itself: negative thinning seeds
+`np.random.default_rng(hash(name) % 2**31)`, and Python salts str
+hashes PER PROCESS. **v3's 0.8083 was one draw of a stochastic
+thinning and was never exactly reproducible.** Within one run every
+arm shares one triple set, so the curve above is internally clean;
+across runs, zh-side AUCs carry ~±0.01-0.02 of thinning noise on top
+of eval noise. Any future assembly from div_train.py must replace
+`hash(name)` with a stable hash (e.g. zlib.crc32 of the encoded name)
+before its numbers can anchor anything.
+
 ## 2026-08-29 -- ⭐⭐⭐⭐⭐ dcpool: THE MECHANISM FIRED AND THE SCORE DID NOT MOVE. Bridge positions never mattered, and the whole DeepCenter line closes on evidence at every branch.
 
 `biohub-dcpool` v1, CPU. Epoch-5 DeepCenter points fed ONLY into the
