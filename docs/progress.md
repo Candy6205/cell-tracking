@@ -206,6 +206,52 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-29 -- ⭐⭐⭐⭐⭐ detfuse2: THE FOURTH HEATMAP WORKS ON THE HONEST DENOMINATOR. +0.0155 F1 with recall AND precision up AND fewer detections -- the first detection change to satisfy the no-surplus criterion.
+
+`biohub-detfuse2` v1, 13.8 min T4. ep05 DeepCenter blended as a fourth
+heatmap BEFORE peak finding (dcmerge/dcpool used points AFTER; both
+closed). Anchors digit-exact (zh FULL3 0.7774@7um / 0.7539@5um, W110h
+0.7816).
+
+### zh, dense GT, 101,615 points, 7 um, own gates
+
+| arm (b0,b1,b2,dc) | dets/fr | recall | prec | F1* |
+|---|---|---|---|---|
+| FULL3 (1,1,1,0) shipped | 260.9 | 0.7979 | 0.7579 | 0.7774 |
+| W110h (1,1,0.5,0) | 273.3 | 0.8217 | 0.7453 | 0.7816 |
+| F4 (1,1,1,1) | 257.7 | 0.8060 | 0.7752 | 0.7903 |
+| W1101 (1,1,0.5,1) | 263.2 | 0.8159 | 0.7682 | 0.7913 |
+| **DCheavy (1,1,0.5,2)** | **257.7** | 0.8087 | **0.7778** | **0.7929** |
+| DC solo (ep05) | 246.4 | 0.7856 | 0.7902 | 0.7879 |
+
+- **DCheavy: +0.0155 F1 over the shipped detector with FEWER
+  detections per frame** -- the pre-registered "no surplus" criterion
+  is met; this is not dcmerge by another road. (It was written in as
+  the wrong-direction control. It won.)
+- **ep05 SOLO beats the whole three-branch xl ensemble on dense GT**
+  (0.7879 vs 0.7774).
+- Cold-miss rescue (edgediag's fat bucket): of FULL3's 15,774 zh
+  misses, ep05 responds >= 0.15 near **89.9%** (mean3 82.0%, either
+  93.5%).
+- (W110hh and W2211 printed identical rows -- they are the same
+  normalised weights; a harmless arm-design slip that doubles as a
+  determinism check.)
+
+### The competition-side section FAILED to inform, and why
+
+Sampled frames left 8 (6bba) / 4 (44b6) cold misses -- no n. Sparse-GT
+"own best gate" lands at 0.40 because the F1 is precision-dominated by
+the annotated-only denominator; those recall columns are not readable.
+Competition-domain judgment passes to the pipeline test, as it should.
+
+### Next (pre-registered): the pipeline test
+
+Cache blended detections (F4 / W1101 / DCheavy computed from one
+shared 4-heatmap pass) for the 32 eval datasets (~1.5-2 h GPU), then a
+dcpool-style three-domain adj_J run (CPU), BASE anchored on the
+existing caches at 0.9293. Ranker FROZEN per thr5/dcmerge precedent --
+the submission would not retrain it either.
+
 ## 2026-08-29 -- ⭐⭐⭐⭐⭐ edgediag: THE LOSS IS DETECTION COLD-MISSES, 8x EVERYTHING THE LINKER LOSES. The first full attribution since the classical pipeline.
 
 `biohub-edgediag` v1, CPU, 49.7 min. Shipped config (cap20, SHORT_MIN
