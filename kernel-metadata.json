@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-dccache2",
-  "title": "Biohub dccache2",
-  "code_file": "dccache2.py",
+  "id": "faustine649/biohub-dccache3",
+  "title": "Biohub dccache3",
+  "code_file": "dccache3.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -14,8 +14,10 @@
   ],
   "kernel_sources": [
     "faustine649/biohub-cache-train",
+    "faustine649/biohub-edge-ranker",
     "faustine649/biohub-zh-detect",
-    "faustine649/biohub-zebrahub-extract"
+    "faustine649/biohub-zebrahub-extract",
+    "faustine649/biohub-dccache2"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"

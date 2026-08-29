@@ -198,6 +198,41 @@ weak, which needs a test-time weakness signal nobody has proposed.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-29 -- ⭐⭐⭐⭐ dccache2: the retrain FIXED THE EVALUATION AND LOST THE VALUE. The epoch-12 model is weaker than xl in all three domains and its zh transfer collapsed.
+
+`biohub-dccache2` v1, 14.5 min T4. Retrained DeepCenter (epoch 12),
+greedy 1:1 at 7.0 um, our post-processing throughout:
+
+| domain | GT n | DC@.05 | DC@.15 | xl@.15 | DC covers xl-miss | xl covers DC-miss |
+|---|---|---|---|---|---|---|
+| 6bba | 10,699 | 0.9420 | 0.8984 | — (xl caches not attached, see below) | — | — |
+| 44b6 | 2,947 | 0.8751 | 0.7686 | **0.9508** | 0.607 (n=145) | 0.952 (n=682) |
+| zh | 227,966 | **0.5293** | 0.3499 | 0.8650 | **0.1875** (n=30,768) | 0.840 |
+
+⚠ denominators: 6bba/44b6 over ANNOTATED cells, zh over all cells.
+
+**Against the published DeepCenter's zh numbers (dccache/detcmp: recall
+0.9784@0.05, covering 69.5% of xl misses), the retrained optimum is a
+collapse: 0.5293 and 18.8%.** In its own training domains it is merely
+mediocre — below xl on 44b6 (0.875 vs 0.951) and below xl's recorded
+6bba recall (0.942 vs 0.9813). Converging on competition data produced
+a detector that is worse than xl everywhere and lost the one property
+the line existed for.
+
+**The surviving hypothesis is UNDERTRAINING**: the published model's
+best checkpoint is epoch 2 of a diverging run — close to a generic
+bright-blob detector — and that genericity, not the architecture or the
+data, may be what transferred to zh and covered xl's misses.
+`biohub-dccache3` PUSHED to test exactly that: epoch 5 and epoch 7
+snapshots (already in hand) against epoch 12, all three domains, same
+harness — plus the 6bba xl coverage column dccache2 lacked (its xl
+caches live in biohub-edge-ranker's output, which was not attached; the
+error was visible as WARN lines and a 0.0000 column, not silent).
+
+If ep5/ep7 restore the coverage, undertraining becomes a dial we
+control with clean eval domains. If not, the published model's transfer
+is a property of that artifact and the retrain line closes.
+
 ## 2026-08-29 -- DCTRAIN v2: killed at the 12 h cap at epoch 22, AND IT DID NOT MATTER -- the output published anyway and the optimum was epoch 12
 
 **The training itself is a clean success.** 167 movies, author's recipe
