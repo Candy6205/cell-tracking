@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-detfuse2",
-  "title": "Biohub detfuse2",
-  "code_file": "detfuse2.py",
+  "id": "faustine649/biohub-fusecache",
+  "title": "Biohub fusecache",
+  "code_file": "fusecache.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
