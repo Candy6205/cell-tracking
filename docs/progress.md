@@ -206,6 +206,61 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-29 -- ⭐⭐⭐⭐⭐ edgediag: THE LOSS IS DETECTION COLD-MISSES, 8x EVERYTHING THE LINKER LOSES. The first full attribution since the classical pipeline.
+
+`biohub-edgediag` v1, CPU, 49.7 min. Shipped config (cap20, SHORT_MIN
+4, D187), every GT edge charged to the FIRST losing stage, every final
+edge classified, official scorer on the same geffs. **Anchor exact:
+6bba adj_J 0.9293.** First 44b6 baseline row: adj_J 0.8185.
+
+### FN side (% of adjacent GT edges; zh is the only all-cells denominator)
+
+| category | 6bba (10,313) | 44b6 (2,890) | zh (221,240) |
+|---|---|---|---|
+| det_miss_subthresh | 1.06 | 4.01 | 2.60 |
+| **det_miss_cold** | 1.33 | 2.98 | **14.49** |
+| no_candidate (>10um) | 0.70 | 1.11 | 0.06 |
+| below_floor (<0.10) | 0.78 | 2.32* | 0.26 |
+| node_absent | 0.71 | 2.39 | 0.95 |
+| ilp_rejected | 0.69 | 2.39 | 0.35 |
+| killed_post | 0.04 | 0.21 | 0.21 |
+| recovered | 94.71 | 84.60 | 81.08 |
+
+*44b6 below_floor is UNDERCOUNTED (D187 in-sample there). Cross-checks
+vs official edge_fn: 546/411, 445/349, 41,849/38,936 -- category totals
+run ~10-30% above official FN because some "recovered" edges still
+score FN through the scorer's own matching; the ordering of buckets is
+unaffected.
+
+### FP side (final edges; official edge_fp in brackets)
+
+| | 6bba | 44b6 | zh |
+|---|---|---|---|
+| fp_confusion (wrong link, both real) | 13 | 7 | 3,718 (1.81%) |
+| fp_half (edge into a spurious det) | 826 | 291 | 5,298 (2.57%) |
+| fp_invisible (no annotated endpoint) | 93.3% | 99.0% | 6.88% |
+| official edge_fp | (363) | (258) | (5,615) |
+
+### The verdict
+
+**On the honest denominator, detection cold-misses (14.5%) are ~8x the
+ENTIRE linking-side loss (no_cand + floor + absent + rejected + post
+= 1.8%).** The ranker, the ILP and the post stages each lose under 1%;
+the short filter barely misfires; wrong links are 1.8% of final edges.
+The sparse domains understate the detection bucket by construction
+(annotators label visible cells) and it still leads on 44b6. This
+converges with gap2 (79.8% of missed frames have NO heatmap response),
+the dim-quartile recall 0.52, and zh true recall 0.865: **the fat
+target is detector recall on dim/vanishing cells. The linking stack is
+not "done", but everything it loses combined is smaller than one
+detection bucket.**
+
+What attacks it, by existing evidence: training OUR OWN detector (never
+done; dctrain built the machinery -- clean 175 split, PU loss, snapshot
+discipline, 32.2 min/epoch measured -- and brightness jitter / dim-cell
+weighting are one flag each); detfuse's W110h weighting (+2.8 recall at
+equal F1); the 2.5% single-branch-visible miss headroom.
+
 ## 2026-08-29 -- ⭐⭐⭐⭐ divcurve: CROP COUNT IS NOT THE CONSTRAINT. The curve saturates by ~30 crops and the full set sits below the 30-crop draws; the extraction line closes for the price of one CPU kernel.
 
 `biohub-divcurve` v1, CPU. div-train v3's protocol verbatim (same
