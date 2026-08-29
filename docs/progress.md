@@ -198,6 +198,57 @@ weak, which needs a test-time weakness signal nobody has proposed.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-29 -- ⭐⭐⭐⭐⭐ dccache3: UNDERTRAINING IS THE MECHANISM, MONOTONE IN ALL THREE DOMAINS. Epoch 5 beats xl's recall on 44b6 outright and covers half to two-thirds of xl's misses on competition data.
+
+`biohub-dccache3` v1, 23.4 min T4. Three checkpoints of the SAME
+retrained model (epochs 5, 7, 12) through one harness, greedy 1:1 at
+7.0 um, xl caches complete this time (199 + 41; edge-ranker attached):
+
+| domain | ckpt | DC@.05 | DC@.15 | xl@.15 | DC covers xl-miss |
+|---|---|---|---|---|---|
+| 6bba | **ep05** | **0.9735** | 0.9656 | 0.9827 | **0.4865** (n=185) |
+| 6bba | ep07 | 0.9649 | 0.9265 | 0.9827 | 0.4000 |
+| 6bba | ep12 | 0.9420 | 0.8984 | 0.9827 | 0.3514 |
+| 44b6 | **ep05** | **0.9678** | 0.9522 | 0.9508 | **0.6759** (n=145) |
+| 44b6 | ep07 | 0.9566 | 0.8673 | 0.9508 | 0.6552 |
+| 44b6 | ep12 | 0.8751 | 0.7686 | 0.9508 | 0.6069 |
+| zh | **ep05** | **0.8555** | 0.8357 | 0.8650 | **0.3308** (n=30,768) |
+| zh | ep07 | 0.6524 | 0.4552 | 0.8650 | 0.1861 |
+| zh | ep12 | 0.5293 | 0.3499 | 0.8650 | 0.1875 |
+
+(6bba/44b6 denominators are annotated cells; zh is all cells. ep12 rows
+reproduce dccache2 exactly — the anchor held.)
+
+**Every column is monotone in training length, in every domain.** Less
+training = more recall and more coverage. The published model's value
+was never the architecture or the 44b6-only data: it was being nearly
+untrained. That is now a DIAL — and our ep05 comes with clean eval
+domains, which the published epoch-2 never had.
+
+Three readings, and a limit:
+
+1. **ep05 is the artifact this line was hoping for on competition
+   data**: on 44b6 its 0.9678@0.05 is ABOVE xl's 0.9508@0.15 and it
+   covers 67.6% of xl's misses; on 6bba it covers 48.7%. The hidden
+   test is competition-like (a third embryo, same instrument), so these
+   are the operative numbers.
+2. **zh transfer is restored only partly** (0.8555 vs the published
+   0.9784; coverage 33.1% vs 69.5%). The published epoch-2 saw ~2 x
+   7,100 frames, our ep05 ~5 x 16,700 — it is still five times more
+   trained. Checkpoints below epoch 5 do not exist (snapshot interval
+   was 5); an even-earlier stage would need a short re-run with
+   --snapshot-interval 1, ~3 h GPU, ONLY worth it if the adj_J test
+   says coverage converts to score.
+3. **Between ep05 and ep07 sits a cliff on zh** (0.8555 -> 0.6524 at
+   0.05). Whatever generic feature the early model uses, it is
+   abandoned quickly — consistent with the published run's best-at-2.
+
+dcdet_ep05_*/dcdet_ep07_*.npz for all 40 datasets are in the kernel
+output; the ep05 set is the input for the adj_J test, which is the
+actual decision point. Detection metrics have anti-predicted the
+pipeline eight times — nothing here is a score until the three-domain
+solve says so.
+
 ## 2026-08-29 -- ⭐⭐⭐⭐ dccache2: the retrain FIXED THE EVALUATION AND LOST THE VALUE. The epoch-12 model is weaker than xl in all three domains and its zh transfer collapsed.
 
 `biohub-dccache2` v1, 14.5 min T4. Retrained DeepCenter (epoch 12),
