@@ -113,6 +113,13 @@ Facts every consumer of this data must handle:
 4. **Labels are machine-generated** (automated tracking, not human GT):
    ~10% of ZSNS001 points sit on near-background intensity. Filter or
    down-weight by local brightness when training.
+   **MEASURED 2026-08-30 (`biohub-zhcomplete`): the labels are NOT
+   complete.** ~2.5% of cells (defensible estimate; <= ~7% worst case)
+   have no label at all -- whole-track misses, not per-frame dropouts
+   (their own tracks flicker at ~0.00%). So zh PRECISION numbers for
+   any detector are understated by roughly that amount; zh recall
+   denominators remain the best available by 10-100x over the
+   competition's 2.8% annotation, with this footnote.
 5. Scale: ZSNS001 alone has 21,697,591 nodes and 635,042 divisions vs the
    competition's 133,318 and 151. Divisions are plentiful in every movie.
 6. Sampled density per 104-um cube brackets the competition's 50-519

@@ -206,6 +206,36 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-30 -- ⭐⭐⭐⭐ zhcomplete: ZEBRAHUB IS NOT FULLY LABELED. Gap ~2.5% (bounded above by ~7%), and it is whole-track misses, not flicker. The user's challenge, answered with numbers.
+
+`biohub-zhcomplete` v1, CPU, 0.7 min. Two label-free measurements:
+
+1. **Their own per-frame dropout is ~zero**: 927,424 mid-flight
+   track-frames across 41 crops, 9 one-frame holes, 18 any-length
+   (boundary-guarded at 5 um). Whatever their tracker finds, it keeps.
+2. **Unmatched-peak forensics** (8 crops, 21,721 xl peaks >= 0.15,
+   9.6% unmatched): of 2,090 unmatched peaks, **591 (28.3%) are bright
+   (above the matched peaks' own q25) AND independently seconded by
+   ep05 within 3 um** -- most plausibly unlabeled cells. 351 (16.8%)
+   are dim with no consensus -- clean junk. 1,041 (49.8%) dim-with-
+   consensus are ambiguous (the bright bar excludes 25% of real
+   matched cells too, so some are dim real cells).
+
+**Completeness gap: 591/(22,675+591) = 2.54% as the defensible
+estimate; ~6.7% if every ambiguous peak is a cell.** Consequences:
+
+- zh "precision" for every detector is UNDERSTATED by roughly this
+  amount; arm orderings are largely robust (all arms inflated the same
+  way) but absolute zh precision/F1 carries a footnote from now on.
+- zh keeps the honest-DENOMINATOR role for recall (a 2.5% incomplete
+  denominator is still 10-100x more complete than the competition's
+  2.8% annotation), with the footnote.
+- **The fusion judge's negative mining is sound ONLY in the filtered
+  variant** (negatives = unmatched AND dim AND ep05-silent); the
+  all-negatives variant would train on several hundred unlabeled cells
+  as counter-examples. fuserows trains both; the filtered one is the
+  pre-registered primary.
+
 ## 2026-08-30 -- ⭐⭐⭐⭐⭐ fusescore: THE BLENDS FAIL THE PIPELINE. Detection F1 anti-predicts adj_J for the NINTH time, and the whole DeepCenter arc closes at every level.
 
 `biohub-fusescore` v1, CPU, 256.9 min. Five arms x three domains, one
