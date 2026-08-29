@@ -206,6 +206,51 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-30 -- ⭐⭐⭐⭐⭐ fusescore: THE BLENDS FAIL THE PIPELINE. Detection F1 anti-predicts adj_J for the NINTH time, and the whole DeepCenter arc closes at every level.
+
+`biohub-fusescore` v1, CPU, 256.9 min. Five arms x three domains, one
+solve per arm per dataset, D32 ranker for every judged arm (leak rule),
+BASE x D187 as the harness anchor. **Anchor exact in all three domains**
+(6bba 0.9293 / 44b6 0.8185 / zh 0.8093 = dcpool to the digit).
+
+| arm | 6bba adj_J | 44b6 adj_J | zh adj_J |
+|---|---|---|---|
+| BASE x D187 (anchor) | 0.9293 | 0.8185 | 0.8093 |
+| BASE x D32 (reference) | 0.9251 | 0.8250 | 0.8088 |
+
+adj_J deltas vs BASE x D32:
+
+| blend | 6bba | 44b6 | zh | verdict |
+|---|---|---|---|---|
+| F4 | **-0.0053** | +0.0054 | +0.0027 | signs disagree, discard |
+| W1101 | **-0.0108** | +0.0054 | +0.0024 | signs disagree, discard |
+| DCheavy | **-0.0145** | -0.0020 | -0.0028 | same sign NEGATIVE |
+
+div_J deltas: F4 -0.0301/0/-0.0022, W1101 -0.0278/0/-0.0019, DCheavy
++0.0571/0/-0.0016 (a curious 6bba div gain on the arm whose edges are
+worst -- not actionable while adj_J bleeds).
+
+### What this settles
+
+1. **detfuse2's +0.0155 detection F1 -- recall AND precision up, dets/fr
+   DOWN, dense GT, anchored -- did not survive the pipeline.** zh
+   converted at ~1:6 (+0.0027) and 6bba went NEGATIVE. That is the
+   ninth anti-prediction by an offline detection number, and this one
+   was the strongest detection evidence this project ever produced.
+2. **The dcmerge pattern is the model's domain property, not the
+   usage's**: helps where xl is weak (zh, mildly 44b6), hurts where xl
+   is strong (6bba), under ALL THREE usages now tried -- points as
+   primaries (dcmerge), points in the repair pool (dcpool, null),
+   heatmap in the blend (fusescore).
+3. **The DeepCenter arc is closed at every level**, no submission
+   spent on it. Its durable residue: the clean-eval machinery (175
+   split, manifest-derived eval sets, D32 discipline), the epoch-5
+   checkpoint and caches, the undertraining dial, and edgediag's loss
+   map -- cold misses remain the fat bucket, but this was not the tool.
+4. Side-reading: BASE x D32 vs BASE x D187 -- D32 is -0.0042 adj_J on
+   6bba (and -0.035 div_J), +0.0065 on 44b6, -0.0005 zh. The D187
+   submission configuration stands.
+
 ## 2026-08-29 -- ⭐⭐⭐⭐⭐ detfuse2: THE FOURTH HEATMAP WORKS ON THE HONEST DENOMINATOR. +0.0155 F1 with recall AND precision up AND fewer detections -- the first detection change to satisfy the no-surplus criterion.
 
 `biohub-detfuse2` v1, 13.8 min T4. ep05 DeepCenter blended as a fourth
