@@ -162,6 +162,11 @@ run in the background. The grep must cover **error and cancel as well as
 complete** -- a waiter that only matches success stays silent through a
 crash, and silence is indistinguishable from still-running.
 
+⚠ And match the STATUS TOKEN, not the whole line:
+`KernelWorkerStatus\.(COMPLETE|ERROR|CANCEL)`. On 2026-08-30 a kernel
+named `biohub-zhcomplete` made a whole-line `complete` grep fire on the
+kernel's own NAME while it was still RUNNING.
+
 `Start-Sleep` in the foreground is blocked by the harness, deliberately.
 
 ### 6b. A SUBMISSION needs a waiter too (2026-08-27)
