@@ -110,6 +110,28 @@ Two rules learned the hard way:
   or a data source the inherited preamble asserts on — check those by
   reading the preamble's imports and asserts.
 
+## An experiment kills a CLAIM, not a direction (2026-08-30)
+
+The user's standing correction, in their words: "从来没有真的死了的路，
+只是暂时还不知道怎么利用罢了". The record already proved them right
+before they said it: gap2 "closed" the span line while the budget bound
+in 24 of 32 datasets, and the only leaderboard gain this project ever
+had (cap20) was buried inside that "closed" line. "DeepCenter does not
+matter" (the public tier disables it) preceded detcmp's 69.5% miss
+coverage. "The linker is finished" preceded rank5's 8.6-AUC-point gap.
+
+**The rule: a verdict entry must state (1) the narrow tested claim --
+usage, conditions, domains, n; (2) what the direction still OWNS --
+unexplained regularities, assets, partial wins; never a funeral.**
+"Closed" is reserved for the specific configuration actually measured.
+The costume of finality is how "detection is solved" and "the metric
+needs a GPU" survived for days; an unexplained residue line is how
+cap20 was eventually found.
+
+This does not license re-running measured configurations -- the
+don't-re-run discipline stands. It changes what gets WRITTEN, so the
+next session inherits the residue instead of the funeral.
+
 ## Always anchor
 
 Every A/B must contain an arm that reproduces a recorded number. When

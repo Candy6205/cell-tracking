@@ -242,11 +242,18 @@ worst -- not actionable while adj_J bleeds).
    is strong (6bba), under ALL THREE usages now tried -- points as
    primaries (dcmerge), points in the repair pool (dcpool, null),
    heatmap in the blend (fusescore).
-3. **The DeepCenter arc is closed at every level**, no submission
-   spent on it. Its durable residue: the clean-eval machinery (175
-   split, manifest-derived eval sets, D32 discipline), the epoch-5
-   checkpoint and caches, the undertraining dial, and edgediag's loss
-   map -- cold misses remain the fat bucket, but this was not the tool.
+3. **CORRECTED PHRASING (user, 2026-08-30: an experiment kills a
+   claim, not a direction).** What is measured and settled: global
+   blending of ep05 into the average, at these weights, on these 32
+   datasets, is 6bba-negative. What the DIRECTION still owns, unused:
+   (a) an UNEXPLAINED regularity -- three usages, one pattern, helps
+   where xl is weak and hurts where it is strong; explain it and a
+   conditional usage may exist; (b) the 44b6 node deficit HALVED
+   (-14.8% -> -7.3%) -- the dense-domain under-detection fault is
+   half-repaired by this tool, at a 6bba price; (c) F4/W1101 were
+   positive in TWO domains; (d) ep05 solo beats the xl ensemble on zh;
+   (e) the clean-eval machinery, the checkpoint, the undertraining
+   dial. No submission spent.
 4. Side-reading: BASE x D32 vs BASE x D187 -- D32 is -0.0042 adj_J on
    6bba (and -0.035 div_J), +0.0065 on 44b6, -0.0005 zh. The D187
    submission configuration stands.
