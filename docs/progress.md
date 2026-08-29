@@ -116,6 +116,14 @@ rather than dipping below threshold, so no threshold recovers it.
 CONDITIONAL foreign detection, admitted only where our own detector is
 weak, which needs a test-time weakness signal nobody has proposed.**
 
+**ANSWERED 2026-08-29, and the answer is null: the conditional version
+was run (`dcpool`, epoch-5 retrained DeepCenter into the repair pool,
+the track break itself as the weakness signal) and moved nothing --
+20% of bridge inserts took measured positions and adj_J was unchanged
+to the fourth decimal in all three domains. Bridge POSITION was never
+the loss; see the dcpool entry. The multi-frame-dropout losses remain
+real and remain unaddressed by every route now tried.**
+
 ### Read these first
 
 1. **`biohub-div-train` v3 ANSWERED (2026-08-24): yes.** Zebrahub only
@@ -197,6 +205,57 @@ weak, which needs a test-time weakness signal nobody has proposed.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-08-29 -- ⭐⭐⭐⭐⭐ dcpool: THE MECHANISM FIRED AND THE SCORE DID NOT MOVE. Bridge positions never mattered, and the whole DeepCenter line closes on evidence at every branch.
+
+`biohub-dcpool` v1, CPU. Epoch-5 DeepCenter points fed ONLY into the
+repair pool (score 0.12, visible to `_gap_close` alone); one solve per
+dataset, arms byte-identical upstream. **Every anchor held exactly**:
+6bba BASE adj_J 0.9293 / div_J 0.1316, zh BASE 0.8093, and the first
+clean 44b6 arm (dctrain's excluded 12) baselined at adj_J 0.8185.
+
+### The result: a true null with its mechanism measured
+
+| DC_TAU | bridge inserts: midpoint | xl snap | **DC snap** | adj_J delta, all 3 domains |
+|---|---|---|---|---|
+| BASE | 3,017 | 1,348 | 0 | — |
+| 0.30 | 2,635 | 1,347 | 383 | ±0.0000 |
+| 0.15 | 2,179 | 1,345 | 841 | ±0.0000 |
+| **0.05** | 2,138 | 1,345 | **882** | **±0.0000** |
+
+117,691 DC points entered the pool (+29.2%); at tau 0.05, **20% of all
+bridge inserts moved from guessed midpoints onto measured positions --
+the mechanism fired substantially -- and adj_J did not move at the
+fourth decimal in any domain.** The cap never bound (17,460 made vs
+55,188 allowed).
+
+### Why zero, exactly
+
+A bridge insert's position affects the metric only through whether the
+inserted node matches GT within 7.0 um. A 1-frame gap's straight-line
+midpoint errs by roughly half a displacement -- p50 displacement is
+1.82 um -- so interpolation already lands inside the match radius
+essentially always. Measured positions are metric-equivalent to guessed
+ones AT SPAN 1. (This also retro-explains the cap20 win's anatomy: the
+budget -- how MANY bridges -- was the entire effect; position quality
+never entered.)
+
+### The DeepCenter ledger, now closed at every branch
+
+| use | run | verdict |
+|---|---|---|
+| primary add (published model) | dcmerge v2 | closed: breaks links, opposite signs |
+| primary add would need clean eval | dctrain/dccache2/3 | built it; epoch-5 is the right artifact |
+| repair-pool add (conditional, ep05) | **dcpool** | **closed: true null, mechanism measured** |
+| span-2 bridges (guessed positions) | span4 | closed: eats daughters |
+
+What survives from the whole arc: (1) the epoch-5 detector itself --
+clean three-domain eval, beats xl's recall on 44b6, cached for all 40
+eval datasets -- available if a future line needs a second detector for
+something other than bridge positions (e.g. division daughters); (2)
+the undertraining dial; (3) the detfuse finding that fusion signal
+exists at the peak-ranking level (+0.0215 AUC), which is a DETECTION
+question, untouched by this null.
 
 ## 2026-08-29 -- ⭐⭐⭐⭐⭐ dccache3: UNDERTRAINING IS THE MECHANISM, MONOTONE IN ALL THREE DOMAINS. Epoch 5 beats xl's recall on 44b6 outright and covers half to two-thirds of xl's misses on competition data.
 
