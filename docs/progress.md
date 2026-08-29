@@ -198,6 +198,42 @@ weak, which needs a test-time weakness signal nobody has proposed.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-29 -- DCTRAIN v2: killed at the 12 h cap at epoch 22, AND IT DID NOT MATTER -- the output published anyway and the optimum was epoch 12
+
+**The training itself is a clean success.** 167 movies, author's recipe
+verbatim: train_loss fell smoothly 0.0305 -> 0.0223 over 22 epochs, NO
+divergence (the published model's 500-epoch failure did not recur at
+this LR on this data), and **val_loss bottomed at epoch 12 (0.011988)**
+with zero improvement in the following ten. best.pt therefore carries
+the converged optimum. Gate read on the 8 val movies (sparse GT, 7 um):
+recall 0.875@0.10 / 0.848@0.15 at ~174 peaks/frame -- the same order as
+the true median density (179 cells/frame). Split confirmed in the log:
+167 train + 8 val + 24 excluded, all names printed.
+
+**The cost accounting, so the next training run is sized right:**
+
+- **32.2 min/epoch, dead constant** (my pre-launch estimate said 5-8;
+  wrong by 4x -- the bottleneck is per-frame blosc decompress + pool +
+  percentile on 4 workers, not the GPU). 22 epochs + snapshots = the
+  whole 12 h session; epoch 30 was never reachable.
+- The kill arrived as `CANCEL_ACKNOWLEDGED` at ~11.8 h. **A
+  platform-cancelled kernel CAN still publish its output** -- all 45
+  files (main best.pt/checkpoint_last.pt/history + four ep-snapshots)
+  came out with signed URLs. Do not assume a timed-out run lost its
+  work; LIST ITS OUTPUT first.
+- Because a cancelled VERSION may not be attachable as a kernel source,
+  the six files that matter (epoch-12 best.pt, config, history,
+  split_manifest, ep0020 gate summary+metrics) were downloaded and
+  re-uploaded as the DATASET **faustine649/biohub-dctrain-175-weights**.
+  Consumers attach that, not the kernel.
+- A future run of this kind: `--epochs 15` fits in ~8.5 h, or halve the
+  epoch with `--frames-per-movie 50`. Epoch 12 being the optimum says 15
+  is enough.
+
+`biohub-dccache2` PUSHED against the new dataset: caches dcdet_*.npz
+for the 24 excluded + 8 zh crops and prints per-domain recall at 7 um
+plus mutual miss coverage against the xl caches. Waiter armed.
+
 ## 2026-08-29 -- ⭐⭐⭐ detfuse: the learned-fusion idea has real but modest signal, and every road points at down-weighting B2
 
 `biohub-detfuse` v1, 10 min T4, 41 Zebrahub crops, 101,615 GT points.

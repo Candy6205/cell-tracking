@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-detfuse",
-  "title": "Biohub detfuse",
-  "code_file": "detfuse.py",
+  "id": "faustine649/biohub-dccache2",
+  "title": "Biohub dccache2",
+  "code_file": "dccache2.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -9,12 +9,16 @@
   "machine_shape": "NvidiaTeslaT4",
   "enable_internet": false,
   "dataset_sources": [
-    "xiaoleilian/biohub-unet3d-weights",
-    "xiaoleilian/biohub-unet3d-weights-v2models"
+    "faustine649/cell-tracking",
+    "faustine649/biohub-dctrain-175-weights"
   ],
   "kernel_sources": [
+    "faustine649/biohub-cache-train",
+    "faustine649/biohub-zh-detect",
     "faustine649/biohub-zebrahub-extract"
   ],
-  "competition_sources": [],
+  "competition_sources": [
+    "biohub-cell-tracking-during-development"
+  ],
   "model_sources": []
 }

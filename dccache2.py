@@ -106,10 +106,18 @@ def _bounded_glob(filename_pred):
 _ALL_FILES = _bounded_glob(lambda fn: fn == "best.pt"
                            or fn.startswith("detcache_")
                            or fn.startswith("zhdet_"))
-CK_HITS = [p for p in _ALL_FILES if p.name == "best.pt"
-           and p.parent.name == "full_frame_center_175"]
-assert CK_HITS, ("full_frame_center_175/best.pt not found -- attach the "
-                 "biohub-dctrain kernel output")
+# The weights live in the faustine649/biohub-dctrain-175-weights DATASET
+# (flat layout: best.pt + config/history/split_manifest side by side).
+# The dctrain v2 session was killed at the 12 h cap; its output published
+# anyway and the six files were re-uploaded as a dataset because a
+# cancelled kernel version may not be attachable as a kernel source.
+# best.pt was last written at epoch 12, the val-loss optimum.
+_BEST = [p for p in _ALL_FILES if p.name == "best.pt"]
+CK_HITS = ([p for p in _BEST if p.parent.name == "full_frame_center_175"]
+           or (_BEST if len(_BEST) == 1 else []))
+assert CK_HITS, (
+    f"no unambiguous best.pt among {[str(p) for p in _BEST]} -- attach "
+    f"faustine649/biohub-dctrain-175-weights and nothing else with a best.pt")
 DC_CKPT = CK_HITS[0]
 MANIFEST = DC_CKPT.parent / "split_manifest.json"
 HISTORY = DC_CKPT.parent / "history.csv"
