@@ -1,22 +1,23 @@
 {
-  "id": "faustine649/biohub-dcsample",
-  "title": "Biohub dcsample",
-  "code_file": "dcsample.py",
+  "id": "faustine649/biohub-vetoscore2",
+  "title": "Biohub vetoscore2",
+  "code_file": "vetoscore2.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": true,
-  "machine_shape": "NvidiaTeslaT4",
-  "enable_internet": false,
+  "enable_gpu": false,
+  "enable_internet": true,
   "dataset_sources": [
+    "pilkwang/biohub-tracking-support-pack-50ep-v1",
     "faustine649/cell-tracking",
     "faustine649/biohub-dctrain-175-weights"
   ],
   "kernel_sources": [
-    "faustine649/biohub-cache-train",
     "faustine649/biohub-edge-ranker",
+    "faustine649/biohub-cache-train",
     "faustine649/biohub-zh-detect",
-    "faustine649/biohub-zebrahub-extract"
+    "faustine649/biohub-poolsize",
+    "faustine649/biohub-dcsample"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
