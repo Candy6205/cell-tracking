@@ -10,7 +10,9 @@
 
 ## HANDOFF (2026-08-26, replacing the 2026-08-24 one below)
 
-**BEST IS NOW 0.922, ref 55817630** (2026-08-28) — the first submission ever to beat 0.921. Full history:
+**BEST IS NOW 0.925, ref 55889500** (2026-08-31) — F4: ep05 DeepCenter
+as a fourth equal-weight heatmap. The user's 6bba-memorization insight,
+arbitrated on the LB. Full history:
 
 | ref | change | its own control | LB | verdict |
 |---|---|---|---|---|
@@ -18,10 +20,11 @@
 | 55757064 | ranker pool 32 → 187 | 55707206 = 0.921 | 0.920 | indistinguishable, not a loss |
 | 55772253 | `SHORT_MIN` 6 → 4 | 55757064 = **0.920** | **0.920** | a TRUE ZERO, not a loss |
 | 55780773 | + gate 0.15 → 0.12 | 55772253 = 0.920 | **0.918** | the only clear loss on record |
-| **55817630** | **gap budget 0.003 → 0.02, candidate requirement dropped** | 55772253 = 0.920 | **0.922** | **+0.002, NEW BEST** |
+| 55817630 | gap budget 0.003 → 0.02, candidate requirement dropped | 55772253 = 0.920 | 0.922 | +0.002 |
+| **55889500** | **F4: ep05 DeepCenter as 4th equal-weight heatmap** | 55817630 = 0.922 | **0.925** | **+0.003, NEW BEST — largest single gain on record** |
 
-**Two final-selection slots. 55817630 (0.922) takes one.** The other is
-free — 55707206 (0.921) no longer needs to hold it.
+**Two final-selection slots. 55889500 (0.925) must take one** (select
+in the UI); 55817630 (0.922) is the natural second.
 
 ⚠ **The daily submission limit is FIVE, not two.** `max_daily_submissions:
 5`. Days of rationing at two were based on confusing the daily cap with
@@ -205,6 +208,52 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-08-31 -- ⭐⭐⭐⭐⭐ 0.925, ref 55889500. THE 6BBA VETO WAS A MEMORIZATION ARTIFACT: F4 (ep05 as a 4th heatmap) gains +0.003 on the LB after losing on 6bba locally. The DeepCenter arc is ALIVE, and the user called it.
+
+**The user's insight** (2026-08-30, verbatim reasoning): "分数在6bba上面
+高其实是因为xl偷看了测试集" -- the xl weights' training split is
+unknown (holdout-split.md: `fold: 0`, no file list) and plausibly
+contains the 6bba eval sets, while the hidden test is a THIRD embryo
+(host-confirmed, no embryo_id overlap). So every DC-injection verdict
+that died on "negative in 6bba" died on the testimony of a suspect
+witness: DC disturbs memorized-perfect detections there, and there is
+nothing memorized to disturb on the hidden test.
+
+**The arbitration**: submit F4 (detfuse2's arm: ep05 epoch-5 DeepCenter
+as a FOURTH equal-weight heatmap before peak finding, full 4-flip TTA)
+as a single variable vs ref 55817630. F4 chosen over W1101/DCheavy: same
+two-clean-domain gains, half the 6bba downside, zero tuned weights.
+
+| | local 6bba | local 44b6 | local zh | **LB** |
+|---|---|---|---|---|
+| F4 vs BASE | -0.0053 | +0.0054 | +0.0027 | **+0.003** |
+
+**0.922 -> 0.925, the largest single gain this project has recorded.**
+The two clean domains predicted the sign AND the size; 6bba predicted
+the opposite sign. Hidden-test bytes 268,154,477 -> 270,740,009
+(+0.96%) while visible-4 nodes SHRANK 1.6% -- more output where xl is
+blind, less where it is sharp, exactly the "helps where xl is weak"
+regularity, now with the mechanism located: 6bba was never a strong
+domain, it was an in-sample domain.
+
+### What this rewrites
+
+1. **The three-domain rule is amended for DETECTION-side changes**: 6bba
+   carries an unknown in-sample bias for the xl detector, so a 6bba-only
+   negative on a detection change is grounds for LB arbitration, not
+   discard. (Linking-side changes are unaffected -- the ranker's splits
+   are ours and leak-controlled.)
+2. **Every DC verdict that cited 6bba deserves a re-read**: dcmerge
+   (negative, mostly 6bba), fusescore's W1101 (+0.0054/+0.0024 clean
+   domains), vetoscore2's V02 (-0.0004 zh, ~0 in 10/12 44b6, loss
+   concentrated in 6bba_3abfe10a). None automatically wins -- but none
+   is closed by 6bba testimony alone anymore.
+3. **The instrument for "is the hidden test like the clean domains" is
+   total_bytes plus this precedent.** 44b6+zh agreement predicted the
+   LB correctly at full size on the first try.
+4. Costs: one daily submission slot, 12.3 min GPU (dcsample), ~56 min
+   visible run. Final selection: 55889500 takes a slot (UI).
 
 ## 2026-08-30 -- ⭐⭐⭐ dc_gate + vetoscore: THE PEAK-LIST PROXY FOR "DC IS SILENT" IS BROKEN; the heatmap veto the user designed is still untested and dcsample is building its cache.
 
