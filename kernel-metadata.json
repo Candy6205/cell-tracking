@@ -1,26 +1,29 @@
 {
-  "id": "faustine649/biohub-vetoscore2",
-  "title": "Biohub vetoscore2",
-  "code_file": "vetoscore2.py",
+  "id": "faustine649/biohub-submit-f4",
+  "title": "Biohub submit f4",
+  "code_file": "submit_f4.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": false,
-  "enable_internet": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [
+    "gpu"
+  ],
   "dataset_sources": [
     "pilkwang/biohub-tracking-support-pack-50ep-v1",
+    "xiaoleilian/biohub-unet3d-weights",
+    "xiaoleilian/biohub-unet3d-weights-v2models",
     "faustine649/cell-tracking",
     "faustine649/biohub-dctrain-175-weights"
   ],
   "kernel_sources": [
-    "faustine649/biohub-edge-ranker",
-    "faustine649/biohub-cache-train",
-    "faustine649/biohub-zh-detect",
-    "faustine649/biohub-poolsize",
-    "faustine649/biohub-dcsample"
+    "faustine649/biohub-poolsize"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
-  "model_sources": []
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
 }
