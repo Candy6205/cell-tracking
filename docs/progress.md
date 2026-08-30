@@ -206,6 +206,50 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-30 -- ⭐⭐⭐ dc_gate + vetoscore: THE PEAK-LIST PROXY FOR "DC IS SILENT" IS BROKEN; the heatmap veto the user designed is still untested and dcsample is building its cache.
+
+The user's split of the fusion idea: xl leads, DeepCenter speaks only
+at extremes. `dc_gate.py` (local, judge_rows.npz, zero GPU) split it
+further: RESCUE is dead (xl-dropped candidates with ep05 >= 0.15 are
+only 24.3% real, 29.8% at 0.30, and ep05 >= 0.9 comp positives are
+0.0% -- domain shift flattens DC's confidence on comp), but VETO
+looked strong: among xl-kept candidates (mean3 >= 0.15), those with
+ep05 window-max hd < 0.02 are 90.2% fake at 0.31% collateral (6bba
+comp positives killed: 0.19%). Gated AUC (0.742) loses to DCheavy
+(0.763) -- but ranking was never the veto's niche; not moving/adding
+points is.
+
+`biohub-vetoscore` v1 (219.2 min CPU, anchor exact in all 3 domains)
+then tested a CHEAP PROXY of the veto -- drop xl points with no dcdet
+ep05 PEAK (score >= tau) within 3 um -- and the proxy failed hard and
+uniformly:
+
+| arm | 6bba | 44b6 | zh | verdict |
+|---|---|---|---|---|
+| V05 | -0.0619 | -0.0479 | -0.0558 | same sign NEGATIVE |
+| V10 | -0.0642 | -0.0473 | -0.0597 | same sign NEGATIVE |
+| V15 | -0.0649 | -0.0575 | -0.0676 | same sign NEGATIVE |
+
+**The autopsy says the proxy, not the rule, was on trial**: it vetoed
+12.24% (zh) / 15.66% (6bba) / 18.19% (44b6) of all cached points --
+4-6x dc_gate's prediction (~3%) -- and the excess is ordered by cell
+density, because dcdet's 4 um NMS erases the peak of any real cell in
+a stronger neighbour's shadow, so dense regions read as "DC silent"
+exactly where they are busiest. 44b6_0b24845f alone: -0.4788. 6bba
+edge_J 0.9233 -> 0.8519 with node_ratio -0.019 -> -0.135 (real nodes
+deleted wholesale, edges collapse).
+
+Settled claim: peak-list-within-3um is NOT a usable silence oracle.
+NOT settled: the heatmap-response veto itself. `biohub-dcsample` (T4)
+is caching ep05's raw window-max response at every xl detection
+(hdval_*.npz, 12+12+8 sets); `vetoscore2` (generated, ready) reruns
+the harness with the faithful rule at tau 0.02/0.05/0.10. The user's
+niche-overlap caveat is pre-registered with it: the pipeline already
+deletes points post-link (_short_filter), so if the faithful veto is
+also negative, the reading is that pre-ranker deletion at these taus
+does not pay -- and the veto signal's remaining unused form is a
+ranker FEATURE, not a filter.
+
 ## 2026-08-30 -- ⭐⭐⭐⭐ fuserows + judge audit: THE EVIDENCE JUDGE LEARNS +0.0018 OVER A FIXED WEIGHTED AVERAGE. The user's design, executed and measured to its edge; no pipeline spend.
 
 `biohub-fuserows` (28.3 min T4) collected 381,405 evidence rows -- union
