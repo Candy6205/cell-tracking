@@ -40,6 +40,21 @@ confounded by pipeline vintage.
 −0.0007 for M15's +3.71%; the true cost was −0.008. There is a cliff,
 not a slope. Never price added output linearly again.
 
+⚠ **FOR ADD-NODE CHANGES, WEIGHT DOMAINS BY ANNOTATION DENSITY, NOT BY
+NODE DEFICIT.** `edge_J` is scored only where annotation exists, so the
+probability that an ADDED edge is visible at all is ~1.5% on 44b6
+(0.77% of cells annotated), ~18.5% on 6bba (9.71%), ~100% on zh. 44b6
+was made M15's deciding vote for its node deficit and is structurally
+the blindest domain for what added points do. The clean-domain rule
+stands for changes that RE-LINK existing nodes; it is close to
+uninformative for changes that ADD them. See the fatescore entry.
+
+⚠ **The ILP PRUNES unlinked nodes** — a node the solver does not link
+never reaches the geff. So "dead weight in the output" is impossible by
+construction, ~41% of any added detection set is silently discarded at
+no cost, and node growth in the output only ever comes from points that
+DID get linked.
+
 ⚠ **DeepCenter is a VOTE, not a DETECTOR.** Averaged into the heatmap
 (F4) it is worth +0.003; admitted unilaterally as points (M15) it is
 worth −0.008. Same checkpoint. Every unilateral-DC experiment has now
@@ -246,6 +261,122 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-09-01 -- ⭐⭐⭐⭐⭐ fatescore: BOTH mechanical explanations for M15 are DEAD, and the autopsy indicts our own judge -- on 44b6 we measure about 1.5% of what an added point actually does.
+
+**The user's question** (2026-08-31, after M15 = 0.917): "应该测F4的
+基础上，边排序器把多少加入了考量，后置的删点又删除了多少". Follow-up
+the same night: "最好把每一步都分开来看" and "你可以借助一下其他Claude的
+代码遗产". Both honoured -- ten stages reported separately, and the two
+load-bearing techniques lifted from `edgediag` rather than reinvented:
+the (t, i) -> graph-id map by ROUNDED COORDINATES (edgediag:1500-1514,
+so nothing assumes the graph numbers nodes in coords order) and
+snapshotting between post-link stages so a node's fate is attributable.
+
+`fatescore.py` -> `biohub-fatescore`, CPU, 117.4 min, no GPU quota.
+Two arms (F4 control, M15), three domains. **All six anchors reproduce
+exactly** (F4 0.9198/0.8303/0.8115, M15 0.9134/0.8363/0.8219).
+
+### The two answers
+
+**The ranker considers essentially all of them.** merged points in a
+candidate pair: 98.1% 6bba / 98.3% 44b6 / 100.0% zh; with an edge past
+`ILP_FLOOR`: 97.1 / 97.4 / 99.8%.
+
+**Post-link deletion removes almost none of them.** `_short_filter`
+kills 2.8 / 1.8 / 1.9% of merged against 0.6 / 0.8 / 0.3% of base --
+two to six times the base rate, but under 3% in absolute terms.
+
+**The loss is entirely in the middle, at the ILP.**
+
+| group | in_pair | past floor | **ILP linked** | final |
+|---|---|---|---|---|
+| base 6bba | 99.8% | 99.6% | **96.0%** | 95.3% |
+| merged 6bba | 98.1% | 97.1% | **59.1%** | 56.3% |
+| base 44b6 | 99.7% | 99.4% | **93.0%** | 92.1% |
+| merged 44b6 | 98.3% | 97.4% | **59.2%** | 57.4% |
+| base zh | 99.9% | 99.8% | **96.7%** | 96.3% |
+| merged zh | 100.0% | 99.8% | **67.9%** | 66.1% |
+
+### ⭐ The ILP PRUNES unlinked nodes -- so "dead weight" is impossible
+
+`in_graph` and `ILP linked` are **identical to the digit in all nine
+rows** (96.0/96.0, 59.1/59.1, 93.0/93.0, 59.2/59.2, 96.7/96.7,
+67.9/67.9). A node the solver did not link does not appear in
+`node_attrs` and never reaches the geff.
+
+So `ISOLATED` is 0.0% everywhere not because isolated nodes are rare but
+because they **cannot exist**. The pre-registered hypothesis -- that
+M15's added points reach the output unlinked and pay node-count penalty
+for nothing -- is structurally impossible, and the `in_graph` guard
+column is what caught it instead of letting the zeros be read as an
+answer. **~41% of merged points are silently discarded and cost
+nothing.**
+
+### ⭐ They did not steal links either -- base links NET GAINED
+
+| domain | base linked, F4 | M15 | lost | gained | net |
+|---|---|---|---|---|---|
+| 44b6 | 329,467 | 331,941 | 2,619 | **5,093** | **+2,474** |
+| 6bba | 164,572 | 165,251 | 913 | **1,592** | **+679** |
+| zh | 209,088 | 210,199 | 444 | **1,555** | **+1,111** |
+
+The capacity-2 displacement mechanism that explained `dc0.05`'s 2.6-point
+edge_J fall did NOT happen here. Adding ep05 points made MORE
+pre-existing points linkable in all three domains.
+
+### The one abnormal signal: merged points are 3x more likely to be track ENDS
+
+| group | deg 1 (track end) | deg 2 (interior) |
+|---|---|---|
+| base 44b6 | 8.3% | 91.4% |
+| **merged 44b6** | **26.0%** | 73.7% |
+| base 6bba | 8.1% | 91.5% |
+| **merged 6bba** | **26.0%** | 73.8% |
+| merged zh | 21.5% | 78.3% |
+
+A real cell in consecutive frames has an in-edge and an out-edge. A
+quarter of the surviving merged points attach in one direction only.
+
+### ⭐⭐ THE INDICTMENT: 44b6 cannot see what an added point does
+
+Every local signal above is benign -- considered by the ranker, barely
+touched by the post-link filter, no dead weight possible, no stealing --
+and the hidden test still charged 0.008. The remaining explanation is
+one the log already documented and nobody applied to this decision:
+`edge_J` is scored only where annotation exists, and one matched
+endpoint is enough to make an edge count (entry of 2026-08-28).
+
+Annotated fraction of cells: **44b6 0.77%, 6bba 9.71%, zh ~97.5%**. An
+added edge is visible only if at least one endpoint is annotated:
+
+| domain | P(an added edge is visible to edge_J) |
+|---|---|
+| 44b6 | 1 − (1−0.0077)² ≈ **1.5%** |
+| 6bba | 1 − (1−0.0971)² ≈ **18.5%** |
+| zh | ~100% |
+| hidden test | 100% of whatever it scores |
+
+**On 44b6 we measured roughly one and a half percent of what M15's
+added points actually did.** Its +0.0060 cannot be coming from the
+merged points' own edges -- almost none of those are visible -- so it is
+the +2,474 net base links, a real but partial effect. The hidden test
+charges for all of it.
+
+**And 44b6 was made the DECIDING VOTE.** mergescore chose it for good
+reasons (competition-style annotation, the biggest node deficit,
+ep05-clean) and missed that its 0.77% annotation makes it structurally
+the BLINDEST domain for exactly the failure mode that adding points
+causes. The rule was sound for changes that re-link existing nodes; it
+is close to uninformative for changes that ADD them.
+
+⚠ **RULE, going forward: for any change that ADDS nodes, weight the
+domains by annotation density, not by node deficit.** 6bba sees 12x more
+of an added edge's behaviour than 44b6 does, and zh sees essentially all
+of it. On M15 those two split (6bba −0.0064, zh +0.0104) and the
+tiebreak went to the domain that could see the least.
+
+**Cost:** 117 min CPU, no GPU quota, no submission slot.
 
 ## 2026-08-31 -- ⭐⭐⭐⭐⭐ M15 = 0.917, THE WORST SCORE ON RECORD. DeepCenter is a VOTE, not a DETECTOR -- and hidden output size predicts the leaderboard better than any local metric ever has.
 
