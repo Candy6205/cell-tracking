@@ -22,9 +22,18 @@ arbitrated on the LB. Full history:
 | 55780773 | + gate 0.15 → 0.12 | 55772253 = 0.920 | **0.918** | the only clear loss on record |
 | 55817630 | gap budget 0.003 → 0.02, candidate requirement dropped | 55772253 = 0.920 | 0.922 | +0.002 |
 | **55889500** | **F4: ep05 DeepCenter as 4th equal-weight heatmap** | 55817630 = 0.922 | **0.925** | **+0.003, NEW BEST — largest single gain on record** |
+| 55904403 | W1101: branch 3 to half weight | 55889500 = 0.925 | 0.924 | −0.001, and it PRICES 6bba (below) |
 
 **Two final-selection slots. 55889500 (0.925) must take one** (select
 in the UI); 55817630 (0.922) is the natural second.
+
+**THE 6BBA DISCOUNT RATE IS MEASURED (2026-08-31, W1101).** A local 6bba
+loss transfers to the hidden test at **5–18% of face value** (W1101
+doubled the 6bba loss, moved nothing else, and paid 0.001 — of which
+0.0007 is its +3.5% node growth). Clean-domain gains transfer at roughly
+0.55. So a 6bba veto of −0.01 predicts about −0.001 hidden and can never
+outvote a clean-domain gain of comparable size. The three-domain rule's
+6bba amendment now has a number instead of an argument.
 
 ⚠ **The daily submission limit is FIVE, not two.** `max_daily_submissions:
 5`. Days of rationing at two were based on confusing the daily cap with
@@ -208,6 +217,56 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-08-31 -- ⭐⭐⭐⭐⭐ W1101 = 0.924, and it PRICES 6bba: the local 6bba loss transfers to the leaderboard at roughly 5-18 cents on the dollar. The user's pre-registration resolves "real, and nearly worthless".
+
+**The instrument.** W1101 (ref 55904403) is F4 with one number changed:
+the four-map average becomes `(h0+h1+0.5*h2+h3)/3.5`, demoting branch 3.
+Locally that is a near-perfect single variable against F4 -- the clean
+domains do not move (44b6 identical at +0.0054, zh -0.0003) and the
+6bba loss DOUBLES (-0.0053 -> -0.0108 vs BASE). The user submitted it
+with a pre-registration written before the result and stated as an
+asymmetry: "只有比F4低才能得出结论，高的话根本没法得出结论" -- LOWER
+than 0.925 = the 6bba negativity has a REAL component beyond
+memorization; EQUAL = the pure-artifact reading holds; HIGHER =
+predicted by neither hypothesis, uninformative.
+
+**Result: 0.924, one unit below F4's 0.925.** By the letter of the rule,
+the real-component branch. By magnitude, it is nearly nothing, and most
+of it is not even 6bba:
+
+| | F4 (55889500) | W1101 (55904403) | delta |
+|---|---|---|---|
+| LB | 0.925 | 0.924 | -0.001 |
+| local 6bba vs BASE | -0.0053 | -0.0108 | -0.0055 |
+| local 44b6 | +0.0054 | +0.0054 | 0 |
+| local zh | +0.0027 | +0.0024 | -0.0003 |
+| visible-4 nodes | 128,157 | 132,646 | +3.5% |
+
+W1101 also grew the node count 3.5%. At the twice-measured LB node tax
+(+10.3% output -> -0.002) that alone is worth -0.0007, leaving about
+-0.0003 attributable to an extra -0.0055 of local 6bba. **Transfer
+coefficient: 5% if the node tax is trusted, 18% if it is ignored
+entirely.** Either way 6bba's local verdicts are worth a small fraction
+of face value on the hidden test, which is exactly what the
+memorization amendment predicted -- the amendment said "discount 6bba
+on detection-side changes", and this is the first measurement of the
+discount rate rather than an argument for it.
+
+**Consistency with F4.** Feed the coefficient back: F4's own 6bba
+-0.0053 cost about -0.0003, its -1.6% node change credited about
++0.0003, so its +0.003 LB gain had to come from the clean domains
+(+0.0054 44b6, +0.0027 zh). That implies clean-domain gains transfer at
+roughly 0.55 -- an order of magnitude stronger than 6bba's. Two points
+at three-decimal resolution is not a calibration, but the ORDERING is
+now measured twice and is what the three-domain rule already assumed.
+
+**What it does NOT say.** It does not vindicate 6bba as a judge. A 5-18%
+transfer means a 6bba veto of -0.01 predicts about -0.001 hidden, i.e.
+6bba can still never outvote a clean-domain gain of comparable size.
+The amendment stands unchanged; it now has a number attached.
+
+**Cost:** one submission slot, no GPU quota.
 
 ## 2026-08-31 -- ⭐⭐⭐⭐ mergescore: ADDING POINTS FINALLY PAYS ON THE COMPETITION-STYLE DOMAIN. M15 (+3.94% nodes) gains +0.0060 on 44b6 and +0.0104 on zh, and it earns it in edge_J while the node bookkeeping works against it.
 
