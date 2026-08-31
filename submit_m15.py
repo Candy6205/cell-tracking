@@ -1028,7 +1028,11 @@ for zp in sorted(TEST_DIR.glob("*.zarr")):
         print("skip", ds, flush=True)
         continue
     t0 = time.time()
+    _m0 = tuple(_MERGE_COUNT)
     (nrows, erows), nodes, edges = track_movie(zp, ds, T)
+    _mb, _ma = (_MERGE_COUNT[0] - _m0[0], _MERGE_COUNT[1] - _m0[1])
+    print(f"  MERGE {ds}: +{_ma:,} ep05 on {_mb:,} F4 detections "
+          f"({100.0 * _ma / max(_mb, 1):.2f}% nodes)", flush=True)
     parts += [nrows, erows]
     KEEP[ds] = (nodes, edges)
     print(f"  {ds}: T={T} nodes={len(nrows)} edges={len(erows)} "

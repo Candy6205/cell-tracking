@@ -104,6 +104,15 @@ rep("""    h = hs[0] if len(hs) == 1 else np.mean(hs, axis=0)
     return (np.concatenate([c0, cd], 0),
             np.concatenate([s0, np.full(len(cd), UNET_THRESH)], 0))""")
 
+rep("""    t0 = time.time()
+    (nrows, erows), nodes, edges = track_movie(zp, ds, T)""",
+    """    t0 = time.time()
+    _m0 = tuple(_MERGE_COUNT)
+    (nrows, erows), nodes, edges = track_movie(zp, ds, T)
+    _mb, _ma = (_MERGE_COUNT[0] - _m0[0], _MERGE_COUNT[1] - _m0[1])
+    print(f"  MERGE {ds}: +{_ma:,} ep05 on {_mb:,} F4 detections "
+          f"({100.0 * _ma / max(_mb, 1):.2f}% nodes)", flush=True)""")
+
 rep('print("SUBMIT RANKER DONE", flush=True)',
     '_b, _a = _MERGE_COUNT\n'
     'print(f"MERGE: {_a:,} ep05 points added on {_b:,} F4 points "\n'
