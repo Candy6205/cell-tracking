@@ -209,6 +209,98 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-08-31 -- ⭐⭐⭐⭐ mergescore: ADDING POINTS FINALLY PAYS ON THE COMPETITION-STYLE DOMAIN. M15 (+3.94% nodes) gains +0.0060 on 44b6 and +0.0104 on zh, and it earns it in edge_J while the node bookkeeping works against it.
+
+**The question.** dcmerge (2026-08-28) added DeepCenter points as
+primaries and read +0.0379 on zebrahub / -0.0413 on 6bba, monotone in
+both directions -- but it used pilkwang's PUBLISHED DC checkpoint, so
+44b6 (dctrain's excluded set) was nan and the arc was shelved. The
+memorization amendment reopened it: 6bba is non-voting for
+detection-side changes. The user's two conditions for the rerun:
+(1) "直接用pilkwang是完全不应该的" -- use OUR ep05, and
+(2) "增加节点数感觉还挺有风险的... zebrahub根本就没有到细胞数上限，它是
+几乎全细胞标注" -- zh structurally subsidises added points, so a zh-only
+win settles nothing and 44b6 is the deciding vote.
+
+**Setup.** `mergescore.py`, CPU, 327.6 min. F4 detections as the base;
+an ep05 point is admitted iff its own score >= tau AND it is > 4.0 um
+(our own NMS radius) from every F4 point at that frame, entering at
+score UNET_THRESH as a PRIMARY. Five arms x three domains, one ILP
+solve per arm per dataset. Ranker D32 for every judged arm (a detection
+change feeds the ranker different candidates, so D187's in-sample bias
+would not cancel); BASE_D187 runs only as the harness anchor.
+
+**Both anchors reproduced exactly**: BASE_D187 6bba adj_J 0.9293
+(dcpool's value), F4 x D32 0.9198 / 0.8303 / 0.8115 (fusescore's).
+
+**adj_J delta vs F4, both on D32:**
+
+| arm | 6bba (non-voting) | 44b6 | zh | verdict |
+|---|---|---|---|---|
+| M50 (tau 0.50) | +0.0000 | +0.0000 | +0.0000 | no-op: ZERO points admitted |
+| M30 (tau 0.30) | -0.0021 | -0.0010 | +0.0057 | clean domains disagree -- discard |
+| M15 (tau 0.15) | -0.0064 | **+0.0060** | **+0.0104** | **CLEAN DOMAINS POSITIVE** |
+
+**Points added:** tau 0.15 = +17,263 on 437,884 (44b6, +3.94%), +7,653
+on 188,100 (6bba, +4.07%), +4,642 on 228,665 (zh, +2.03%). tau 0.30
+adds under 1.1% everywhere; tau 0.50 adds literally nothing (ep05 never
+puts a >=0.50 peak more than 4 um from every F4 point).
+
+**Why the 44b6 win is not a bookkeeping artifact.** The local adj_J is
+`edge_J * (1 - 0.1 * node_ratio)` with node_ratio SIGNED, so a node
+DEFICIT inflates it (F4 44b6: 0.8214 * 1.01066 = 0.8303). M15 shrinks
+the deficit -10.66% -> -7.38%, i.e. it GIVES BACK 0.0025 of that bonus,
+and still nets +0.0060 because edge_J rose 0.8214 -> 0.8299. The gain
+is real linking, bought with real nodes.
+
+| domain | arm | edge_J | node_ratio | adj_J |
+|---|---|---|---|---|
+| 44b6 | F4 | 0.8214 | -0.1066 | 0.8303 |
+| 44b6 | M30 | 0.8210 | -0.1007 | 0.8293 |
+| 44b6 | M15 | **0.8299** | **-0.0738** | **0.8363** |
+| zh | F4 | 0.8052 | nan | 0.8115 |
+| zh | M15 | 0.8169 | nan | 0.8219 |
+| 6bba | F4 | 0.9178 | -0.0213 | 0.9198 |
+| 6bba | M15 | 0.9141 | +0.0092 | 0.9134 |
+
+**What the user's objection turns out to be worth.** It was right about
+zh and wrong about the conclusion. zh's node_ratio is nan in this
+harness, so zh's +0.0104 is pure edge_J with no node term at all -- a
+subsidised vote exactly as predicted, and correctly discountable. But
+44b6 has the node term live, pointing the wrong way, and the arm won
+anyway. The objection was the right filter; applying it is what makes
+the 44b6 number mean something.
+
+**Monotone in the direction of MORE points**: 0 added -> nothing,
++0.6-1.1% -> mixed, +2-4% -> both clean domains positive. tau 0.15 is
+already UNET_THRESH, the floor at which the pipeline calls something a
+detection, so there is no lower rung to test without redefining what a
+primary is.
+
+**TWO HOLES, both on the record:**
+1. The per-dataset table was anchored on **M30, the discarded arm**, so
+   the 44b6 +0.0060 was never checked for concentration. M30's 44b6
+   detail is 4 positive / 8 negative carried by 33b596bf's +0.0380 --
+   if M15 has the same shape, the arm is one dataset wide. Not measured.
+2. 6bba's -0.0064 is the largest negative of the three arms. It is
+   non-voting by the amendment, but it is the same quantity W1101 was
+   submitted to price.
+
+**Status:** `submit_m15.py` built (asserted replacement from submit_f4,
+pyflakes identical to parent) and pushed as `biohub-submit-m15`; visible
+run in flight. The submission decision is HELD until W1101's LB lands,
+because W1101 is precisely the pre-registered test of whether a 6bba
+loss of this size is real or discountable. At the measured LB node tax
+(+10.3% output -> -0.002) a +4% add costs about -0.0008, so the
+clean-domain gain has headroom -- but that tax was measured on a
+different change and should not be trusted to three decimals.
+
+**Faithfulness note for anyone rebuilding this.** The dcdet_ep05 caches
+peak at CAND_THR 0.05, refine, run the 4 um NMS, and only THEN filter
+score >= tau. `submit_m15.py` keeps that order; thresholding before the
+NMS would let a 0.16 peak survive a 0.20 neighbour that suppressed it
+in the cache, which is a different arm than the one that was measured.
+
 ## 2026-08-31 -- ⭐⭐⭐⭐⭐ 0.925, ref 55889500. THE 6BBA VETO WAS A MEMORIZATION ARTIFACT: F4 (ep05 as a 4th heatmap) gains +0.003 on the LB after losing on 6bba locally. The DeepCenter arc is ALIVE, and the user called it.
 
 **The user's insight** (2026-08-30, verbatim reasoning): "分数在6bba上面
