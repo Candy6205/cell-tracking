@@ -25,13 +25,16 @@ arbitrated on the LB. Full history:
 | 55904403 | W1101: branch 3 to half weight | 55889500 = 0.925 | 0.924 | −0.001, and it PRICES 6bba (below) |
 | 55911058 | M15: ep05's missed points added as primaries | 55889500 = 0.925 | **0.917** | **−0.008, WORST ON RECORD** |
 
-⚠ **CHECK `total_bytes` BEFORE EVERY SUBMISSION.** Sorted by hidden
-output size, the eight submissions order almost perfectly by score, and
-the peak is F4 at 270,740,009 bytes. −3% output → 0.920–0.921; −1% →
-0.922; **F4 → 0.925**; +1% → 0.924; +2.5% → 0.918; +3.7% → 0.917. The
-two runs that grew output most are the two worst scores on record. Any
-change that grows hidden output past about +1% has to justify itself
-against that curve first. Full table in the M15 entry.
+⚠ **CHECK `total_bytes` BEFORE EVERY SUBMISSION.** It is the only direct
+measurement of hidden-test behaviour and it sat unread until 2026-08-31.
+Paired against each change's OWN control: growth under +1.6% is not the
+driver (four changes, −0.001 to +0.003, no ordering by size), but **both
+changes that grew output past +3.7% lost**, and they are the two worst
+scores on record. Necessary, not sufficient — M15 grew output LESS than
+gate 0.12 and lost four times as much, so node COUNT cannot price a
+change and WHICH nodes is the open question. Full paired table in the
+M15 entry. Do NOT sort submissions by absolute output size; that view is
+confounded by pipeline vintage.
 
 ⚠ **`thr5`'s linear node tax is REFUTED above ~+2%.** It predicted
 −0.0007 for M15's +3.71%; the true cost was −0.008. There is a cliff,
@@ -268,28 +271,50 @@ both clean, both positive, both agreeing -- and the leaderboard said
 have. Nobody had ever tabulated it across submissions. Sorted by output
 size, not by date:
 
-| ref | change | hidden bytes | vs F4 | LB |
-|---|---|---|---|---|
-| 55707206 | D32 ranker, global solve | 262,623,879 | -3.00% | 0.921 |
-| 55757064 | ranker pool 32 -> 187 | 262,803,696 | -2.93% | 0.920 |
-| 55772253 | `SHORT_MIN` 6 -> 4 | 267,030,255 | -1.37% | 0.920 |
-| 55817630 | gap4 nocand_cap20 | 268,154,477 | -0.96% | 0.922 |
-| **55889500** | **F4** | **270,740,009** | **0** | **0.925** |
-| 55904403 | W1101 | 273,340,932 | +0.96% | 0.924 |
-| 55780773 | gate 0.15 -> 0.12 | 277,555,127 | +2.52% | 0.918 |
-| **55911058** | **M15** | **280,776,965** | **+3.71%** | **0.917** |
+| ref | change | hidden bytes | LB |
+|---|---|---|---|
+| 55707206 | D32 ranker, global solve | 262,623,879 | 0.921 |
+| 55757064 | ranker pool 32 -> 187 | 262,803,696 | 0.920 |
+| 55772253 | `SHORT_MIN` 6 -> 4 | 267,030,255 | 0.920 |
+| 55780773 | gate 0.15 -> 0.12 | 277,555,127 | 0.918 |
+| 55817630 | gap4 nocand_cap20 | 268,154,477 | 0.922 |
+| **55889500** | **F4** | **270,740,009** | **0.925** |
+| 55904403 | W1101 | 273,340,932 | 0.924 |
+| **55911058** | **M15** | **280,776,965** | **0.917** |
 
-Output size orders the leaderboard almost perfectly across all eight
-runs, peaking exactly at F4. Below the peak it costs 0.003-0.005; above
-it costs 0.007-0.008. **The two runs that grew output most are the two
-worst scores on record.** Output size is 2 for 2 on predicting the
-disasters, against the three-domain rule's 1 for 5.
+⚠ **CORRECTION, same session.** Sorting those eight by absolute output
+size produces a tidy inverted U peaking at F4, and that reading is
+CONFOUNDED: everything on the low side is a pre-gap4 / pre-F4 pipeline,
+so those runs score lower because they are worse pipelines, not because
+they emit less. Every submission is a single variable against its OWN
+control, so the honest table is the PAIRED one:
 
-Caveat before this becomes doctrine: bytes is rows, i.e. nodes PLUS
-edges, so it conflates the two, and eight points across changes with
-different mechanisms is correlation. But it is the best-ordering
-instrument in the project's history and it was sitting unread in the
-submission metadata the whole time.
+| change | Δ hidden output | Δ LB |
+|---|---|---|
+| ranker pool 32 -> 187 | +0.07% | −0.001 |
+| gap4 nocand_cap20 | +0.42% | **+0.002** |
+| **F4** | +0.96% | **+0.003** |
+| W1101 | +0.96% | −0.001 |
+| `SHORT_MIN` 6 -> 4 | +1.61% | 0.000 |
+| **M15** | **+3.71%** | **−0.008** |
+| gate 0.15 -> 0.12 | +3.94% | −0.002 |
+
+**Below about +1.6% growth, output is not the driver** -- four changes
+spread over −0.001 to +0.003 with no ordering by size. **Both changes
+that grew output past +3.7% lost**, so large growth is NECESSARY for a
+disaster on this evidence.
+
+**It is not SUFFICIENT, and that kills the simple node-count story.**
+M15 grew output LESS than gate 0.12 (+3.71% vs +3.94%) and lost FOUR
+TIMES as much (−0.008 vs −0.002). Whatever M15 added was worse per node
+than what the gate added, so "how many nodes" cannot price it and the
+question becomes WHICH nodes -- which is what `fatescore` was built to
+answer.
+
+Caveat: bytes is rows, i.e. nodes PLUS edges, so it conflates the two.
+Still, `total_bytes` is the only direct measurement of hidden-test
+behaviour available, nobody had ever tabulated it, and the paired
+version above is a real constraint on any future recall-raising change.
 
 ### `thr5`'s linear node tax is WRONG above about +2%
 
