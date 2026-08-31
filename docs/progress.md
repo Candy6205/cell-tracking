@@ -30,10 +30,18 @@ in the UI); 55817630 (0.922) is the natural second.
 **THE 6BBA DISCOUNT RATE IS MEASURED (2026-08-31, W1101).** A local 6bba
 loss transfers to the hidden test at **5–18% of face value** (W1101
 doubled the 6bba loss, moved nothing else, and paid 0.001 — of which
-0.0007 is its +3.5% node growth). Clean-domain gains transfer at roughly
-0.55. So a 6bba veto of −0.01 predicts about −0.001 hidden and can never
-outvote a clean-domain gain of comparable size. The three-domain rule's
-6bba amendment now has a number instead of an argument.
+0.0007 is its +3.5% node growth). So a 6bba veto of −0.01 predicts about
+−0.001 hidden. The three-domain rule's 6bba amendment now has a number
+instead of an argument.
+
+⚠ **The companion "clean domains transfer at 0.55" is NOT established**
+— it came from inverting F4's single result, and ref 55780773 (gate
+0.12) contradicts it outright: three-domain-positive local gains of
++0.0055/+0.0045/+0.0121 netted −0.002 on the LB, which is about exactly
+its own +10.3% node tax, i.e. those local gains transferred at ~0.
+**Transfer is not a constant.** It tracks whether the change has a
+measured mechanism, which is the 1-for-4 holdout finding restated.
+Never quote a clean-domain coefficient as if it were calibrated.
 
 ⚠ **The daily submission limit is FIVE, not two.** `max_daily_submissions:
 5`. Days of rationing at two were based on confusing the daily cap with
@@ -345,14 +353,63 @@ primary is.
    non-voting by the amendment, but it is the same quantity W1101 was
    submitted to price.
 
-**THE 6BBA LOSS MAY NOT BE MEMORIZATION AT ALL.** Look at node_ratio:
-6bba goes -2.13% -> +0.92%, i.e. F4 had ALREADY reached the right cell
-count there and 4% more points overshoots into surplus. 44b6 goes
--10.66% -> -7.38%, still short. That is the user's own structural
-argument ("只要没有hit上限，检测来说，不要太离谱就是正提升") applied in
-both directions, and it explains the sign split without invoking the
-training split at all. The two explanations are not exclusive and this
-run cannot separate them, but the simpler one is sufficient.
+**~~THE 6BBA LOSS MAY NOT BE MEMORIZATION AT ALL.~~ WRONG, RETRACTED
+SAME DAY -- the user caught it before the score came back.** The claim
+was: 6bba's node_ratio flips -2.13% -> +0.92%, so 6bba had already
+reached the right cell count and 4% more points overshoots, while 44b6
+was still 10.7% short -- the sign split explained by the ceiling, no
+training split needed.
+
+It does not survive decomposing adj_J into its two factors. Both
+domains added ~4% nodes, so **the node term costs them the SAME
+-0.0028**, and the entire disagreement is in edge_J:
+
+| domain | node-term contribution | edge_J contribution | total |
+|---|---|---|---|
+| 44b6 | -0.0028 | **+0.0085** | +0.0057 |
+| zh | -0.0014 | **+0.0118** | +0.0104 |
+| 6bba | -0.0028 | **-0.0037** | -0.0065 |
+
+More than half of 6bba's loss is edge_J going DOWN: the added points
+made LINKING worse there, which is a real quality disagreement between
+the domains, not a counting artifact. The retracted claim took a term
+that is identical in both domains and presented it as the source of
+their difference.
+
+**AND THE CEILING PRECEDENT POINTS THE OTHER WAY (the user's second
+point).** The "we are at the validation cell-count ceiling" conclusion
+was itself derived from ref 55780773 (gate 0.15 -> 0.12), and what
+made it a conclusion is that the change was **positive in all three
+domains** (+0.0055 / +0.0045 / +0.0121), **added 10.3% nodes**, and
+**lost on the leaderboard** (0.918 against its 0.920 control -- the only
+clear loss on record).
+
+| | local three domains | node change | LB |
+|---|---|---|---|
+| 55780773 gate 0.12 | +0.0055 / +0.0045 / +0.0121, all positive | +10.3% | **0.918** (control 0.920) |
+| M15 | -0.0064 / +0.0060 / +0.0104, one negative | +2.01% visible, ~4% offline | ? |
+
+So the closest precedent to M15 is a change with STRONGER local
+evidence that added cells and lost. On evidence strength M15 is
+strictly weaker than a thing that already failed, not stronger.
+
+**This also breaks the 0.55 clean-domain transfer coefficient** derived
+one entry above from F4's single data point. If clean-domain gains
+transferred at 0.55, gate 0.12's +0.0055/+0.0045/+0.0121 would have
+paid handsomely; instead it netted -0.002, which is about exactly its
+own node tax. Its local gains transferred at roughly ZERO. Two
+coefficients that far apart mean **transfer is not a constant** -- it
+depends on whether the change has a mechanism, which is what the
+HANDOFF already said about the 1-for-4 holdout ("the one success had
+the smallest weakest-domain delta and the only measured MECHANISM").
+M15 is arguable on that axis -- it is not constant tuning, it is a
+second model's opinion changing which detections exist -- but it shares
+gate 0.12's fatal feature: it adds cells.
+
+**Consequence: the +0.0025 point estimate below is withdrawn.** The
+pre-registered READING is not changed (moving goalposts after the fact
+is worthless), but there are now two precedents pulling opposite ways
+and M15 belongs to both classes.
 
 **FAITHFULNESS VERIFIED BEFORE SUBMITTING (`mergecheck`, CPU).** The
 visible run added 2.06% nodes where the offline arm read 3.94/4.07% on
