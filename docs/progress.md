@@ -23,6 +23,24 @@ arbitrated on the LB. Full history:
 | 55817630 | gap budget 0.003 → 0.02, candidate requirement dropped | 55772253 = 0.920 | 0.922 | +0.002 |
 | **55889500** | **F4: ep05 DeepCenter as 4th equal-weight heatmap** | 55817630 = 0.922 | **0.925** | **+0.003, NEW BEST — largest single gain on record** |
 | 55904403 | W1101: branch 3 to half weight | 55889500 = 0.925 | 0.924 | −0.001, and it PRICES 6bba (below) |
+| 55911058 | M15: ep05's missed points added as primaries | 55889500 = 0.925 | **0.917** | **−0.008, WORST ON RECORD** |
+
+⚠ **CHECK `total_bytes` BEFORE EVERY SUBMISSION.** Sorted by hidden
+output size, the eight submissions order almost perfectly by score, and
+the peak is F4 at 270,740,009 bytes. −3% output → 0.920–0.921; −1% →
+0.922; **F4 → 0.925**; +1% → 0.924; +2.5% → 0.918; +3.7% → 0.917. The
+two runs that grew output most are the two worst scores on record. Any
+change that grows hidden output past about +1% has to justify itself
+against that curve first. Full table in the M15 entry.
+
+⚠ **`thr5`'s linear node tax is REFUTED above ~+2%.** It predicted
+−0.0007 for M15's +3.71%; the true cost was −0.008. There is a cliff,
+not a slope. Never price added output linearly again.
+
+⚠ **DeepCenter is a VOTE, not a DETECTOR.** Averaged into the heatmap
+(F4) it is worth +0.003; admitted unilaterally as points (M15) it is
+worth −0.008. Same checkpoint. Every unilateral-DC experiment has now
+failed (dcmerge, vetoscore2, M15) and the one ensemble-vote use won.
 
 **Two final-selection slots. 55889500 (0.925) must take one** (select
 in the UI); 55817630 (0.922) is the natural second.
@@ -225,6 +243,93 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-08-31 -- ⭐⭐⭐⭐⭐ M15 = 0.917, THE WORST SCORE ON RECORD. DeepCenter is a VOTE, not a DETECTOR -- and hidden output size predicts the leaderboard better than any local metric ever has.
+
+**Result: 0.917, -0.008 from F4's 0.925.** The largest single loss on
+record, four times gate 0.12's. The pre-registered reading resolves on
+its lowest branch: the claim that ep05's missed points, admitted as
+primaries at 0.15, transfer to the hidden test is DEAD.
+
+**The user predicted this and the margin exceeded their argument.** Their
+objection, logged before the score: the "we are at the cell-count
+ceiling" conclusion came from ref 55780773, which was positive in all
+three domains, added cells, and lost -- so M15, with one domain
+NEGATIVE and cells added, is strictly weaker evidence than a thing that
+already failed. M15 landed 0.001 BELOW gate 0.12.
+
+**THE CLEAN-DOMAIN RULE FAILED BADLY HERE.** 44b6 +0.0060 and zh +0.0104,
+both clean, both positive, both agreeing -- and the leaderboard said
+-0.008. The three-domain family of rules is now 1 for 5.
+
+### The byte curve: pull `total_bytes` for all eight submissions
+
+`total_bytes` is the only direct measurement of hidden-test behaviour we
+have. Nobody had ever tabulated it across submissions. Sorted by output
+size, not by date:
+
+| ref | change | hidden bytes | vs F4 | LB |
+|---|---|---|---|---|
+| 55707206 | D32 ranker, global solve | 262,623,879 | -3.00% | 0.921 |
+| 55757064 | ranker pool 32 -> 187 | 262,803,696 | -2.93% | 0.920 |
+| 55772253 | `SHORT_MIN` 6 -> 4 | 267,030,255 | -1.37% | 0.920 |
+| 55817630 | gap4 nocand_cap20 | 268,154,477 | -0.96% | 0.922 |
+| **55889500** | **F4** | **270,740,009** | **0** | **0.925** |
+| 55904403 | W1101 | 273,340,932 | +0.96% | 0.924 |
+| 55780773 | gate 0.15 -> 0.12 | 277,555,127 | +2.52% | 0.918 |
+| **55911058** | **M15** | **280,776,965** | **+3.71%** | **0.917** |
+
+Output size orders the leaderboard almost perfectly across all eight
+runs, peaking exactly at F4. Below the peak it costs 0.003-0.005; above
+it costs 0.007-0.008. **The two runs that grew output most are the two
+worst scores on record.** Output size is 2 for 2 on predicting the
+disasters, against the three-domain rule's 1 for 5.
+
+Caveat before this becomes doctrine: bytes is rows, i.e. nodes PLUS
+edges, so it conflates the two, and eight points across changes with
+different mechanisms is correlation. But it is the best-ordering
+instrument in the project's history and it was sitting unread in the
+submission metadata the whole time.
+
+### `thr5`'s linear node tax is WRONG above about +2%
+
+thr5 concluded the node-count term is linear with a constant slope. On
+that model M15's +3.71% output should cost -0.0007. **It cost -0.008,
+eleven times more.** W1101's +0.96% should have cost -0.0002; it cost
+-0.001, five times more. The steepest measured segment is
++0.96% -> +2.52% (W1101 to gate 0.12), where 1.56% of output destroys
+0.006 of score.
+
+So there is a CLIFF somewhere above F4's operating point, not a slope.
+Every "the node penalty is linear so we can afford N% more nodes"
+argument in this file, including the one used to justify submitting M15
+one entry below, rests on a model the leaderboard has now refuted.
+**Do not price added output linearly again.**
+
+### THE RESIDUE, and it is worth the 0.008
+
+Same checkpoint, same normalisation, same 4-flip TTA, same pooled grid:
+
+| how ep05's opinion enters | LB vs its control |
+|---|---|
+| averaged into the heatmap before peak finding (F4) | **+0.003** |
+| admitted as unilateral primary points (M15) | **-0.008** |
+
+The only difference is **whether the three xl branches can outvote it.**
+In the average, an ep05 peak that the xl models do not support gets
+flattened before `peak_local_max` ever sees it. Admitted directly,
+nothing stops it.
+
+This retro-explains the entire DeepCenter arc. **Every attempt to let
+DeepCenter act unilaterally has failed** -- dcmerge (2026-08-28, added
+primaries), dc_gate/vetoscore2 (2026-08-30, unilateral deletion), M15
+(today, added primaries with our own ep05). **The one attempt to make it
+a vote won.** DeepCenter's value is as a member of an ensemble, not as
+an independent detector, and that is now measured three times against
+one.
+
+**Cost:** one submission slot, ~25 min GPU for the instrumented rerun,
+one CPU kernel. Best is unchanged at 0.925.
 
 ## 2026-08-31 -- ⭐⭐⭐⭐⭐ W1101 = 0.924, and it PRICES 6bba: the local 6bba loss transfers to the leaderboard at roughly 5-18 cents on the dollar. The user's pre-registration resolves "real, and nearly worthless".
 
