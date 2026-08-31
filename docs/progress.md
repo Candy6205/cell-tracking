@@ -345,14 +345,41 @@ primary is.
    non-voting by the amendment, but it is the same quantity W1101 was
    submitted to price.
 
-**Status:** `submit_m15.py` built (asserted replacement from submit_f4,
-pyflakes identical to parent) and pushed as `biohub-submit-m15`; visible
-run in flight. The submission decision is HELD until W1101's LB lands,
-because W1101 is precisely the pre-registered test of whether a 6bba
-loss of this size is real or discountable. At the measured LB node tax
-(+10.3% output -> -0.002) a +4% add costs about -0.0008, so the
-clean-domain gain has headroom -- but that tax was measured on a
-different change and should not be trusted to three decimals.
+**THE 6BBA LOSS MAY NOT BE MEMORIZATION AT ALL.** Look at node_ratio:
+6bba goes -2.13% -> +0.92%, i.e. F4 had ALREADY reached the right cell
+count there and 4% more points overshoots into surplus. 44b6 goes
+-10.66% -> -7.38%, still short. That is the user's own structural
+argument ("只要没有hit上限，检测来说，不要太离谱就是正提升") applied in
+both directions, and it explains the sign split without invoking the
+training split at all. The two explanations are not exclusive and this
+run cannot separate them, but the simpler one is sufficient.
+
+**FAITHFULNESS VERIFIED BEFORE SUBMITTING (`mergecheck`, CPU).** The
+visible run added 2.06% nodes where the offline arm read 3.94/4.07% on
+the two domains the visible four belong to. Density did not explain it
+and was measured to be irrelevant: 44b6_a2bb48bb at 740 pts/frame adds
+8.73% while 44b6_c96cfa10 at 481 adds 1.25%; 6bba_7af54fde at 113 adds
+9.31% while 6bba_afb141ff at 68 adds 1.17%. The add rate is a per-movie
+property of how much ep05 disagrees with the xl ensemble, spread
+1.17%-9.31% (median 3.56%) across the 24 cached datasets, and
+mergecheck reproduced both domain totals exactly (3.94% / 4.07%).
+
+The decisive test was 44b6_0b24845f, which is in BOTH the cached set and
+the visible four: **offline +1,607 on 56,067 = 2.87%, submission
++1,607 on 56,067 = 2.87%** -- equal to the integer, so the on-the-fly
+peak recomputation in `detect()` is the cached path. Per-dataset in the
+visible four: 44b6_0113de3b 0.33% (below the cached minimum),
+44b6_0b24845f 2.87%, 6bba_05b6850b 1.90%, 6bba_05db0fb1 2.07% (46% of
+the weight). All four sit low; the 2.06% is composition.
+
+**SUBMITTED as ref 55911058** (2026-08-31, second slot of five that
+day), after W1101 priced the 6bba loss at 5-18% of face value.
+Pre-registered arithmetic: 6bba -0.0064 costs about -0.0004, +2.01%
+nodes about -0.0004, 44b6 +0.0060 at the ~0.55 clean-domain coefficient
+pays about +0.0033, net about **+0.0025 -> 0.927-0.928**. Reading:
+>0.925 = the point-add line pays on a third embryo; =0.925 = noise;
+<0.925 = kills the claim that ep05's missed points admitted at 0.15
+transfer, residue being that 44b6's clean-domain vote overpredicted.
 
 **Faithfulness note for anyone rebuilding this.** The dcdet_ep05 caches
 peak at CAND_THR 0.05, refine, run the 4 um NMS, and only THEN filter
