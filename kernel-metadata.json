@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-fatescore",
-  "title": "Biohub fatescore",
-  "code_file": "fatescore.py",
+  "id": "faustine649/biohub-f4diag",
+  "title": "Biohub f4diag",
+  "code_file": "f4diag.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -17,8 +17,7 @@
     "faustine649/biohub-cache-train",
     "faustine649/biohub-zh-detect",
     "faustine649/biohub-poolsize",
-    "faustine649/biohub-fusecache",
-    "faustine649/biohub-dccache3"
+    "faustine649/biohub-fusecache"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
