@@ -25,86 +25,25 @@ arbitrated on the LB. Full history:
 | 55904403 | W1101: branch 3 to half weight | 55889500 = 0.925 | 0.924 | −0.001, and it PRICES 6bba (below) |
 | 55911058 | M15: ep05's missed points added as primaries | 55889500 = 0.925 | **0.917** | **−0.008, WORST ON RECORD** |
 
-⚠ **CHECK `total_bytes` BEFORE EVERY SUBMISSION.** It is the only direct
-measurement of hidden-test behaviour and it sat unread until 2026-08-31.
-Paired against each change's OWN control: growth under +1.6% is not the
-driver (four changes, −0.001 to +0.003, no ordering by size), but **both
-changes that grew output past +3.7% lost**, and they are the two worst
-scores on record. Necessary, not sufficient — M15 grew output LESS than
-gate 0.12 and lost four times as much, so node COUNT cannot price a
-change and WHICH nodes is the open question. Full paired table in the
-M15 entry. Do NOT sort submissions by absolute output size; that view is
-confounded by pipeline vintage.
+Hidden-test output size, `total_bytes` from the submission metadata,
+paired against each change's own control:
 
-⚠ **`thr5`'s linear node tax is REFUTED above ~+2%.** It predicted
-−0.0007 for M15's +3.71%; the true cost was −0.008. There is a cliff,
-not a slope. Never price added output linearly again.
+| change | Δ hidden output | Δ LB |
+|---|---|---|
+| ranker pool 32 → 187 | +0.07% | −0.001 |
+| gap4 nocand_cap20 | +0.42% | +0.002 |
+| F4 | +0.96% | +0.003 |
+| W1101 | +0.96% | −0.001 |
+| `SHORT_MIN` 6 → 4 | +1.61% | 0.000 |
+| M15 | +3.71% | −0.008 |
+| gate 0.15 → 0.12 | +3.94% | −0.002 |
 
-⚠ **STOP ADDING CELLS. The ceiling is reached on the hidden test.** The
-cell-count term is the only channel with no sparsity discount — its
-denominator is the dataset's TRUE total cell count — so every added node
-is charged in full, locally and hidden alike. Locally we are still BELOW
-the count everywhere (44b6 −10.7%, 6bba −2.1%, zh −7.8%) so the formula
-rewards adding; on the hidden embryo adding has cost us twice (gate 0.12
-+3.9% output → −0.002; M15 +3.7% → −0.008). **The local domains are not
-representative in cell count.** F4 won precisely because it is not an
-add-cells change: total detections FELL 0.8% on 44b6 and hidden output
-grew only 0.96%.
-
-⚠ **44b6 verdicts rest on ~2,856 evaluated edges** (315,582 emitted;
-6bba is 10,224 of 157,581). A +0.0060 there is about 27 edges. That is a
-PRECISION caveat, not a bias one — the local harness is the official
-`evaluate.py`, the same scorer the leaderboard runs, so sparse
-annotation can never explain a local-vs-leaderboard divergence. An
-earlier version of this file argued that it could; it was wrong.
-
-⚠ **F4 IS A RE-RANKER, NOT A DETECTOR.** It promotes ~20,700 44b6
-detections across the 0.15 primary gate while the TOTAL detection count
-falls 0.8%, and the GT cold-miss bucket does not move (64 → 66). The
-fourth heatmap buys no new detection ability at all. It also **more than
-halves 6bba's div_J** (0.1316 → 0.0606) on the shipped D187 ranker.
-
-⚠ **WITHDRAWN 2026-09-01 (the user): "weight domains by annotation
-density for add-node changes".** The argument was that an added edge is
-visible to `edge_J` with probability ~1.5% on 44b6 / ~18.5% on 6bba /
-~100% on zh, so 44b6 was the blindest possible judge for M15. Those
-visibility numbers are real, but the inference is not: **the local
-harness IS the official `evaluate.py`, the same scorer the leaderboard
-runs, and the hidden annotation is no denser.** A property both sides
-share cannot explain a divergence between them. What survives is only a
-PRECISION caveat — 44b6 grades on ~2,856 edges, so a +0.0060 there is
-~27 edges. The real reason M15 lost is the cell-count ceiling; see the
-"STOP ADDING CELLS" note above.
-
-⚠ **The ILP PRUNES unlinked nodes** — a node the solver does not link
-never reaches the geff. So "dead weight in the output" is impossible by
-construction, ~41% of any added detection set is silently discarded at
-no cost, and node growth in the output only ever comes from points that
-DID get linked.
-
-⚠ **DeepCenter is a VOTE, not a DETECTOR.** Averaged into the heatmap
-(F4) it is worth +0.003; admitted unilaterally as points (M15) it is
-worth −0.008. Same checkpoint. Every unilateral-DC experiment has now
-failed (dcmerge, vetoscore2, M15) and the one ensemble-vote use won.
+Absolute bytes: 55707206 262,623,879 · 55757064 262,803,696 · 55772253
+267,030,255 · 55817630 268,154,477 · 55889500 270,740,009 · 55904403
+273,340,932 · 55780773 277,555,127 · 55911058 280,776,965.
 
 **Two final-selection slots. 55889500 (0.925) must take one** (select
 in the UI); 55817630 (0.922) is the natural second.
-
-**THE 6BBA DISCOUNT RATE IS MEASURED (2026-08-31, W1101).** A local 6bba
-loss transfers to the hidden test at **5–18% of face value** (W1101
-doubled the 6bba loss, moved nothing else, and paid 0.001 — of which
-0.0007 is its +3.5% node growth). So a 6bba veto of −0.01 predicts about
-−0.001 hidden. The three-domain rule's 6bba amendment now has a number
-instead of an argument.
-
-⚠ **The companion "clean domains transfer at 0.55" is NOT established**
-— it came from inverting F4's single result, and ref 55780773 (gate
-0.12) contradicts it outright: three-domain-positive local gains of
-+0.0055/+0.0045/+0.0121 netted −0.002 on the LB, which is about exactly
-its own +10.3% node tax, i.e. those local gains transferred at ~0.
-**Transfer is not a constant.** It tracks whether the change has a
-measured mechanism, which is the 1-for-4 holdout finding restated.
-Never quote a clean-domain coefficient as if it were calibrated.
 
 ⚠ **The daily submission limit is FIVE, not two.** `max_daily_submissions:
 5`. Days of rationing at two were based on confusing the daily cap with
@@ -289,610 +228,320 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
-## 2026-09-01 -- ⭐⭐⭐⭐⭐ f4diag: F4 DOES NOT DETECT ANYTHING NEW -- it moves ~20,000 borderline detections across the 0.15 gate. And the local scorer inspects 0.91% of what we emit on 44b6.
+## 2026-09-01 -- f4diag: F4 traced against BASE, nodes and edges, every stage
 
-**The user's correction**, after I traced M15 instead: "我根本不需要知道
-M15到底失败在哪里了... 我想要知道的是F4！你要在所有环节追踪6bba和44b6的
-节点和边怎么样了". `f4diag.py` = edgediag with the detection source
-swapped to F4's caches, BASE and F4 run side by side, D187 both (what
-ref 55889500 ships), 6bba + 44b6, 59.1 min CPU.
+`f4diag.py` -> `biohub-f4diag`, CPU, 59.1 min. edgediag with the
+detection source swapped to F4's caches; BASE and F4 side by side, D187
+both (what ref 55889500 ships), 6bba + 44b6, no zebrahub.
 
-**Anchors are the strongest this project has had.** BASE reproduces
-edgediag BUCKET BY BUCKET, not just on adj_J: 6bba
-1.06/1.33/0.70/0.78/0.71/0.69/0.04/94.71 and 44b6
-4.01/2.98/1.11/2.32/2.39/2.39/0.21/84.60, plus adj_J 0.9293 / 0.8185
-and fp_invisible 93.3% / 99.0%. The primary counts also match
-fatescore's F4 rows exactly (171,450 / 354,086).
+ANCHORS. BASE reproduces edgediag bucket by bucket: 6bba
+1.06/1.33/0.70/0.78/0.71/0.69/0.04/94.71, 44b6
+4.01/2.98/1.11/2.32/2.39/2.39/0.21/84.60; adj_J 0.9293 / 0.8185;
+fp_invisible 93.3% / 99.0%. Primary counts match fatescore's F4 rows
+(171,450 / 354,086).
 
-### F4 on the ranker it actually ships with -- never measured before
+### Official scorer
 
-| | adj_J | div_J |
-|---|---|---|
-| BASE-6bba | 0.9293 | 0.1316 |
-| **F4-6bba** | **0.9216** (−0.0077) | **0.0606** (−0.0710) |
-| BASE-44b6 | 0.8185 | 0.0000 |
-| **F4-44b6** | **0.8353** (+0.0168) | 0.0000 |
+| | adj_J | div_J | score |
+|---|---|---|---|
+| BASE-6bba | 0.9293 | 0.1316 | 0.9424 |
+| F4-6bba | 0.9216 | 0.0606 | 0.9277 |
+| BASE-44b6 | 0.8185 | 0.0000 | 0.8185 |
+| F4-44b6 | 0.8353 | 0.0000 | 0.8353 |
 
-The 44b6 gain on D187 is **three times** the +0.0054 measured on D32,
-and **F4 more than halves 6bba's division jaccard** — an isolated cost
-of the shipped 0.925 pipeline that nobody had priced.
+### Nodes, stage by stage
 
-### ⭐ THE MECHANISM: F4 is a re-ranker, not a detector
+| arm-domain | detections | primaries >=0.15 | band [0.05,0.15) | in graph | ILP-linked | killed post | final | +repair |
+|---|---|---|---|---|---|---|---|---|
+| BASE-6bba | 188,998 | 173,269 | 15,729 | 96.2% | 96.2% | 0.7% | 166,081 | 622 |
+| F4-6bba | 188,100 | 171,450 | 16,650 | 96.2% | 96.2% | 0.7% | 164,287 | 589 |
+| BASE-44b6 | 441,478 | 336,948 | 104,530 | 92.9% | 92.9% | 1.2% | 311,865 | 2,781 |
+| F4-44b6 | 437,884 | 354,086 | 83,798 | 93.3% | 93.3% | 1.0% | 329,636 | 2,725 |
 
-| arm-domain | detections | primaries ≥0.15 | repair band | final | +repair |
+`in graph` equals `ILP-linked` in every row: the solver drops nodes it
+does not link, so they never reach the geff.
+
+Final-output degree -- BASE-6bba deg0 0.0% / deg1 8.6% / deg2 91.1% /
+deg3+ 0.3%; F4-6bba 0.0 / 8.5 / 91.1 / 0.3; BASE-44b6 0.0 / 9.2 / 90.5 /
+0.3; F4-44b6 0.0 / 8.8 / 90.8 / 0.3.
+
+### GT-node ledger
+
+matched = a primary within the match radius; subthresh = no primary but
+a 0.05-0.15 candidate is there; cold = nothing there.
+
+| arm-domain | GT nodes | matched | subthresh | cold |
+|---|---|---|---|---|
+| BASE-6bba | 10,699 | 10,516 (98.3%) | 88 (0.8%) | 95 (0.9%) |
+| F4-6bba | 10,699 | 10,464 (97.8%) | 121 (1.1%) | 114 (1.1%) |
+| BASE-44b6 | 2,947 | 2,802 (95.1%) | 81 (2.7%) | 64 (2.2%) |
+| F4-44b6 | 2,947 | 2,841 (96.4%) | 40 (1.4%) | 66 (2.2%) |
+
+### Every GT edge, charged to the first stage that loses it
+
+6bba 10,313 adjacent GT edges, 0 non-adjacent; 44b6 2,890, 0.
+
+| bucket | BASE-6bba | F4-6bba | BASE-44b6 | F4-44b6 |
+|---|---|---|---|---|
+| det_miss_subthresh | 109 (1.06%) | 146 (1.42%) | 116 (4.01%) | 60 (2.08%) |
+| det_miss_cold | 137 (1.33%) | 146 (1.42%) | 86 (2.98%) | 99 (3.43%) |
+| no_candidate (>10um) | 72 (0.70%) | 78 (0.76%) | 32 (1.11%) | 43 (1.49%) |
+| below_floor (<0.10) | 80 (0.78%) | 77 (0.75%) | 67 (2.32%)* | 71 (2.46%)* |
+| node_absent | 73 (0.71%) | 73 (0.71%) | 69 (2.39%) | 66 (2.28%) |
+| ilp_rejected | 71 (0.69%) | 74 (0.72%) | 69 (2.39%) | 77 (2.66%) |
+| killed_post | 4 (0.04%) | 4 (0.04%) | 6 (0.21%) | 2 (0.07%) |
+| recovered | 9,767 (94.71%) | 9,715 (94.20%) | 2,445 (84.60%) | 2,472 (85.54%) |
+
+*44b6 below_floor is undercounted: D187 is in-sample there.
+
+Cross-checks vs official edge_fn: BASE-6bba 546/411, F4-6bba 598/474,
+BASE-44b6 445/349, F4-44b6 418/290.
+
+### Final edges classified against GT
+
+| | BASE-6bba | F4-6bba | BASE-44b6 | F4-44b6 |
+|---|---|---|---|---|
+| final edges | 159,262 | 157,581 | 298,049 | 315,582 |
+| tp_like | 9,902 | 9,839 | 2,542 | 2,596 |
+| fp_confusion | 13 | 10 | 7 | 9 |
+| fp_half | 826 | 843 | 291 | 293 |
+| fp_invisible | 148,521 (93.26%) | 146,889 (93.21%) | 295,209 (99.05%) | 312,684 (99.08%) |
+| official edge_fp | 363 | 385 | 258 | 256 |
+| official edge_tp | 9,902 | 9,839 | 2,541 | 2,600 |
+
+Cost: 59.1 min CPU, no GPU quota, no submission slot.
+
+## 2026-09-01 -- fatescore: M15's added points traced through every stage
+
+`fatescore.py` -> `biohub-fatescore`, CPU, 117.4 min. mergescore with a
+per-node trace; two arms (F4 control, M15), three domains. Built on
+edgediag's (t, i) -> graph-id map by rounded coordinates and on
+snapshots between the post-link stages.
+
+ANCHORS, all six exact: F4 0.9198 / 0.8303 / 0.8115, M15 0.9134 /
+0.8363 / 0.8219 (mergescore's rows).
+
+Groups: base = F4's own detections; merged = the ep05 points M15 adds;
+repair = nodes `_gap_close` created from the sub-threshold pool.
+Percentages are of each group's own primary count.
+
+| arm / domain | group | primary | in graph | in_pair | past floor | ILP | gap+ | short- | div+ | final | isolated | mean deg |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| F4 / 6bba | base | 171,450 | 96.0% | 99.8% | 99.6% | 96.0% | 0.7% | 0.6% | 0.5% | 95.3% | 0.0% | 1.92 |
+| F4 / 6bba | repair | 589 | 100.0% | - | - | - | - | - | - | 100.0% | 0.0% | 2.00 |
+| M15 / 6bba | base | 171,450 | 96.4% | 99.8% | 99.7% | 96.4% | 0.6% | 0.6% | 0.5% | 95.8% | 0.0% | 1.92 |
+| M15 / 6bba | merged | 7,653 | 59.1% | 98.1% | 97.1% | 59.1% | 1.7% | 2.8% | 1.3% | 56.3% | 0.0% | 1.74 |
+| M15 / 6bba | repair | 555 | 100.0% | - | - | - | - | - | - | 100.0% | 0.0% | 2.01 |
+| F4 / 44b6 | base | 354,086 | 93.0% | 99.7% | 99.4% | 93.0% | 1.5% | 1.0% | 0.5% | 92.1% | 0.0% | 1.91 |
+| F4 / 44b6 | repair | 2,680 | 100.0% | - | - | - | - | - | - | 100.0% | 0.0% | 2.00 |
+| M15 / 44b6 | base | 354,086 | 93.7% | 99.7% | 99.4% | 93.7% | 1.4% | 0.8% | 0.5% | 92.9% | 0.0% | 1.92 |
+| M15 / 44b6 | merged | 17,263 | 59.2% | 98.3% | 97.4% | 59.2% | 3.1% | 1.8% | 1.0% | 57.4% | 0.0% | 1.74 |
+| M15 / 44b6 | repair | 2,706 | 100.0% | - | - | - | - | - | - | 100.0% | 0.0% | 2.00 |
+| F4 / zh | base | 216,274 | 96.7% | 99.9% | 99.8% | 96.7% | 0.9% | 0.4% | 0.1% | 96.3% | 0.0% | 1.95 |
+| F4 / zh | repair | 936 | 100.0% | - | - | - | - | - | - | 100.0% | 0.0% | 2.00 |
+| M15 / zh | base | 216,274 | 97.2% | 99.9% | 99.8% | 97.2% | 0.8% | 0.3% | 0.1% | 96.9% | 0.0% | 1.95 |
+| M15 / zh | merged | 4,642 | 67.9% | 100.0% | 99.8% | 67.9% | 3.4% | 1.9% | 0.6% | 66.1% | 0.0% | 1.79 |
+| M15 / zh | repair | 902 | 100.0% | - | - | - | - | - | - | 100.0% | 0.0% | 2.00 |
+
+`in graph` equals `ILP` in all nine rows: the solver drops nodes it does
+not link, so `isolated` is 0 by construction. Seeds that never reached
+the solved graph, summed over arms and domains: 84,762.
+
+### Final-output degree histogram (3 = 3 or more)
+
+| arm / domain / group | n | deg0 | deg1 | deg2 | deg3 |
 |---|---|---|---|---|---|
-| BASE-6bba | 188,998 | 173,269 | 15,729 | 166,081 | 622 |
-| F4-6bba | 188,100 | 171,450 | 16,650 | 164,287 | 589 |
-| BASE-44b6 | 441,478 | 336,948 | 104,530 | 311,865 | 2,781 |
-| F4-44b6 | 437,884 | **354,086** | **83,798** | 329,636 | 2,725 |
+| F4 / 6bba / base | 163,477 | 0.0% | 8.6% | 91.1% | 0.3% |
+| M15 / 6bba / base | 164,279 | 0.0% | 8.1% | 91.5% | 0.3% |
+| M15 / 6bba / merged | 4,305 | 0.0% | 26.0% | 73.8% | 0.3% |
+| F4 / 44b6 / base | 326,068 | 0.0% | 9.0% | 90.7% | 0.3% |
+| M15 / 44b6 / base | 329,056 | 0.0% | 8.3% | 91.4% | 0.3% |
+| M15 / 44b6 / merged | 9,913 | 0.0% | 26.0% | 73.7% | 0.2% |
+| F4 / zh / base | 208,224 | 0.0% | 5.0% | 95.0% | 0.1% |
+| M15 / zh / base | 209,487 | 0.0% | 4.6% | 95.3% | 0.1% |
+| M15 / zh / merged | 3,068 | 0.0% | 21.5% | 78.3% | 0.1% |
 
-On 44b6 the TOTAL detection count FALLS 0.8% while primaries rise 5.1%
-and the repair band drops 19.8%: **~20,700 detections are promoted
-across the 0.15 gate.** On 6bba the same mechanism runs backwards and
-demotes ~1,800.
+### Base points linked by the ILP, F4 vs M15
 
-**The GT ledger confirms it — the cold bucket does not move.**
+Same points, same (t, i) indices in both arms.
 
-| arm-domain | GT nodes | matched by a primary | subthresh only | cold |
-|---|---|---|---|---|
-| BASE-6bba | 10,699 | 98.3% | 88 | 95 |
-| F4-6bba | 10,699 | 97.8% | 121 | 114 |
-| BASE-44b6 | 2,947 | 95.1% | 81 | 64 |
-| F4-44b6 | 2,947 | **96.4%** | **40** | 66 |
-
-64 → 66 on 44b6, 95 → 114 on 6bba. **The fourth heatmap buys NO new
-detection ability whatsoever.** Its entire effect is re-scoring cells
-the detector already saw, across the primary gate. On 44b6 that halves
-the subthreshold bucket (81 → 40) and is the whole win.
-
-The edge attribution says the same thing: F4's 44b6 gain is
-`det_miss_subthresh` 116 → 60 (−56), handing back +13 cold, +11 gate,
-+8 ILP, for a net +27 of 2,890 GT edges recovered. On 6bba it is −52,
-also concentrated in subthresh (109 → 146).
-
-### How much of our output the scorer evaluates
-
-| domain | final edges emitted | edges the scorer evaluates (tp+fp) | evaluated |
-|---|---|---|---|
-| F4-6bba | 157,581 | 9,839 + 385 = 10,224 | 6.5% |
-| F4-44b6 | 315,582 | 2,600 + 256 = 2,856 | 0.91% |
-
-Edges with no annotated endpoint are 93.2% of 6bba's output and 99.1%
-of 44b6's, and the scorer never charges them.
-
-⚠⚠ **THE FIRST READING OF THIS TABLE WAS WRONG, AND THE USER KILLED IT
-THE SAME DAY.** It was written up as "M15 fooled us because 99% of its
-added edges were locally invisible". That cannot be right: **the local
-harness IS the official `evaluate.py`, the same scorer the leaderboard
-runs**, and the hidden test's annotation is no denser. Sparse annotation
-is a property BOTH sides share, so it cannot explain a divergence
-between them. Do not use it that way again.
-
-**What the table does say** is a precision point, not a bias one. The
-44b6 verdicts rest on ~2,856 evaluated edges, so M15's +0.0060 there is
-about **27 edges**. A small 44b6 positive is not evidence; it is noise
-with a decimal point.
-
-⚠ **The one channel that IS fully visible everywhere is the CELL COUNT**,
-because its denominator is `estimated_number_of_nodes` — the dataset's
-true total cell count, not the annotated count. Every added node is
-charged in full, locally and hidden, with no sparsity discount.
-
-**And that is the whole M15 story, in the user's words** ("我们真的真的
-已经在验证集上hit细胞总数了，真的不能再增加了"): locally we sit BELOW
-the true count in all three domains (44b6 −10.7%, 6bba −2.1%, zh −7.8%)
-so the formula rewards adding cells, while on the hidden embryo adding
-cells has now cost us twice (gate 0.12: +3.9% output, −0.002; M15:
-+3.7%, −0.008). The local domains are not representative in cell count.
-**The ceiling is reached on the hidden test. Stop adding cells.**
-
-F4 is consistent with exactly that model and is the reason it won: it
-is NOT an add-cells change. Total detections FELL 0.8% on 44b6, no new
-cell was found (cold misses 64 → 66), and its hidden output grew only
-0.96%.
-
-**Cost:** 59.1 min CPU, no GPU quota, no submission slot.
-
-## 2026-09-01 -- ⭐⭐⭐⭐⭐ fatescore: BOTH mechanical explanations for M15 are DEAD, and the autopsy indicts our own judge -- on 44b6 we measure about 1.5% of what an added point actually does.
-
-**The user's question** (2026-08-31, after M15 = 0.917): "应该测F4的
-基础上，边排序器把多少加入了考量，后置的删点又删除了多少". Follow-up
-the same night: "最好把每一步都分开来看" and "你可以借助一下其他Claude的
-代码遗产". Both honoured -- ten stages reported separately, and the two
-load-bearing techniques lifted from `edgediag` rather than reinvented:
-the (t, i) -> graph-id map by ROUNDED COORDINATES (edgediag:1500-1514,
-so nothing assumes the graph numbers nodes in coords order) and
-snapshotting between post-link stages so a node's fate is attributable.
-
-`fatescore.py` -> `biohub-fatescore`, CPU, 117.4 min, no GPU quota.
-Two arms (F4 control, M15), three domains. **All six anchors reproduce
-exactly** (F4 0.9198/0.8303/0.8115, M15 0.9134/0.8363/0.8219).
-
-### The two answers
-
-**The ranker considers essentially all of them.** merged points in a
-candidate pair: 98.1% 6bba / 98.3% 44b6 / 100.0% zh; with an edge past
-`ILP_FLOOR`: 97.1 / 97.4 / 99.8%.
-
-**Post-link deletion removes almost none of them.** `_short_filter`
-kills 2.8 / 1.8 / 1.9% of merged against 0.6 / 0.8 / 0.3% of base --
-two to six times the base rate, but under 3% in absolute terms.
-
-**The loss is entirely in the middle, at the ILP.**
-
-| group | in_pair | past floor | **ILP linked** | final |
-|---|---|---|---|---|
-| base 6bba | 99.8% | 99.6% | **96.0%** | 95.3% |
-| merged 6bba | 98.1% | 97.1% | **59.1%** | 56.3% |
-| base 44b6 | 99.7% | 99.4% | **93.0%** | 92.1% |
-| merged 44b6 | 98.3% | 97.4% | **59.2%** | 57.4% |
-| base zh | 99.9% | 99.8% | **96.7%** | 96.3% |
-| merged zh | 100.0% | 99.8% | **67.9%** | 66.1% |
-
-### ⭐ The ILP PRUNES unlinked nodes -- so "dead weight" is impossible
-
-`in_graph` and `ILP linked` are **identical to the digit in all nine
-rows** (96.0/96.0, 59.1/59.1, 93.0/93.0, 59.2/59.2, 96.7/96.7,
-67.9/67.9). A node the solver did not link does not appear in
-`node_attrs` and never reaches the geff.
-
-So `ISOLATED` is 0.0% everywhere not because isolated nodes are rare but
-because they **cannot exist**. The pre-registered hypothesis -- that
-M15's added points reach the output unlinked and pay node-count penalty
-for nothing -- is structurally impossible, and the `in_graph` guard
-column is what caught it instead of letting the zeros be read as an
-answer. **~41% of merged points are silently discarded and cost
-nothing.**
-
-### ⭐ They did not steal links either -- base links NET GAINED
-
-| domain | base linked, F4 | M15 | lost | gained | net |
+| domain | F4 | M15 | lost | gained | net |
 |---|---|---|---|---|---|
-| 44b6 | 329,467 | 331,941 | 2,619 | **5,093** | **+2,474** |
-| 6bba | 164,572 | 165,251 | 913 | **1,592** | **+679** |
-| zh | 209,088 | 210,199 | 444 | **1,555** | **+1,111** |
+| 44b6 | 329,467 | 331,941 | 2,619 | 5,093 | +2,474 |
+| 6bba | 164,572 | 165,251 | 913 | 1,592 | +679 |
+| zh | 209,088 | 210,199 | 444 | 1,555 | +1,111 |
 
-The capacity-2 displacement mechanism that explained `dc0.05`'s 2.6-point
-edge_J fall did NOT happen here. Adding ep05 points made MORE
-pre-existing points linkable in all three domains.
+Largest per-dataset movers: 44b6_a2bb48bb lost 1,134 / gained 1,877
+(+743), 6bba_3abfe10a lost 490 / gained 903 (+413), 44b6_0b24845f lost
+378 / gained 565 (+187). 6bba_283bf9f1 is the only negative net (-3).
 
-### The one abnormal signal: merged points are 3x more likely to be track ENDS
+Cost: 117.4 min CPU, no GPU quota, no submission slot.
 
-| group | deg 1 (track end) | deg 2 (interior) |
+## 2026-08-31 -- M15 submitted as ref 55911058: LB 0.917
+
+Local (mergescore, D32, adj_J delta vs F4): 6bba -0.0064, 44b6 +0.0060,
+zh +0.0104. Visible-4 nodes 130,732 vs F4's 128,157 (+2.01%); 3,380 ep05
+points added on 164,014 F4 detections (2.06%). Hidden output
+280,776,965 bytes vs F4's 270,740,009 (+3.71%).
+
+**LB 0.917**, against F4's 0.925. Lowest score on record.
+
+Per-dataset merge counts in the visible four: 44b6_0113de3b +85 on
+25,816 (0.33%), 44b6_0b24845f +1,607 on 56,067 (2.87%), 6bba_05b6850b
++139 on 7,310 (1.90%), 6bba_05db0fb1 +1,549 on 74,821 (2.07%).
+
+`mergecheck` (CPU) verified the submitted arm against the offline one
+before submitting: 44b6_0b24845f reads +1,607 on 56,067 = 2.87% on both
+sides, equal to the integer. Its per-dataset add rate over the 24 cached
+competition datasets ranges 1.17% to 9.31%, median 3.56%, and reproduced
+both domain totals exactly (44b6 3.94%, 6bba 4.07%).
+
+Cost: one submission slot, ~25 min GPU for the instrumented rerun, one
+CPU kernel.
+
+## 2026-08-31 -- W1101 submitted as ref 55904403: LB 0.924
+
+Single variable vs F4: the four-map average becomes
+(h0+h1+0.5*h2+h3)/3.5, branch 3 demoted to half weight.
+
+| | F4 (55889500) | W1101 (55904403) |
 |---|---|---|
-| base 44b6 | 8.3% | 91.4% |
-| **merged 44b6** | **26.0%** | 73.7% |
-| base 6bba | 8.1% | 91.5% |
-| **merged 6bba** | **26.0%** | 73.8% |
-| merged zh | 21.5% | 78.3% |
+| LB | 0.925 | 0.924 |
+| local 6bba vs BASE | -0.0053 | -0.0108 |
+| local 44b6 | +0.0054 | +0.0054 |
+| local zh | +0.0027 | +0.0024 |
+| visible-4 nodes | 128,157 | 132,646 |
+| hidden output bytes | 270,740,009 | 273,340,932 |
 
-A real cell in consecutive frames has an in-edge and an out-edge. A
-quarter of the surviving merged points attach in one direction only.
+The user's pre-registration, written before the result: LOWER than 0.925
+= the 6bba negativity has a real component beyond memorization; EQUAL =
+the pure-artifact reading holds; HIGHER = uninformative.
 
-### ~~THE INDICTMENT: 44b6 cannot see what an added point does~~ RETRACTED 2026-09-01
+Cost: one submission slot, no GPU quota.
 
-⚠⚠ **The user killed this section the next day and it is wrong.** The
-visibility arithmetic below is correct as arithmetic, but it was used to
-explain a LOCAL-vs-LEADERBOARD divergence, and it cannot: **the local
-harness is the official `evaluate.py`, the same scorer the leaderboard
-runs, and the hidden annotation is no denser.** Sparse annotation
-discounts both sides equally. What survives is a precision caveat only
-(44b6 grades on ~2,856 edges, so its +0.0060 is ~27 edges). The actual
-reason M15 lost is the **cell-count ceiling**: the count term's
-denominator is the true total cell count, so added nodes are charged in
-full everywhere, and the hidden embryo is at or over that count while
-our local domains are 2-11% under it. Original text follows.
+## 2026-08-31 -- mergescore: dcmerge reopened with our own ep05
 
-Every local signal above is benign -- considered by the ranker, barely
-touched by the post-link filter, no dead weight possible, no stealing --
-and the hidden test still charged 0.008. The remaining explanation is
-one the log already documented and nobody applied to this decision:
-`edge_J` is scored only where annotation exists, and one matched
-endpoint is enough to make an edge count (entry of 2026-08-28).
+`mergescore.py` -> `biohub-mergescore`, CPU, 327.6 min. F4 detections as
+the base; an ep05 point is admitted iff its own score >= tau AND it is
+> 4.0 um from every F4 point at that frame, entering at score
+UNET_THRESH as a primary. Five arms x three domains, one ILP solve per
+arm per dataset. D32 ranker for every judged arm; BASE_D187 as the
+harness anchor.
 
-Annotated fraction of cells: **44b6 0.77%, 6bba 9.71%, zh ~97.5%**. An
-added edge is visible only if at least one endpoint is annotated:
+The rerun uses OUR ep05 checkpoint. dcmerge (2026-08-28) used pilkwang's
+published DeepCenter, which left 44b6 -- dctrain's excluded set -- nan.
 
-| domain | P(an added edge is visible to edge_J) |
-|---|---|
-| 44b6 | 1 − (1−0.0077)² ≈ **1.5%** |
-| 6bba | 1 − (1−0.0971)² ≈ **18.5%** |
-| zh | ~100% |
-| hidden test | 100% of whatever it scores |
+ANCHORS, both exact: BASE_D187 6bba adj_J 0.9293 (dcpool's), F4 x D32
+0.9198 / 0.8303 / 0.8115 (fusescore's).
 
-**On 44b6 we measured roughly one and a half percent of what M15's
-added points actually did.** Its +0.0060 cannot be coming from the
-merged points' own edges -- almost none of those are visible -- so it is
-the +2,474 net base links, a real but partial effect. The hidden test
-charges for all of it.
+### adj_J delta vs F4, both on D32
 
-**And 44b6 was made the DECIDING VOTE.** mergescore chose it for good
-reasons (competition-style annotation, the biggest node deficit,
-ep05-clean) and missed that its 0.77% annotation makes it structurally
-the BLINDEST domain for exactly the failure mode that adding points
-causes. The rule was sound for changes that re-link existing nodes; it
-is close to uninformative for changes that ADD them.
-
-⚠ **RULE, going forward: for any change that ADDS nodes, weight the
-domains by annotation density, not by node deficit.** 6bba sees 12x more
-of an added edge's behaviour than 44b6 does, and zh sees essentially all
-of it. On M15 those two split (6bba −0.0064, zh +0.0104) and the
-tiebreak went to the domain that could see the least.
-
-**Cost:** 117 min CPU, no GPU quota, no submission slot.
-
-## 2026-08-31 -- ⭐⭐⭐⭐⭐ M15 = 0.917, THE WORST SCORE ON RECORD. DeepCenter is a VOTE, not a DETECTOR -- and hidden output size predicts the leaderboard better than any local metric ever has.
-
-**Result: 0.917, -0.008 from F4's 0.925.** The largest single loss on
-record, four times gate 0.12's. The pre-registered reading resolves on
-its lowest branch: the claim that ep05's missed points, admitted as
-primaries at 0.15, transfer to the hidden test is DEAD.
-
-**The user predicted this and the margin exceeded their argument.** Their
-objection, logged before the score: the "we are at the cell-count
-ceiling" conclusion came from ref 55780773, which was positive in all
-three domains, added cells, and lost -- so M15, with one domain
-NEGATIVE and cells added, is strictly weaker evidence than a thing that
-already failed. M15 landed 0.001 BELOW gate 0.12.
-
-**THE CLEAN-DOMAIN RULE FAILED BADLY HERE.** 44b6 +0.0060 and zh +0.0104,
-both clean, both positive, both agreeing -- and the leaderboard said
--0.008. The three-domain family of rules is now 1 for 5.
-
-### The byte curve: pull `total_bytes` for all eight submissions
-
-`total_bytes` is the only direct measurement of hidden-test behaviour we
-have. Nobody had ever tabulated it across submissions. Sorted by output
-size, not by date:
-
-| ref | change | hidden bytes | LB |
+| arm | 6bba | 44b6 | zh |
 |---|---|---|---|
-| 55707206 | D32 ranker, global solve | 262,623,879 | 0.921 |
-| 55757064 | ranker pool 32 -> 187 | 262,803,696 | 0.920 |
-| 55772253 | `SHORT_MIN` 6 -> 4 | 267,030,255 | 0.920 |
-| 55780773 | gate 0.15 -> 0.12 | 277,555,127 | 0.918 |
-| 55817630 | gap4 nocand_cap20 | 268,154,477 | 0.922 |
-| **55889500** | **F4** | **270,740,009** | **0.925** |
-| 55904403 | W1101 | 273,340,932 | 0.924 |
-| **55911058** | **M15** | **280,776,965** | **0.917** |
+| M50 (tau 0.50) | +0.0000 | +0.0000 | +0.0000 |
+| M30 (tau 0.30) | -0.0021 | -0.0010 | +0.0057 |
+| M15 (tau 0.15) | -0.0064 | +0.0060 | +0.0104 |
 
-⚠ **CORRECTION, same session.** Sorting those eight by absolute output
-size produces a tidy inverted U peaking at F4, and that reading is
-CONFOUNDED: everything on the low side is a pre-gap4 / pre-F4 pipeline,
-so those runs score lower because they are worse pipelines, not because
-they emit less. Every submission is a single variable against its OWN
-control, so the honest table is the PAIRED one:
+div_J delta vs F4: M50 0/0/0, M30 +0.0023/+0.0000/+0.0009, M15
+-0.0022/+0.0000/+0.0041.
 
-| change | Δ hidden output | Δ LB |
-|---|---|---|
-| ranker pool 32 -> 187 | +0.07% | −0.001 |
-| gap4 nocand_cap20 | +0.42% | **+0.002** |
-| **F4** | +0.96% | **+0.003** |
-| W1101 | +0.96% | −0.001 |
-| `SHORT_MIN` 6 -> 4 | +1.61% | 0.000 |
-| **M15** | **+3.71%** | **−0.008** |
-| gate 0.15 -> 0.12 | +3.94% | −0.002 |
+### Decomposition
 
-**Below about +1.6% growth, output is not the driver** -- four changes
-spread over −0.001 to +0.003 with no ordering by size. **Both changes
-that grew output past +3.7% lost**, so large growth is NECESSARY for a
-disaster on this evidence.
+| domain | arm | edge_J | node_ratio | adj_J | div_J |
+|---|---|---|---|---|---|
+| 6bba | BASE_D187 | 0.9275 | -0.0179 | 0.9293 | 0.1316 |
+| 6bba | F4 | 0.9178 | -0.0213 | 0.9198 | 0.0667 |
+| 6bba | M50 | 0.9178 | -0.0213 | 0.9198 | 0.0667 |
+| 6bba | M30 | 0.9166 | -0.0122 | 0.9178 | 0.0690 |
+| 6bba | M15 | 0.9141 | +0.0092 | 0.9134 | 0.0645 |
+| 44b6 | BASE_D187 | 0.8072 | -0.1463 | 0.8185 | 0.0000 |
+| 44b6 | F4 | 0.8214 | -0.1066 | 0.8303 | 0.0000 |
+| 44b6 | M50 | 0.8214 | -0.1066 | 0.8303 | 0.0000 |
+| 44b6 | M30 | 0.8210 | -0.1007 | 0.8293 | 0.0000 |
+| 44b6 | M15 | 0.8299 | -0.0738 | 0.8363 | 0.0000 |
+| zh | BASE_D187 | 0.8036 | nan | 0.8093 | 0.0230 |
+| zh | F4 | 0.8052 | nan | 0.8115 | 0.0186 |
+| zh | M50 | 0.8052 | nan | 0.8115 | 0.0186 |
+| zh | M30 | 0.8115 | nan | 0.8173 | 0.0196 |
+| zh | M15 | 0.8169 | nan | 0.8219 | 0.0227 |
 
-**It is not SUFFICIENT, and that kills the simple node-count story.**
-M15 grew output LESS than gate 0.12 (+3.71% vs +3.94%) and lost FOUR
-TIMES as much (−0.008 vs −0.002). Whatever M15 added was worse per node
-than what the gate added, so "how many nodes" cannot price it and the
-question becomes WHICH nodes -- which is what `fatescore` was built to
-answer.
+Splitting M15's adj_J delta into its two factors: node term -0.0028 and
+edge_J +0.0085 on 44b6; -0.0014 and +0.0118 on zh; -0.0028 and -0.0037
+on 6bba. The node term costs the two competition domains the same.
 
-Caveat: bytes is rows, i.e. nodes PLUS edges, so it conflates the two.
-Still, `total_bytes` is the only direct measurement of hidden-test
-behaviour available, nobody had ever tabulated it, and the paired
-version above is a real constraint on any future recall-raising change.
+### Points added
 
-### `thr5`'s linear node tax is WRONG above about +2%
-
-thr5 concluded the node-count term is linear with a constant slope. On
-that model M15's +3.71% output should cost -0.0007. **It cost -0.008,
-eleven times more.** W1101's +0.96% should have cost -0.0002; it cost
--0.001, five times more. The steepest measured segment is
-+0.96% -> +2.52% (W1101 to gate 0.12), where 1.56% of output destroys
-0.006 of score.
-
-So there is a CLIFF somewhere above F4's operating point, not a slope.
-Every "the node penalty is linear so we can afford N% more nodes"
-argument in this file, including the one used to justify submitting M15
-one entry below, rests on a model the leaderboard has now refuted.
-**Do not price added output linearly again.**
-
-### THE RESIDUE, and it is worth the 0.008
-
-Same checkpoint, same normalisation, same 4-flip TTA, same pooled grid:
-
-| how ep05's opinion enters | LB vs its control |
-|---|---|
-| averaged into the heatmap before peak finding (F4) | **+0.003** |
-| admitted as unilateral primary points (M15) | **-0.008** |
-
-The only difference is **whether the three xl branches can outvote it.**
-In the average, an ep05 peak that the xl models do not support gets
-flattened before `peak_local_max` ever sees it. Admitted directly,
-nothing stops it.
-
-This retro-explains the entire DeepCenter arc. **Every attempt to let
-DeepCenter act unilaterally has failed** -- dcmerge (2026-08-28, added
-primaries), dc_gate/vetoscore2 (2026-08-30, unilateral deletion), M15
-(today, added primaries with our own ep05). **The one attempt to make it
-a vote won.** DeepCenter's value is as a member of an ensemble, not as
-an independent detector, and that is now measured three times against
-one.
-
-**Cost:** one submission slot, ~25 min GPU for the instrumented rerun,
-one CPU kernel. Best is unchanged at 0.925.
-
-## 2026-08-31 -- ⭐⭐⭐⭐⭐ W1101 = 0.924, and it PRICES 6bba: the local 6bba loss transfers to the leaderboard at roughly 5-18 cents on the dollar. The user's pre-registration resolves "real, and nearly worthless".
-
-**The instrument.** W1101 (ref 55904403) is F4 with one number changed:
-the four-map average becomes `(h0+h1+0.5*h2+h3)/3.5`, demoting branch 3.
-Locally that is a near-perfect single variable against F4 -- the clean
-domains do not move (44b6 identical at +0.0054, zh -0.0003) and the
-6bba loss DOUBLES (-0.0053 -> -0.0108 vs BASE). The user submitted it
-with a pre-registration written before the result and stated as an
-asymmetry: "只有比F4低才能得出结论，高的话根本没法得出结论" -- LOWER
-than 0.925 = the 6bba negativity has a REAL component beyond
-memorization; EQUAL = the pure-artifact reading holds; HIGHER =
-predicted by neither hypothesis, uninformative.
-
-**Result: 0.924, one unit below F4's 0.925.** By the letter of the rule,
-the real-component branch. By magnitude, it is nearly nothing, and most
-of it is not even 6bba:
-
-| | F4 (55889500) | W1101 (55904403) | delta |
+| tau | 44b6 | 6bba | zh |
 |---|---|---|---|
-| LB | 0.925 | 0.924 | -0.001 |
-| local 6bba vs BASE | -0.0053 | -0.0108 | -0.0055 |
-| local 44b6 | +0.0054 | +0.0054 | 0 |
-| local zh | +0.0027 | +0.0024 | -0.0003 |
-| visible-4 nodes | 128,157 | 132,646 | +3.5% |
+| 0.50 | +0 on 437,884 (0.00%) | +0 on 188,100 (0.00%) | +1 on 228,665 (0.00%) |
+| 0.30 | +2,810 (0.64%) | +2,053 (1.09%) | +2,196 (0.96%) |
+| 0.15 | +17,263 (3.94%) | +7,653 (4.07%) | +4,642 (2.03%) |
 
-W1101 also grew the node count 3.5%. At the twice-measured LB node tax
-(+10.3% output -> -0.002) that alone is worth -0.0007, leaving about
--0.0003 attributable to an extra -0.0055 of local 6bba. **Transfer
-coefficient: 5% if the node tax is trusted, 18% if it is ignored
-entirely.** Either way 6bba's local verdicts are worth a small fraction
-of face value on the hidden test, which is exactly what the
-memorization amendment predicted -- the amendment said "discount 6bba
-on detection-side changes", and this is the first measurement of the
-discount rate rather than an argument for it.
+`mergecheck` (CPU, seconds) later reproduced both tau 0.15 domain totals
+exactly and gave the per-dataset spread: 1.17% to 9.31%, p25 2.83%,
+median 3.56%, p75 4.64%. 37% of 44b6's added points come from
+44b6_a2bb48bb alone (6,456 of 17,263) and 37% of 6bba's from
+6bba_3abfe10a (2,815 of 7,653). Add rate does not track density:
+44b6_a2bb48bb 740 pts/frame adds 8.73% while 44b6_c96cfa10 at 481 adds
+1.25%; 6bba_7af54fde at 113 adds 9.31% while 6bba_afb141ff at 68 adds
+1.17%.
 
-**Consistency with F4.** Feed the coefficient back: F4's own 6bba
--0.0053 cost about -0.0003, its -1.6% node change credited about
-+0.0003, so its +0.003 LB gain had to come from the clean domains
-(+0.0054 44b6, +0.0027 zh). That implies clean-domain gains transfer at
-roughly 0.55 -- an order of magnitude stronger than 6bba's. Two points
-at three-decimal resolution is not a calibration, but the ORDERING is
-now measured twice and is what the three-domain rule already assumed.
+### Per-dataset, F4 vs M30 (both D32)
 
-**What it does NOT say.** It does not vindicate 6bba as a judge. A 5-18%
-transfer means a 6bba veto of -0.01 predicts about -0.001 hidden, i.e.
-6bba can still never outvote a clean-domain gain of comparable size.
-The amendment stands unchanged; it now has a number attached.
+Recorded for the M30 arm only; M15 has no per-dataset detail.
 
-**Cost:** one submission slot, no GPU quota.
+6bba: 2312ac41 0.9950/0.9895 (-0.0054), 268e1230 0.8888/0.8846
+(-0.0042), 283bf9f1 0.9363/0.9336 (-0.0028), 3a1849c2 0.8609/0.8560
+(-0.0049), 3abfe10a 0.7761/0.7742 (-0.0019), 5c824876 0.9275/0.9248
+(-0.0027), 61dd1e0d 0.9483/0.9544 (+0.0061), 7af54fde 0.8956/0.9014
+(+0.0058), 7b5d3b2c 0.9956/0.9948 (-0.0007), aeee7805 0.9935/0.9842
+(-0.0093), afb141ff 0.9303/0.9300 (-0.0003), c27cba08 0.9821/0.9804
+(-0.0017).
 
-## 2026-08-31 -- ⭐⭐⭐⭐ mergescore: ADDING POINTS FINALLY PAYS ON THE COMPETITION-STYLE DOMAIN. M15 (+3.94% nodes) gains +0.0060 on 44b6 and +0.0104 on zh, and it earns it in edge_J while the node bookkeeping works against it.
+44b6: 0b24845f 0.9120/0.9120 (-0.0001), 0db75fae 0.9115/0.9109
+(-0.0006), 33b596bf 0.9028/0.9408 (+0.0380), 5740d24b 1.0151/1.0026
+(-0.0126), 87bba6c4 0.5587/0.5740 (+0.0153), 8f5ab931 0.8584/0.8604
+(+0.0020), 9bfa6a0a 0.8843/0.8680 (-0.0163), a2bb48bb 0.6286/0.6271
+(-0.0015), c15fded2 0.8285/0.8271 (-0.0014), c96cfa10 0.8800/0.8769
+(-0.0031), d2f34f90 0.9433/0.9429 (-0.0004), e29f0176 0.8071/0.8064
+(-0.0007).
 
-**The question.** dcmerge (2026-08-28) added DeepCenter points as
-primaries and read +0.0379 on zebrahub / -0.0413 on 6bba, monotone in
-both directions -- but it used pilkwang's PUBLISHED DC checkpoint, so
-44b6 (dctrain's excluded set) was nan and the arc was shelved. The
-memorization amendment reopened it: 6bba is non-voting for
-detection-side changes. The user's two conditions for the rerun:
-(1) "直接用pilkwang是完全不应该的" -- use OUR ep05, and
-(2) "增加节点数感觉还挺有风险的... zebrahub根本就没有到细胞数上限，它是
-几乎全细胞标注" -- zh structurally subsidises added points, so a zh-only
-win settles nothing and 44b6 is the deciding vote.
+### Faithfulness note for anyone rebuilding this
 
-**Setup.** `mergescore.py`, CPU, 327.6 min. F4 detections as the base;
-an ep05 point is admitted iff its own score >= tau AND it is > 4.0 um
-(our own NMS radius) from every F4 point at that frame, entering at
-score UNET_THRESH as a PRIMARY. Five arms x three domains, one ILP
-solve per arm per dataset. Ranker D32 for every judged arm (a detection
-change feeds the ranker different candidates, so D187's in-sample bias
-would not cancel); BASE_D187 runs only as the harness anchor.
+The dcdet_ep05 caches peak at CAND_THR 0.05, refine, run the 4 um NMS,
+and only THEN filter score >= tau. Thresholding before the NMS is a
+different arm: a 0.16 peak would survive a 0.20 neighbour that
+suppressed it in the cache.
 
-**Both anchors reproduced exactly**: BASE_D187 6bba adj_J 0.9293
-(dcpool's value), F4 x D32 0.9198 / 0.8303 / 0.8115 (fusescore's).
+Cost: 327.6 min CPU, no GPU quota.
 
-**adj_J delta vs F4, both on D32:**
+## 2026-08-31 -- F4 submitted as ref 55889500: LB 0.925, new best
 
-| arm | 6bba (non-voting) | 44b6 | zh | verdict |
+F4 = detfuse2's arm: the ep05 epoch-5 DeepCenter heatmap added as a
+FOURTH equal-weight map before peak finding, full 4-flip TTA. Single
+variable vs ref 55817630 (LB 0.922); everything else byte-identical
+(D187 ranker, global solve, GAP1_CAP_FRAC 0.02 nocand, SHORT_MIN 4,
+UNET_THRESH 0.15).
+
+| | local 6bba | local 44b6 | local zh | LB |
 |---|---|---|---|---|
-| M50 (tau 0.50) | +0.0000 | +0.0000 | +0.0000 | no-op: ZERO points admitted |
-| M30 (tau 0.30) | -0.0021 | -0.0010 | +0.0057 | clean domains disagree -- discard |
-| M15 (tau 0.15) | -0.0064 | **+0.0060** | **+0.0104** | **CLEAN DOMAINS POSITIVE** |
+| F4 vs BASE (D32) | -0.0053 | +0.0054 | +0.0027 | +0.003 |
 
-**Points added:** tau 0.15 = +17,263 on 437,884 (44b6, +3.94%), +7,653
-on 188,100 (6bba, +4.07%), +4,642 on 228,665 (zh, +2.03%). tau 0.30
-adds under 1.1% everywhere; tau 0.50 adds literally nothing (ep05 never
-puts a >=0.50 peak more than 4 um from every F4 point).
+**0.922 -> 0.925.** Largest single gain on record.
 
-**Why the 44b6 win is not a bookkeeping artifact.** The local adj_J is
-`edge_J * (1 - 0.1 * node_ratio)` with node_ratio SIGNED, so a node
-DEFICIT inflates it (F4 44b6: 0.8214 * 1.01066 = 0.8303). M15 shrinks
-the deficit -10.66% -> -7.38%, i.e. it GIVES BACK 0.0025 of that bonus,
-and still nets +0.0060 because edge_J rose 0.8214 -> 0.8299. The gain
-is real linking, bought with real nodes.
+Visible-4 nodes 128,157 vs 130,210 (-1.6%); tracking 914s vs 947s.
+Hidden output 268,154,477 -> 270,740,009 bytes (+0.96%).
 
-| domain | arm | edge_J | node_ratio | adj_J |
-|---|---|---|---|---|
-| 44b6 | F4 | 0.8214 | -0.1066 | 0.8303 |
-| 44b6 | M30 | 0.8210 | -0.1007 | 0.8293 |
-| 44b6 | M15 | **0.8299** | **-0.0738** | **0.8363** |
-| zh | F4 | 0.8052 | nan | 0.8115 |
-| zh | M15 | 0.8169 | nan | 0.8219 |
-| 6bba | F4 | 0.9178 | -0.0213 | 0.9198 |
-| 6bba | M15 | 0.9141 | +0.0092 | 0.9134 |
+The submission was made to arbitrate the user's observation (2026-08-30)
+that the xl weights' training split is unknown (holdout-split.md:
+`fold: 0`, no file list) and plausibly contains the 6bba eval sets,
+while the hidden test is a third embryo (host-confirmed, no embryo_id
+overlap). Pre-registered reading, written before the result: >0.922 =
+the 6bba veto was memorization; 0.920-0.922 = uninformative to mildly
+real; <=0.918 = the 6bba negativity is real.
 
-**What the user's objection turns out to be worth.** It was right about
-zh and wrong about the conclusion. zh's node_ratio is nan in this
-harness, so zh's +0.0104 is pure edge_J with no node term at all -- a
-subsidised vote exactly as predicted, and correctly discountable. But
-44b6 has the node term live, pointing the wrong way, and the arm won
-anyway. The objection was the right filter; applying it is what makes
-the 44b6 number mean something.
-
-**Monotone in the direction of MORE points**: 0 added -> nothing,
-+0.6-1.1% -> mixed, +2-4% -> both clean domains positive. tau 0.15 is
-already UNET_THRESH, the floor at which the pipeline calls something a
-detection, so there is no lower rung to test without redefining what a
-primary is.
-
-**TWO HOLES, both on the record:**
-1. The per-dataset table was anchored on **M30, the discarded arm**, so
-   the 44b6 +0.0060 was never checked for concentration. M30's 44b6
-   detail is 4 positive / 8 negative carried by 33b596bf's +0.0380 --
-   if M15 has the same shape, the arm is one dataset wide. Not measured.
-2. 6bba's -0.0064 is the largest negative of the three arms. It is
-   non-voting by the amendment, but it is the same quantity W1101 was
-   submitted to price.
-
-**~~THE 6BBA LOSS MAY NOT BE MEMORIZATION AT ALL.~~ WRONG, RETRACTED
-SAME DAY -- the user caught it before the score came back.** The claim
-was: 6bba's node_ratio flips -2.13% -> +0.92%, so 6bba had already
-reached the right cell count and 4% more points overshoots, while 44b6
-was still 10.7% short -- the sign split explained by the ceiling, no
-training split needed.
-
-It does not survive decomposing adj_J into its two factors. Both
-domains added ~4% nodes, so **the node term costs them the SAME
--0.0028**, and the entire disagreement is in edge_J:
-
-| domain | node-term contribution | edge_J contribution | total |
-|---|---|---|---|
-| 44b6 | -0.0028 | **+0.0085** | +0.0057 |
-| zh | -0.0014 | **+0.0118** | +0.0104 |
-| 6bba | -0.0028 | **-0.0037** | -0.0065 |
-
-More than half of 6bba's loss is edge_J going DOWN: the added points
-made LINKING worse there, which is a real quality disagreement between
-the domains, not a counting artifact. The retracted claim took a term
-that is identical in both domains and presented it as the source of
-their difference.
-
-**AND THE CEILING PRECEDENT POINTS THE OTHER WAY (the user's second
-point).** The "we are at the validation cell-count ceiling" conclusion
-was itself derived from ref 55780773 (gate 0.15 -> 0.12), and what
-made it a conclusion is that the change was **positive in all three
-domains** (+0.0055 / +0.0045 / +0.0121), **added 10.3% nodes**, and
-**lost on the leaderboard** (0.918 against its 0.920 control -- the only
-clear loss on record).
-
-| | local three domains | node change | LB |
-|---|---|---|---|
-| 55780773 gate 0.12 | +0.0055 / +0.0045 / +0.0121, all positive | +10.3% | **0.918** (control 0.920) |
-| M15 | -0.0064 / +0.0060 / +0.0104, one negative | +2.01% visible, ~4% offline | ? |
-
-So the closest precedent to M15 is a change with STRONGER local
-evidence that added cells and lost. On evidence strength M15 is
-strictly weaker than a thing that already failed, not stronger.
-
-**This also breaks the 0.55 clean-domain transfer coefficient** derived
-one entry above from F4's single data point. If clean-domain gains
-transferred at 0.55, gate 0.12's +0.0055/+0.0045/+0.0121 would have
-paid handsomely; instead it netted -0.002, which is about exactly its
-own node tax. Its local gains transferred at roughly ZERO. Two
-coefficients that far apart mean **transfer is not a constant** -- it
-depends on whether the change has a mechanism, which is what the
-HANDOFF already said about the 1-for-4 holdout ("the one success had
-the smallest weakest-domain delta and the only measured MECHANISM").
-M15 is arguable on that axis -- it is not constant tuning, it is a
-second model's opinion changing which detections exist -- but it shares
-gate 0.12's fatal feature: it adds cells.
-
-**Consequence: the +0.0025 point estimate below is withdrawn.** The
-pre-registered READING is not changed (moving goalposts after the fact
-is worthless), but there are now two precedents pulling opposite ways
-and M15 belongs to both classes.
-
-**FAITHFULNESS VERIFIED BEFORE SUBMITTING (`mergecheck`, CPU).** The
-visible run added 2.06% nodes where the offline arm read 3.94/4.07% on
-the two domains the visible four belong to. Density did not explain it
-and was measured to be irrelevant: 44b6_a2bb48bb at 740 pts/frame adds
-8.73% while 44b6_c96cfa10 at 481 adds 1.25%; 6bba_7af54fde at 113 adds
-9.31% while 6bba_afb141ff at 68 adds 1.17%. The add rate is a per-movie
-property of how much ep05 disagrees with the xl ensemble, spread
-1.17%-9.31% (median 3.56%) across the 24 cached datasets, and
-mergecheck reproduced both domain totals exactly (3.94% / 4.07%).
-
-The decisive test was 44b6_0b24845f, which is in BOTH the cached set and
-the visible four: **offline +1,607 on 56,067 = 2.87%, submission
-+1,607 on 56,067 = 2.87%** -- equal to the integer, so the on-the-fly
-peak recomputation in `detect()` is the cached path. Per-dataset in the
-visible four: 44b6_0113de3b 0.33% (below the cached minimum),
-44b6_0b24845f 2.87%, 6bba_05b6850b 1.90%, 6bba_05db0fb1 2.07% (46% of
-the weight). All four sit low; the 2.06% is composition.
-
-**SUBMITTED as ref 55911058** (2026-08-31, second slot of five that
-day), after W1101 priced the 6bba loss at 5-18% of face value.
-Pre-registered arithmetic: 6bba -0.0064 costs about -0.0004, +2.01%
-nodes about -0.0004, 44b6 +0.0060 at the ~0.55 clean-domain coefficient
-pays about +0.0033, net about **+0.0025 -> 0.927-0.928**. Reading:
->0.925 = the point-add line pays on a third embryo; =0.925 = noise;
-<0.925 = kills the claim that ep05's missed points admitted at 0.15
-transfer, residue being that 44b6's clean-domain vote overpredicted.
-
-**Faithfulness note for anyone rebuilding this.** The dcdet_ep05 caches
-peak at CAND_THR 0.05, refine, run the 4 um NMS, and only THEN filter
-score >= tau. `submit_m15.py` keeps that order; thresholding before the
-NMS would let a 0.16 peak survive a 0.20 neighbour that suppressed it
-in the cache, which is a different arm than the one that was measured.
-
-## 2026-08-31 -- ⭐⭐⭐⭐⭐ 0.925, ref 55889500. THE 6BBA VETO WAS A MEMORIZATION ARTIFACT: F4 (ep05 as a 4th heatmap) gains +0.003 on the LB after losing on 6bba locally. The DeepCenter arc is ALIVE, and the user called it.
-
-**The user's insight** (2026-08-30, verbatim reasoning): "分数在6bba上面
-高其实是因为xl偷看了测试集" -- the xl weights' training split is
-unknown (holdout-split.md: `fold: 0`, no file list) and plausibly
-contains the 6bba eval sets, while the hidden test is a THIRD embryo
-(host-confirmed, no embryo_id overlap). So every DC-injection verdict
-that died on "negative in 6bba" died on the testimony of a suspect
-witness: DC disturbs memorized-perfect detections there, and there is
-nothing memorized to disturb on the hidden test.
-
-**The arbitration**: submit F4 (detfuse2's arm: ep05 epoch-5 DeepCenter
-as a FOURTH equal-weight heatmap before peak finding, full 4-flip TTA)
-as a single variable vs ref 55817630. F4 chosen over W1101/DCheavy: same
-two-clean-domain gains, half the 6bba downside, zero tuned weights.
-
-| | local 6bba | local 44b6 | local zh | **LB** |
-|---|---|---|---|---|
-| F4 vs BASE | -0.0053 | +0.0054 | +0.0027 | **+0.003** |
-
-**0.922 -> 0.925, the largest single gain this project has recorded.**
-The two clean domains predicted the sign AND the size; 6bba predicted
-the opposite sign. Hidden-test bytes 268,154,477 -> 270,740,009
-(+0.96%) while visible-4 nodes SHRANK 1.6% -- more output where xl is
-blind, less where it is sharp, exactly the "helps where xl is weak"
-regularity, now with the mechanism located: 6bba was never a strong
-domain, it was an in-sample domain.
-
-### What this rewrites
-
-1. **The three-domain rule is amended for DETECTION-side changes**: 6bba
-   carries an unknown in-sample bias for the xl detector, so a 6bba-only
-   negative on a detection change is grounds for LB arbitration, not
-   discard. (Linking-side changes are unaffected -- the ranker's splits
-   are ours and leak-controlled.)
-2. **Every DC verdict that cited 6bba deserves a re-read**: dcmerge
-   (negative, mostly 6bba), fusescore's W1101 (+0.0054/+0.0024 clean
-   domains), vetoscore2's V02 (-0.0004 zh, ~0 in 10/12 44b6, loss
-   concentrated in 6bba_3abfe10a). None automatically wins -- but none
-   is closed by 6bba testimony alone anymore.
-3. **The instrument for "is the hidden test like the clean domains" is
-   total_bytes plus this precedent.** 44b6+zh agreement predicted the
-   LB correctly at full size on the first try.
-4. Costs: one daily submission slot, 12.3 min GPU (dcsample), ~56 min
-   visible run. Final selection: 55889500 takes a slot (UI).
+Costs: one daily submission slot, 12.3 min GPU (dcsample), ~56 min
+visible run.
 
 ## 2026-08-30 -- ⭐⭐⭐ dc_gate + vetoscore: THE PEAK-LIST PROXY FOR "DC IS SILENT" IS BROKEN; the heatmap veto the user designed is still untested and dcsample is building its cache.
 
