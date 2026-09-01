@@ -40,13 +40,23 @@ confounded by pipeline vintage.
 −0.0007 for M15's +3.71%; the true cost was −0.008. There is a cliff,
 not a slope. Never price added output linearly again.
 
-⚠ **THE LOCAL SCORER SEES 6.5% OF OUR 6bba EDGES AND 0.91% OF OUR 44b6
-EDGES** (f4diag, measured on the shipped F4 pipeline: 157,581 emitted vs
-10,224 evaluated; 315,582 vs 2,856). Everything else is `fp_invisible` —
-no annotated endpoint, never charged. A change that ADDS output is
-therefore graded on ~1% of what it does; a change that RE-LINKS
-already-annotated cells is graded honestly. Read every local delta with
-that in mind.
+⚠ **STOP ADDING CELLS. The ceiling is reached on the hidden test.** The
+cell-count term is the only channel with no sparsity discount — its
+denominator is the dataset's TRUE total cell count — so every added node
+is charged in full, locally and hidden alike. Locally we are still BELOW
+the count everywhere (44b6 −10.7%, 6bba −2.1%, zh −7.8%) so the formula
+rewards adding; on the hidden embryo adding has cost us twice (gate 0.12
++3.9% output → −0.002; M15 +3.7% → −0.008). **The local domains are not
+representative in cell count.** F4 won precisely because it is not an
+add-cells change: total detections FELL 0.8% on 44b6 and hidden output
+grew only 0.96%.
+
+⚠ **44b6 verdicts rest on ~2,856 evaluated edges** (315,582 emitted;
+6bba is 10,224 of 157,581). A +0.0060 there is about 27 edges. That is a
+PRECISION caveat, not a bias one — the local harness is the official
+`evaluate.py`, the same scorer the leaderboard runs, so sparse
+annotation can never explain a local-vs-leaderboard divergence. An
+earlier version of this file argued that it could; it was wrong.
 
 ⚠ **F4 IS A RE-RANKER, NOT A DETECTOR.** It promotes ~20,700 44b6
 detections across the 0.15 primary gate while the TOTAL detection count
@@ -54,14 +64,17 @@ falls 0.8%, and the GT cold-miss bucket does not move (64 → 66). The
 fourth heatmap buys no new detection ability at all. It also **more than
 halves 6bba's div_J** (0.1316 → 0.0606) on the shipped D187 ranker.
 
-⚠ **FOR ADD-NODE CHANGES, WEIGHT DOMAINS BY ANNOTATION DENSITY, NOT BY
-NODE DEFICIT.** `edge_J` is scored only where annotation exists, so the
-probability that an ADDED edge is visible at all is ~1.5% on 44b6
-(0.77% of cells annotated), ~18.5% on 6bba (9.71%), ~100% on zh. 44b6
-was made M15's deciding vote for its node deficit and is structurally
-the blindest domain for what added points do. The clean-domain rule
-stands for changes that RE-LINK existing nodes; it is close to
-uninformative for changes that ADD them. See the fatescore entry.
+⚠ **WITHDRAWN 2026-09-01 (the user): "weight domains by annotation
+density for add-node changes".** The argument was that an added edge is
+visible to `edge_J` with probability ~1.5% on 44b6 / ~18.5% on 6bba /
+~100% on zh, so 44b6 was the blindest possible judge for M15. Those
+visibility numbers are real, but the inference is not: **the local
+harness IS the official `evaluate.py`, the same scorer the leaderboard
+runs, and the hidden annotation is no denser.** A property both sides
+share cannot explain a divergence between them. What survives is only a
+PRECISION caveat — 44b6 grades on ~2,856 edges, so a +0.0060 there is
+~27 edges. The real reason M15 lost is the cell-count ceiling; see the
+"STOP ADDING CELLS" note above.
 
 ⚠ **The ILP PRUNES unlinked nodes** — a node the solver does not link
 never reaches the geff. So "dead weight in the output" is impossible by
@@ -337,29 +350,46 @@ The edge attribution says the same thing: F4's 44b6 gain is
 +8 ILP, for a net +27 of 2,890 GT edges recovered. On 6bba it is −52,
 also concentrated in subthresh (109 → 146).
 
-### ⭐⭐ THE HEADLINE: the local scorer is nearly blind to our output
+### How much of our output the scorer evaluates
 
-| domain | final edges emitted | edges the scorer evaluates (tp+fp) | visible |
+| domain | final edges emitted | edges the scorer evaluates (tp+fp) | evaluated |
 |---|---|---|---|
-| F4-6bba | 157,581 | 9,839 + 385 = 10,224 | **6.5%** |
-| F4-44b6 | 315,582 | 2,600 + 256 = 2,856 | **0.91%** |
+| F4-6bba | 157,581 | 9,839 + 385 = 10,224 | 6.5% |
+| F4-44b6 | 315,582 | 2,600 + 256 = 2,856 | 0.91% |
 
-`fp_invisible` — edges with NO annotated endpoint, which the scorer
-never charges — is 93.2% of 6bba's output and 99.1% of 44b6's.
+Edges with no annotated endpoint are 93.2% of 6bba's output and 99.1%
+of 44b6's, and the scorer never charges them.
 
-**On 44b6 the local score inspects under one percent of the edges we
-produce.** This is the same annotation-sparsity fact the fatescore entry
-derived probabilistically, now measured directly on the shipped
-pipeline, and it is the exact mechanism by which M15 fooled us: ~17,000
-added points on 44b6 produced ~17,000 edges of which ~99% were locally
-invisible, so 44b6 reported +0.0060 while the hidden test charged 0.008.
+⚠⚠ **THE FIRST READING OF THIS TABLE WAS WRONG, AND THE USER KILLED IT
+THE SAME DAY.** It was written up as "M15 fooled us because 99% of its
+added edges were locally invisible". That cannot be right: **the local
+harness IS the official `evaluate.py`, the same scorer the leaderboard
+runs**, and the hidden test's annotation is no denser. Sparse annotation
+is a property BOTH sides share, so it cannot explain a divergence
+between them. Do not use it that way again.
 
-⚠ **Any change that ADDS output is measured on ~1% of its effect by
-44b6 and ~6.5% by 6bba.** A change that only RE-LINKS existing annotated
-cells is measured much more honestly, because those are the cells the
-annotation covers. That is the structural reason the three-domain rule
-worked for gap4 and F4 and failed for M15 — and F4, it now turns out,
-is itself a re-ranking change, not an add-detections change.
+**What the table does say** is a precision point, not a bias one. The
+44b6 verdicts rest on ~2,856 evaluated edges, so M15's +0.0060 there is
+about **27 edges**. A small 44b6 positive is not evidence; it is noise
+with a decimal point.
+
+⚠ **The one channel that IS fully visible everywhere is the CELL COUNT**,
+because its denominator is `estimated_number_of_nodes` — the dataset's
+true total cell count, not the annotated count. Every added node is
+charged in full, locally and hidden, with no sparsity discount.
+
+**And that is the whole M15 story, in the user's words** ("我们真的真的
+已经在验证集上hit细胞总数了，真的不能再增加了"): locally we sit BELOW
+the true count in all three domains (44b6 −10.7%, 6bba −2.1%, zh −7.8%)
+so the formula rewards adding cells, while on the hidden embryo adding
+cells has now cost us twice (gate 0.12: +3.9% output, −0.002; M15:
++3.7%, −0.008). The local domains are not representative in cell count.
+**The ceiling is reached on the hidden test. Stop adding cells.**
+
+F4 is consistent with exactly that model and is the reason it won: it
+is NOT an add-cells change. Total detections FELL 0.8% on 44b6, no new
+cell was found (cold misses 64 → 66), and its hidden output grew only
+0.96%.
 
 **Cost:** 59.1 min CPU, no GPU quota, no submission slot.
 
@@ -439,7 +469,19 @@ pre-existing points linkable in all three domains.
 A real cell in consecutive frames has an in-edge and an out-edge. A
 quarter of the surviving merged points attach in one direction only.
 
-### ⭐⭐ THE INDICTMENT: 44b6 cannot see what an added point does
+### ~~THE INDICTMENT: 44b6 cannot see what an added point does~~ RETRACTED 2026-09-01
+
+⚠⚠ **The user killed this section the next day and it is wrong.** The
+visibility arithmetic below is correct as arithmetic, but it was used to
+explain a LOCAL-vs-LEADERBOARD divergence, and it cannot: **the local
+harness is the official `evaluate.py`, the same scorer the leaderboard
+runs, and the hidden annotation is no denser.** Sparse annotation
+discounts both sides equally. What survives is a precision caveat only
+(44b6 grades on ~2,856 edges, so its +0.0060 is ~27 edges). The actual
+reason M15 lost is the **cell-count ceiling**: the count term's
+denominator is the true total cell count, so added nodes are charged in
+full everywhere, and the hidden embryo is at or over that count while
+our local domains are 2-11% under it. Original text follows.
 
 Every local signal above is benign -- considered by the ranker, barely
 touched by the post-link filter, no dead weight possible, no stealing --
