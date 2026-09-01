@@ -42,8 +42,11 @@ Absolute bytes: 55707206 262,623,879 · 55757064 262,803,696 · 55772253
 267,030,255 · 55817630 268,154,477 · 55889500 270,740,009 · 55904403
 273,340,932 · 55780773 277,555,127 · 55911058 280,776,965.
 
-**Two final-selection slots. 55889500 (0.925) must take one** (select
-in the UI); 55817630 (0.922) is the natural second.
+⚠ **DO NOT ask the user to set the final selection** (the user,
+2026-09-01). There are two slots and Kaggle already defaults them to the
+highest-scoring submissions. Selecting manually only pins the choice, so
+a later higher score has to be remembered and updated by hand. Leaving
+it on the default is strictly safer while the competition is open.
 
 ⚠ **The daily submission limit is FIVE, not two.** `max_daily_submissions:
 5`. Days of rationing at two were based on confusing the daily cap with
