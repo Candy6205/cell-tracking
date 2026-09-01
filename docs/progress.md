@@ -40,6 +40,20 @@ confounded by pipeline vintage.
 −0.0007 for M15's +3.71%; the true cost was −0.008. There is a cliff,
 not a slope. Never price added output linearly again.
 
+⚠ **THE LOCAL SCORER SEES 6.5% OF OUR 6bba EDGES AND 0.91% OF OUR 44b6
+EDGES** (f4diag, measured on the shipped F4 pipeline: 157,581 emitted vs
+10,224 evaluated; 315,582 vs 2,856). Everything else is `fp_invisible` —
+no annotated endpoint, never charged. A change that ADDS output is
+therefore graded on ~1% of what it does; a change that RE-LINKS
+already-annotated cells is graded honestly. Read every local delta with
+that in mind.
+
+⚠ **F4 IS A RE-RANKER, NOT A DETECTOR.** It promotes ~20,700 44b6
+detections across the 0.15 primary gate while the TOTAL detection count
+falls 0.8%, and the GT cold-miss bucket does not move (64 → 66). The
+fourth heatmap buys no new detection ability at all. It also **more than
+halves 6bba's div_J** (0.1316 → 0.0606) on the shipped D187 ranker.
+
 ⚠ **FOR ADD-NODE CHANGES, WEIGHT DOMAINS BY ANNOTATION DENSITY, NOT BY
 NODE DEFICIT.** `edge_J` is scored only where annotation exists, so the
 probability that an ADDED edge is visible at all is ~1.5% on 44b6
@@ -261,6 +275,93 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-09-01 -- ⭐⭐⭐⭐⭐ f4diag: F4 DOES NOT DETECT ANYTHING NEW -- it moves ~20,000 borderline detections across the 0.15 gate. And the local scorer inspects 0.91% of what we emit on 44b6.
+
+**The user's correction**, after I traced M15 instead: "我根本不需要知道
+M15到底失败在哪里了... 我想要知道的是F4！你要在所有环节追踪6bba和44b6的
+节点和边怎么样了". `f4diag.py` = edgediag with the detection source
+swapped to F4's caches, BASE and F4 run side by side, D187 both (what
+ref 55889500 ships), 6bba + 44b6, 59.1 min CPU.
+
+**Anchors are the strongest this project has had.** BASE reproduces
+edgediag BUCKET BY BUCKET, not just on adj_J: 6bba
+1.06/1.33/0.70/0.78/0.71/0.69/0.04/94.71 and 44b6
+4.01/2.98/1.11/2.32/2.39/2.39/0.21/84.60, plus adj_J 0.9293 / 0.8185
+and fp_invisible 93.3% / 99.0%. The primary counts also match
+fatescore's F4 rows exactly (171,450 / 354,086).
+
+### F4 on the ranker it actually ships with -- never measured before
+
+| | adj_J | div_J |
+|---|---|---|
+| BASE-6bba | 0.9293 | 0.1316 |
+| **F4-6bba** | **0.9216** (−0.0077) | **0.0606** (−0.0710) |
+| BASE-44b6 | 0.8185 | 0.0000 |
+| **F4-44b6** | **0.8353** (+0.0168) | 0.0000 |
+
+The 44b6 gain on D187 is **three times** the +0.0054 measured on D32,
+and **F4 more than halves 6bba's division jaccard** — an isolated cost
+of the shipped 0.925 pipeline that nobody had priced.
+
+### ⭐ THE MECHANISM: F4 is a re-ranker, not a detector
+
+| arm-domain | detections | primaries ≥0.15 | repair band | final | +repair |
+|---|---|---|---|---|---|
+| BASE-6bba | 188,998 | 173,269 | 15,729 | 166,081 | 622 |
+| F4-6bba | 188,100 | 171,450 | 16,650 | 164,287 | 589 |
+| BASE-44b6 | 441,478 | 336,948 | 104,530 | 311,865 | 2,781 |
+| F4-44b6 | 437,884 | **354,086** | **83,798** | 329,636 | 2,725 |
+
+On 44b6 the TOTAL detection count FALLS 0.8% while primaries rise 5.1%
+and the repair band drops 19.8%: **~20,700 detections are promoted
+across the 0.15 gate.** On 6bba the same mechanism runs backwards and
+demotes ~1,800.
+
+**The GT ledger confirms it — the cold bucket does not move.**
+
+| arm-domain | GT nodes | matched by a primary | subthresh only | cold |
+|---|---|---|---|---|
+| BASE-6bba | 10,699 | 98.3% | 88 | 95 |
+| F4-6bba | 10,699 | 97.8% | 121 | 114 |
+| BASE-44b6 | 2,947 | 95.1% | 81 | 64 |
+| F4-44b6 | 2,947 | **96.4%** | **40** | 66 |
+
+64 → 66 on 44b6, 95 → 114 on 6bba. **The fourth heatmap buys NO new
+detection ability whatsoever.** Its entire effect is re-scoring cells
+the detector already saw, across the primary gate. On 44b6 that halves
+the subthreshold bucket (81 → 40) and is the whole win.
+
+The edge attribution says the same thing: F4's 44b6 gain is
+`det_miss_subthresh` 116 → 60 (−56), handing back +13 cold, +11 gate,
++8 ILP, for a net +27 of 2,890 GT edges recovered. On 6bba it is −52,
+also concentrated in subthresh (109 → 146).
+
+### ⭐⭐ THE HEADLINE: the local scorer is nearly blind to our output
+
+| domain | final edges emitted | edges the scorer evaluates (tp+fp) | visible |
+|---|---|---|---|
+| F4-6bba | 157,581 | 9,839 + 385 = 10,224 | **6.5%** |
+| F4-44b6 | 315,582 | 2,600 + 256 = 2,856 | **0.91%** |
+
+`fp_invisible` — edges with NO annotated endpoint, which the scorer
+never charges — is 93.2% of 6bba's output and 99.1% of 44b6's.
+
+**On 44b6 the local score inspects under one percent of the edges we
+produce.** This is the same annotation-sparsity fact the fatescore entry
+derived probabilistically, now measured directly on the shipped
+pipeline, and it is the exact mechanism by which M15 fooled us: ~17,000
+added points on 44b6 produced ~17,000 edges of which ~99% were locally
+invisible, so 44b6 reported +0.0060 while the hidden test charged 0.008.
+
+⚠ **Any change that ADDS output is measured on ~1% of its effect by
+44b6 and ~6.5% by 6bba.** A change that only RE-LINKS existing annotated
+cells is measured much more honestly, because those are the cells the
+annotation covers. That is the structural reason the three-domain rule
+worked for gap4 and F4 and failed for M15 — and F4, it now turns out,
+is itself a re-ranking change, not an add-detections change.
+
+**Cost:** 59.1 min CPU, no GPU quota, no submission slot.
 
 ## 2026-09-01 -- ⭐⭐⭐⭐⭐ fatescore: BOTH mechanical explanations for M15 are DEAD, and the autopsy indicts our own judge -- on 44b6 we measure about 1.5% of what an added point actually does.
 
