@@ -42,6 +42,13 @@ Absolute bytes: 55707206 262,623,879 · 55757064 262,803,696 · 55772253
 267,030,255 · 55817630 268,154,477 · 55889500 270,740,009 · 55904403
 273,340,932 · 55780773 277,555,127 · 55911058 280,776,965.
 
+⏳ **THREE RUNS FROM 2026-09-02 ARE UNREAD (待分析).** `edgewhy`,
+`divwhy` (read v2, not v1) and `divgate2` are recorded below with their
+tables and anchors and no conclusion filed against them. A fourth,
+`divsweep` (DIV_DIVERGE_UM 2.25 / 1.50 / 1.00 / 0.50 / 0.00, post-link,
+three domains), was queued the same night. Do not act on any of them
+before the user has read them.
+
 ⚠ **DO NOT ask the user to set the final selection** (the user,
 2026-09-01). There are two slots and Kaggle already defaults them to the
 highest-scoring submissions. Selecting manually only pins the choice, so
@@ -230,6 +237,303 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-09-02 -- ⏳ UNREVIEWED: divgate2, which of the orphan-fork patch's eight conditions rejects a real division
+
+> ⏳ **待分析. The user has not read this entry, divwhy or edgewhy.**
+> Recorded at their request on 2026-09-02 while they were away. Tables
+> as printed; no conclusion is filed against them.
+
+`divgate2.py` -> `biohub-divgate2`, CPU, 58.2 min. divwhy plus a replay:
+every GT division the ILP half-linked or did not link is walked through
+`_add_safe_divisions`' conditions IN ORDER on the graph the patch
+actually saw, and the FIRST condition that rejects it is counted.
+
+The pre-patch graph is recovered without touching the pipeline: the
+patch only appends, and its edges are the final edges absent from the
+ILP solution whose endpoints are both primaries (a `_gap_close` bridge
+always has a non-primary endpoint).
+
+ANCHORS, all three exact: F4-6bba adj_J 0.9216 / div_J 0.0606, F4-44b6
+0.8353 / 0.0000, F4-zh 0.8118 / 0.0215.
+
+### First condition to reject
+
+| condition | F4-zh (96) | F4-6bba (2) | F4-44b6 (2) |
+|---|---|---|---|
+| 5a sister is not an orphan | 54 (56.25%) | 1 | 1 |
+| 8b divergence < 2.25 um | 33 (34.38%) | 1 | 1 |
+| 0 sister deleted post-link | 6 (6.25%) | 0 | 0 |
+| 2 mother has no single predecessor | 3 (3.12%) | 0 | 0 |
+
+Conditions 1, 3, 4, 5b, 5c, 6, 7 rejected nothing in any domain.
+
+`pending` counts match divwhy's buckets exactly: zh 95 `div_ilp_one_only`
++ 1 `div_ilp_neither` = 96; 6bba 2; 44b6 2.
+
+### The divergence test, measured
+
+For the divisions that survived every earlier condition: how much
+further apart the two daughters' own children are than the daughters
+themselves. `DIV_DIVERGE_UM` demands >= 2.25 um in one frame.
+
+| domain | n | p10 | p25 | median | p75 | p90 | share >= 2.25 |
+|---|---|---|---|---|---|---|---|
+| F4-zh | 33 | 0.00 | 0.44 | 0.80 | 1.20 | 1.94 | **0.0%** |
+| F4-6bba | 1 | — | — | -0.09 | — | — | 0.0% |
+| F4-44b6 | 1 | — | — | 0.71 | — | — | 0.0% |
+
+For comparison, on record: `div_kinematics` measured real daughters
+separating at `sep_slope` 1.155 um/frame against 0.082 for random pairs.
+
+Constants at the time: `DIV_CHILD_UM` 10.0, `DIV_PARENT_UM` 12.0,
+`DIV_SISTER_UM` 15.0, `DIV_DIVERGE_UM` 2.25.
+
+Cost: 58.2 min CPU, no GPU quota, no submission slot.
+
+## 2026-09-02 -- ⏳ UNREVIEWED: divwhy, where every GT division is lost, and every emitted fork
+
+> ⏳ **待分析.** See the marker on the divgate2 entry above.
+
+`divwhy.py` -> `biohub-divwhy`, CPU, 56.8 min (v1) and again for v2.
+F4 detections, three domains, one arm. Anchors exact in both versions:
+F4-6bba adj_J 0.9216 / div_J 0.0606, F4-44b6 0.8353 / 0.0000, F4-zh
+0.8118 / 0.0215 (recorded zh anchor was 0.8115; this run reads 0.8118).
+
+**v1 had a classification flaw and v2 is the version to read.** v1 asked
+the ILP solution first, so a division rescued by `_add_safe_divisions`
+after linking was filed under `div_ilp_one_only`; v1 reported
+`div_recovered` 1 on zh while its own fork table counted 20 true forks.
+v2 asks the FINAL graph first and splits `div_recovered_ilp` from
+`div_recovered_patch`. Every table below is v2.
+
+### Where every GT division goes (first losing stage)
+
+| bucket | F4-6bba (12) | F4-44b6 (2) | F4-zh (1,081) |
+|---|---|---|---|
+| div_mother_missed | 0 | 0 | 60 (5.55%) |
+| div_daughter_missed | 0 | 0 | 708 (65.49%) |
+| div_no_candidate (>10 um) | 6 (50.00%) | 0 | 33 (3.05%) |
+| div_below_floor (<0.10) | 1 (8.33%) | 0 | 94 (8.70%) |
+| div_node_absent | 1 (8.33%) | 0 | 71 (6.57%) |
+| div_ilp_neither | 0 | 0 | 1 (0.09%) |
+| div_ilp_one_only | 2 (16.67%) | 2 (100%) | 95 (8.79%) |
+| div_killed_post | 0 | 0 | 0 |
+| **div_recovered_ilp** | **0** | **0** | **1 (0.09%)** |
+| **div_recovered_patch** | **2 (16.67%)** | **0** | **18 (1.67%)** |
+
+1,095 GT divisions across the three domains; the ILP forked correctly on
+one of them.
+
+### Conditions per bucket (medians)
+
+| domain / bucket | n | sister | md_max | md_min | dens10 | p_min | p_max | sc_mum | n_cand |
+|---|---|---|---|---|---|---|---|---|---|
+| 6bba div_no_candidate | 6 | 11.87 | 7.72 | 4.11 | 1.00 | — | 0.944 | 0.397 | 1.00 |
+| 6bba div_below_floor | 1 | 11.98 | 6.92 | 5.15 | 3.00 | 0.009 | 0.972 | 0.406 | 3.00 |
+| 6bba div_node_absent | 1 | 11.55 | 8.26 | 4.91 | 1.00 | 0.247 | 0.331 | 0.464 | 2.00 |
+| 6bba div_ilp_one_only | 2 | 9.72 | 7.17 | 3.57 | 1.00 | 0.433 | 0.936 | 0.462 | 2.00 |
+| 6bba div_recovered_patch | 2 | 6.34 | 5.18 | 2.14 | 1.00 | 0.311 | 0.677 | 0.456 | 2.00 |
+| 44b6 div_ilp_one_only | 2 | 7.84 | 6.18 | 2.09 | 3.00 | 0.251 | 0.849 | 0.397 | 3.50 |
+| zh div_mother_missed | 60 | 6.86 | 4.98 | 2.52 | 3.00 | — | — | — | — |
+| zh div_daughter_missed | 708 | 6.36 | 4.32 | 2.52 | 3.00 | — | — | 0.320 | 3.00 |
+| zh div_no_candidate | 33 | 10.31 | 7.95 | 2.84 | 2.00 | — | 0.927 | 0.301 | 2.00 |
+| zh div_below_floor | 94 | 8.22 | 5.61 | 2.79 | 3.00 | 0.040 | 0.871 | 0.303 | 4.00 |
+| zh div_node_absent | 71 | 7.49 | 5.11 | 2.84 | 3.00 | 0.239 | 0.810 | 0.303 | 4.00 |
+| zh div_ilp_one_only | 95 | 7.94 | 5.11 | 3.10 | 4.00 | 0.175 | 0.835 | 0.309 | 4.00 |
+| zh div_recovered_ilp | 1 | 7.69 | 4.21 | 4.11 | 2.00 | 0.583 | 0.842 | 0.313 | 5.00 |
+| zh div_recovered_patch | 18 | 6.37 | 4.00 | 3.01 | 3.00 | 0.222 | 0.755 | 0.429 | 4.00 |
+
+`sister` = daughter separation in the frame after the division. `md_max`
+/ `md_min` = the longer / shorter mother-to-daughter step. `dens10` =
+primaries within 10 um of the mother. `p_min` / `p_max` = the two
+mother-daughter ranker probabilities. `n_cand` = candidates the mother
+had at all.
+
+A `merge_um` column (missed daughter to the primary that matched its
+sister, testing whether one peak served both) was computed and **is
+missing from the printout** -- the header stops at `n_cand`. Not
+measured.
+
+### The fork price: p_min against DIV_W 0.55
+
+| p_min | F4-zh n | recovered | one_only | other |
+|---|---|---|---|---|
+| 0.00-0.10 | 94 | 0.0% | 0.0% | 100.0% |
+| 0.10-0.30 | 150 | 10.0% | 54.7% | 35.3% |
+| 0.30-0.55 | 32 | 9.4% | 37.5% | 53.1% |
+| 0.55-0.80 | 4 | 25.0% | 25.0% | 50.0% |
+
+6bba, 6 divisions with both pairs scored: 0.10-0.30 n=2 (50% recovered),
+0.30-0.55 n=3 (33.3% recovered, 66.7% one_only), 0.00-0.10 n=1.
+
+### Recovery by sister separation (v1 numbers; v2 shifts recovery only)
+
+| sister um | F4-zh n | recovered | detect-lost | link-lost |
+|---|---|---|---|---|
+| 0-3 | 2 | 0.0% | 100.0% | 0.0% |
+| 3-5 | 88 | 0.0% | 96.6% | 3.4% |
+| 5-8 | 680 | 0.1% | 77.4% | 22.5% |
+| 8-12 | 293 | 0.0% | 50.5% | 49.5% |
+| 12+ | 18 | 0.0% | 38.9% | 61.1% |
+
+6bba v2: 5-8 um n=4 50% recovered; 8-12 n=5 and 12+ n=3 both 0%.
+
+### Every fork the pipeline emits
+
+| domain | forks | true | false | ILP | BRIDGE | DIVPATCH |
+|---|---|---|---|---|---|---|
+| F4-6bba | 574 | 2 | 572 | 114 (0.0% true) | 4 | 456 (0.4% true) |
+| F4-44b6 | 1,029 | 0 | 1,029 | 160 (0.0%) | 8 | 861 (0.0%) |
+| F4-zh | 173 | 20 | 153 | 44 (2.3%) | 1 | 128 (14.8%) |
+
+Cap arithmetic, not binding in any domain: `DIV_GLOBAL_CAP` 0.00375 x
+final nodes = 616 (6bba, 164,287 nodes) / 1,236 (44b6, 329,636) / 784
+(zh, 209,271), against 456 / 861 / 128 forks actually added.
+
+Cost: 56.8 min CPU per version, no GPU quota, no submission slot.
+
+### ⚠ Denominators, the user's correction on reading these tables
+
+The user, 2026-09-02: on Zebrahub every cell is annotated and the
+detector's recall there is about 0.80, so **any** question asked of that
+domain returns "detection" -- the 65.5% `div_daughter_missed` is a
+statement about zh's detector recall, not about divisions, and does not
+transfer. The competition domains carry the opposite bias: a division
+enters their GT only if a human saw the mother and both daughters, so
+their rows can never show a detection loss (0 of 14 here). `div_J`'s
+denominator is annotated divisions, which is the competition-like
+population.
+
+## 2026-09-02 -- ⏳ UNREVIEWED: edgewhy, the conditions under which an edge is lost or wrongly linked
+
+> ⏳ **待分析.** See the marker on the divgate2 entry above.
+
+`edgewhy.py` -> `biohub-edgewhy`, CPU, 68.4 min. f4diag's edge buckets
+plus per-edge covariates, F4 arm, three domains. Anchors exact: F4-6bba
+adj_J 0.9216, F4-44b6 0.8353, F4-zh 0.8118.
+
+### Missed edges: medians per bucket
+
+`disp` = the GT displacement. `dens10` = primaries within 10 um of the
+source. `gap2` = distance from the true target to the NEAREST OTHER
+primary. `p_true` / `rank` = the ranker's probability for the correct
+pair and its position in the source's candidate list. `p_top` = the
+probability of whatever the ranker liked best.
+
+| F4-6bba bucket | n | disp | p90 disp | dens10 | gap2 | z_um | sc_src | p_true | rank | p_top | %div |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| det_miss_subthresh | 146 | 1.72 | 4.20 | 1.00 | 12.23 | 39.81 | 0.19 | — | — | 0.53 | 0.0% |
+| det_miss_cold | 146 | 1.72 | 4.24 | 2.00 | 9.54 | 68.25 | 0.31 | — | — | 0.82 | 0.0% |
+| no_candidate | 78 | 3.36 | 9.98 | 2.00 | 7.25 | 53.62 | 0.37 | — | — | 0.94 | 7.7% |
+| below_floor | 77 | 2.37 | 8.25 | 3.00 | 6.89 | 69.88 | 0.35 | 0.03 | 1.0 | 0.86 | 1.3% |
+| node_absent | 73 | 2.03 | 4.82 | 3.00 | 7.52 | 73.12 | 0.28 | 0.56 | 0.0 | 0.73 | 1.4% |
+| ilp_rejected | 74 | 2.07 | 6.08 | 2.00 | 7.43 | 66.62 | 0.34 | 0.31 | 1.0 | 0.79 | 5.4% |
+| killed_post | 4 | 2.23 | 3.14 | 1.00 | 11.13 | 54.44 | 0.17 | 0.88 | 0.0 | 0.88 | 0.0% |
+| **recovered** | 9,715 | 1.82 | 3.92 | 1.00 | 13.05 | 52.00 | 0.44 | 0.99 | 0.0 | 0.99 | 0.1% |
+
+| F4-44b6 bucket | n | disp | p90 disp | dens10 | gap2 | sc_src | p_true | rank | p_top |
+|---|---|---|---|---|---|---|---|---|---|
+| det_miss_subthresh | 60 | 1.72 | 2.88 | 2.00 | 10.28 | 0.16 | — | — | 0.22 |
+| det_miss_cold | 99 | 1.82 | 3.35 | 2.00 | 8.80 | 0.26 | — | — | 0.57 |
+| no_candidate | 43 | 3.28 | 12.24 | 3.00 | 7.60 | 0.28 | — | — | 0.88 |
+| below_floor | 71 | 2.19 | 7.93 | 3.00 | 6.45 | 0.30 | 0.04 | 1.0 | 0.83 |
+| node_absent | 66 | 1.72 | 4.30 | 3.00 | 7.05 | 0.30 | 0.58 | 0.0 | 0.82 |
+| ilp_rejected | 77 | 1.72 | 3.16 | 3.00 | 7.24 | 0.31 | 0.31 | 1.0 | 0.80 |
+| killed_post | 2 | 2.12 | 2.79 | 2.00 | 9.59 | 0.17 | 0.87 | 0.0 | 0.87 |
+| **recovered** | 2,472 | 1.72 | 3.17 | 3.00 | 8.06 | 0.36 | 0.94 | 0.0 | 0.94 |
+
+| F4-zh bucket | n | disp | p90 disp | dens10 | gap2 | sc_src | p_true | rank | p_top | %div |
+|---|---|---|---|---|---|---|---|---|---|---|
+| det_miss_subthresh | 4,479 | 1.32 | 2.56 | 2.00 | 8.74 | 0.17 | — | — | 0.18 | 1.5% |
+| det_miss_cold | 33,178 | 1.32 | 2.56 | 3.00 | 7.75 | 0.26 | — | — | 0.66 | 2.4% |
+| no_candidate | 118 | 6.74 | 10.21 | 3.00 | 7.45 | 0.27 | — | — | 0.89 | 29.7% |
+| below_floor | 583 | 2.91 | 7.18 | 4.00 | 6.43 | 0.27 | 0.04 | 1.0 | 0.84 | 17.3% |
+| node_absent | 2,107 | 1.39 | 2.94 | 4.00 | 6.74 | 0.25 | 0.79 | 0.0 | 0.81 | 4.1% |
+| ilp_rejected | 753 | 2.19 | 5.10 | 4.00 | 6.55 | 0.28 | 0.34 | 1.0 | 0.81 | 16.1% |
+| killed_post | 433 | 1.24 | 2.01 | 4.00 | 6.70 | 0.23 | 0.83 | 0.0 | 0.83 | 0.0% |
+| **recovered** | 179,589 | 1.32 | 2.01 | 4.00 | 7.62 | 0.32 | 0.93 | 0.0 | 0.93 | 0.5% |
+
+Totals: 6bba 10,313 adjacent GT edges, 598 lost. 44b6 2,890, 418 lost.
+zh 221,240, 41,651 lost.
+
+### Loss rate by displacement
+
+| disp um | 6bba n | 6bba lost | 44b6 n | 44b6 lost | zh n | zh lost |
+|---|---|---|---|---|---|---|
+| 0-1 | 2,917 | 5.04% | 690 | 13.33% | 91,120 | 16.37% |
+| 1-2 | 2,966 | 5.06% | 1,080 | 12.31% | 103,195 | 18.07% |
+| 2-3 | 2,098 | 5.15% | 757 | 13.74% | 20,576 | 24.14% |
+| 3-4 | 1,289 | 6.44% | 226 | 15.49% | 3,880 | 37.99% |
+| 4-6 | 804 | 5.35% | 93 | 18.28% | 1,837 | 58.85% |
+| 6-8 | 159 | 16.98% | 16 | 56.25% | 429 | 84.62% |
+| 8+ | 80 | 50.00% | 28 | 100.00% | 203 | 98.52% |
+
+At 8+ um on 6bba, 22.50% of edges land in `no_candidate` and 12.50% in
+`below_floor`; on 44b6, 50.00% and 25.00%.
+
+### Loss rate by crowding (primaries within 10 um of the source)
+
+| dens10 | 6bba n | 6bba lost | 44b6 n | 44b6 lost | zh n | zh lost |
+|---|---|---|---|---|---|---|
+| 0-2 | 7,336 | 3.49% | 358 | 22.35% | 19,407 | 27.17% |
+| 2-5 | 2,794 | 11.02% | 2,213 | 13.42% | 119,795 | 21.05% |
+| 5-10 | 183 | 18.58% | 319 | 12.85% | 81,948 | 13.60% |
+| 10-20 | — | — | — | — | 90 | 10.00% |
+
+### Was the correct pair ranked first?
+
+Over GT edges whose both endpoints were detected and whose correct pair
+was a candidate.
+
+| rank | 6bba n | share | lost | med p_true | med p_top |
+|---|---|---|---|---|---|
+| 0 | 9,770 | 98.26% | 0.81% | 0.988 | 0.988 |
+| 1 | 146 | 1.47% | 84.93% | 0.148 | 0.793 |
+| 2 | 20 | 0.20% | 90.00% | 0.040 | 0.798 |
+| 3-4 | 7 | 0.07% | 100.00% | 0.007 | 0.814 |
+
+44b6: rank 0 n=2,536 (94.35%) lost 3.31%; rank 1 n=119 lost 84.03%;
+rank 2 n=26 lost 96.15%; rank 3-4 n=7 lost 100%.
+zh: rank 0 n=181,955 (99.18%) lost 1.38%; rank 1 n=1,255 lost 88.21%;
+rank 2 n=190 lost 98.95%; rank 3-4 n=61 lost 100%; rank 5+ n=4 lost 100%.
+
+### Final edges classified, with provenance
+
+`prov`: ILP chose it from ranked candidates, BRIDGE is a `_gap_close`
+insert, DIVPATCH is `_add_safe_divisions`' second daughter.
+
+| domain / class | n | len_um | p90 len | p | dens10 | err_um | ILP | BRIDGE | DIVPATCH |
+|---|---|---|---|---|---|---|---|---|---|
+| 6bba tp_like | 9,839 | 1.38 | 3.23 | 0.988 | 1.00 | — | 99.76% | 0.17% | 0.07% |
+| 6bba fp_confusion | 10 | 2.49 | 4.87 | 0.947 | 1.00 | — | 100.00% | 0.00% | 0.00% |
+| 6bba fp_half | 843 | 1.64 | 3.41 | 0.943 | 2.00 | — | 97.03% | 0.71% | 2.25% |
+| 6bba fp_invisible | 146,889 | 1.73 | 3.51 | 0.956 | 2.00 | — | 98.92% | 0.79% | 0.30% |
+| 44b6 tp_like | 2,596 | 1.25 | 2.38 | 0.942 | 3.00 | — | 98.96% | 1.00% | 0.04% |
+| 44b6 fp_confusion | 9 | 2.17 | 3.03 | 0.576 | 2.00 | 5.28 | 100.00% | 0.00% | 0.00% |
+| 44b6 fp_half | 293 | 1.55 | 2.91 | 0.863 | 3.00 | — | 97.27% | 1.02% | 1.71% |
+| 44b6 fp_invisible | 312,684 | 1.33 | 2.83 | 0.920 | 3.00 | — | 97.99% | 1.73% | 0.28% |
+| zh tp_like | 182,777 | 0.62 | 1.06 | 0.926 | 4.00 | — | 99.24% | 0.74% | 0.01% |
+| zh fp_confusion | 3,831 | 0.93 | 2.35 | 0.854 | 3.00 | 4.53 | 95.35% | 2.87% | 1.77% |
+| zh fp_half | 4,877 | 0.64 | 1.38 | 0.921 | 3.00 | — | 97.19% | 2.30% | 0.51% |
+| zh fp_invisible | 12,713 | 0.62 | 1.21 | 0.926 | 2.00 | — | 97.61% | 2.30% | 0.09% |
+
+Final edge totals: 6bba 157,581; 44b6 315,582; zh 204,198.
+
+### Wrong-link error distance (fp_confusion, distance to the correct target)
+
+| distance | F4-zh (3,193) | F4-44b6 (9) |
+|---|---|---|
+| 0-3 um | 231 (7.23%) | 0 |
+| 3-5 um | 1,748 (54.74%) | 4 |
+| 5-8 um | 1,039 (32.54%) | 3 |
+| 8-12 um | 160 (5.01%) | 1 |
+| 12+ um | 15 (0.47%) | 1 |
+
+6bba's 10 wrong links produced no error-distance rows (no correct target
+resolved).
+
+Cost: 68.4 min CPU, no GPU quota, no submission slot.
 
 ## 2026-09-01 -- f4diag: F4 traced against BASE, nodes and edges, every stage
 

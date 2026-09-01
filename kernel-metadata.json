@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-f4diag",
-  "title": "Biohub f4diag",
-  "code_file": "f4diag.py",
+  "id": "faustine649/biohub-divsweep",
+  "title": "Biohub divsweep",
+  "code_file": "divsweep.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
