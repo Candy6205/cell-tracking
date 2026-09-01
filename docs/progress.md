@@ -44,9 +44,10 @@ Absolute bytes: 55707206 262,623,879 · 55757064 262,803,696 · 55772253
 
 ⏳ **THREE RUNS FROM 2026-09-02 ARE UNREAD (待分析).** `edgewhy`,
 `divwhy` (read v2, not v1) and `divgate2` are recorded below with their
-tables and anchors and no conclusion filed against them. A fourth,
-`divsweep` (DIV_DIVERGE_UM 2.25 / 1.50 / 1.00 / 0.50 / 0.00, post-link,
-three domains), was queued the same night. Do not act on any of them
+tables and anchors and no conclusion filed against them. Three more ran the same
+night and are recorded the same way: `divsweep` (DIV_DIVERGE_UM 2.25 /
+1.50 / 1.00 / 0.50 / 0.00, post-link, scored), `divsteal` and
+`rankwhy`. Do not act on any of them
 before the user has read them.
 
 ⚠ **DO NOT ask the user to set the final selection** (the user,
@@ -237,6 +238,71 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-09-02 -- ⏳ UNREVIEWED: divsweep, DIV_DIVERGE_UM 2.25 down to 0.00, scored
+
+> ⏳ **待分析.** Same marker as the entries below; tables only, no
+> verdict filed.
+
+`divsweep.py` -> `biohub-divsweep`, CPU, 108.7 min. Post-link sweep: one
+ILP solve per dataset replayed five times with only `DIV_DIVERGE_UM`
+changed, so every arm shares one detection set, one ranker and one
+solution and the 44b6 in-sample optimism is identical across arms.
+
+ANCHORS exact, all three: F4-6bba adj_J 0.9216 / div_J 0.0606, F4-44b6
+0.8353 / 0.0000, F4-zh 0.8118 / 0.0215.
+
+### F4-6bba (12 datasets)
+
+| DIV_DIVERGE_UM | forks | edges | adj_J | div_J | score | d_adj_J | d_div_J | d_score |
+|---|---|---|---|---|---|---|---|---|
+| **2.25 (shipped)** | 460 | 157,581 | 0.9216 | 0.0606 | 0.9277 | — | — | — |
+| 1.50 | 595 | 157,716 | 0.9213 | 0.0500 | 0.9263 | −0.0003 | −0.0106 | −0.0014 |
+| 1.00 | 611 | 157,732 | 0.9216 | 0.0435 | 0.9259 | −0.0000 | −0.0171 | −0.0018 |
+| 0.50 | 611 | 157,732 | 0.9220 | 0.0455 | 0.9266 | +0.0004 | −0.0152 | −0.0011 |
+| 0.00 | 611 | 157,732 | 0.9226 | 0.0455 | 0.9271 | +0.0009 | −0.0152 | −0.0006 |
+
+### F4-44b6 (12 datasets)
+
+| DIV_DIVERGE_UM | forks | edges | adj_J | div_J | score | d_score |
+|---|---|---|---|---|---|---|
+| **2.25 (shipped)** | 869 | 315,582 | 0.8353 | 0.0000 | 0.8353 | — |
+| 1.50 | 1,184 | 315,897 | 0.8343 | 0.0000 | 0.8343 | −0.0010 |
+| 1.00 | 1,231 | 315,944 | 0.8367 | 0.0000 | 0.8367 | +0.0014 |
+| 0.50 | 1,231 | 315,944 | 0.8360 | 0.0000 | 0.8360 | +0.0008 |
+| 0.00 | 1,231 | 315,944 | 0.8347 | 0.0000 | 0.8347 | −0.0006 |
+
+### F4-zh (8 crops)
+
+| DIV_DIVERGE_UM | forks | edges | adj_J | div_J | score | d_adj_J | d_div_J | d_score |
+|---|---|---|---|---|---|---|---|---|
+| **2.25 (shipped)** | 129 | 204,198 | 0.8118 | 0.0215 | 0.8140 | — | — | — |
+| 1.50 | 376 | 204,445 | 0.8112 | 0.0352 | 0.8147 | −0.0006 | +0.0137 | +0.0007 |
+| 1.00 | 638 | 204,707 | 0.8105 | 0.0355 | 0.8141 | −0.0013 | +0.0140 | +0.0001 |
+| 0.50 | 780 | 204,849 | 0.8102 | 0.0276 | 0.8129 | −0.0016 | +0.0061 | −0.0010 |
+| 0.00 | 780 | 204,849 | 0.8101 | 0.0208 | 0.8122 | −0.0017 | −0.0007 | −0.0017 |
+
+### The three domains side by side (d_score against the shipped arm)
+
+| DIV_DIVERGE_UM | F4-6bba | F4-44b6 | F4-zh |
+|---|---|---|---|
+| 1.50 | −0.0014 | −0.0010 | +0.0007 |
+| 1.00 | −0.0018 | +0.0014 | +0.0001 |
+| 0.50 | −0.0011 | +0.0008 | −0.0010 |
+| 0.00 | −0.0006 | −0.0006 | −0.0017 |
+
+Node counts are identical in every arm (the patch adds edges, not
+nodes): 164,287 / 329,636 / 209,271.
+
+Fork counts saturate at 611 / 1,231 / 780 by gate 1.00-0.50, below the
+`DIV_GLOBAL_CAP` allowance of 616 / 1,236 / 784, so the cap is not what
+stops them. At 0.50 and 0.00 on 6bba the fork COUNT and edge count are
+identical while adj_J differs (0.9220 vs 0.9226) -- proposals are
+ordered by `d_pq + DIV_W_SISTER * d_s`, not by divergence, and
+`used_p` / `used_q` are first-come-first-served, so a larger proposal
+pool can displace which forks are taken at the same total.
+
+Cost: 108.7 min CPU, no GPU quota, no submission slot.
 
 ## 2026-09-02 -- ⏳ UNREVIEWED: divsteal, what a steal rule would break
 
