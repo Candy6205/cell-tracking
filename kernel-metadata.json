@@ -1,7 +1,7 @@
 {
-  "id": "faustine649/biohub-divsweep",
-  "title": "Biohub divsweep",
-  "code_file": "divsweep.py",
+  "id": "faustine649/biohub-divsteal",
+  "title": "Biohub divsteal",
+  "code_file": "divsteal.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
