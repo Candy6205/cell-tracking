@@ -239,6 +239,62 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-09-02 -- ⏳ UNREVIEWED: rankwhy, what the ranker prefers when the correct target is not first
+
+> ⏳ **待分析.** Same marker as the entries below; tables only.
+
+`rankwhy.py` -> `biohub-rankwhy`, CPU, 68.5 min. edgewhy with two extra
+blocks: what the ranker put first when the correct pair sat at rank >= 1,
+and what the `node_absent` sources looked like.
+
+ANCHORS exact: F4-6bba adj_J 0.9216, F4-44b6 0.8353, F4-zh 0.8118.
+
+### What the ranker preferred instead
+
+| | F4-6bba (173) | F4-44b6 (152) | F4-zh (1,510) |
+|---|---|---|---|
+| preferred target IS an annotated cell | 9 (5.2%) | 5 (3.3%) | **929 (61.5%)** |
+| ... and is another cell's GT successor | 9 (5.2%) | 4 (2.6%) | **864 (57.2%)** |
+| the lost edge survived anyway | 24 (13.9%) | 20 (13.2%) | 150 (9.9%) |
+| median src -> preferred (um) | 3.32 | 2.29 | 2.13 |
+| median src -> true (um) | 6.90 | 6.59 | 5.89 |
+| median preferred -> true (um) | 8.64 | 7.26 | 7.06 |
+| detection score, preferred / true | 0.342 / 0.321 | 0.312 / 0.300 | 0.275 / 0.257 |
+| sources bidding for the preferred target (median) | 2.0 | 3.0 | 4.0 |
+| **preferred is CLOSER than the true target** | **168 (97.1%)** | **152 (100.0%)** | **1,500 (99.3%)** |
+
+Distance from the preferred target to the true one:
+
+| | 6bba | 44b6 | zh |
+|---|---|---|---|
+| 0-2 um | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
+| 2-4 um | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
+| 4-6 um | 20 (11.6%) | 41 (27.0%) | 417 (27.6%) |
+| 6+ um | 153 (88.4%) | 111 (73.0%) | 1,093 (72.4%) |
+
+6bba and 44b6 annotate 9.71% and 0.77% of their cells, so `preferred is
+an annotated cell` is a floor there, not a rate; zebrahub's ~97.5%
+annotation is the only column that reads as a rate.
+
+### The nodes the solver dropped (node_absent)
+
+Both endpoints detected, the correct pair the ranker's own TOP choice,
+and the source never reached the solved graph.
+
+| | F4-6bba (73) | F4-44b6 (66) | F4-zh (2,107) |
+|---|---|---|---|
+| best outgoing probability (median) | **0.727** | **0.815** | **0.809** |
+| best incoming probability (median) | 0.678 | 0.522 | 0.315 |
+| candidates it had (median) | 2.0 | 3.0 | 4.0 |
+| sources bidding for it (median) | 2.0 | 3.0 | 3.0 |
+| detection score (median) | 0.276 | 0.297 | 0.246 |
+| had NO incoming candidate at all | 3 (4.1%) | 2 (3.0%) | 71 (3.4%) |
+| best_out 0.1-0.3 | 8 (11.0%) | 7 (10.6%) | 37 (1.8%) |
+| best_out 0.3-0.6 | 16 (21.9%) | 9 (13.6%) | 125 (5.9%) |
+| **best_out 0.6-1.0** | **49 (67.1%)** | **50 (75.8%)** | **1,945 (92.3%)** |
+
+Cost: 68.5 min CPU, no GPU quota, no submission slot.
+
 ## 2026-09-02 -- ⏳ UNREVIEWED: divsweep, DIV_DIVERGE_UM 2.25 down to 0.00, scored
 
 > ⏳ **待分析.** Same marker as the entries below; tables only, no
