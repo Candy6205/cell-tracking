@@ -238,6 +238,48 @@ real and remain unaddressed by every route now tried.**
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
 
+## 2026-09-02 -- ⏳ UNREVIEWED: divsteal, what a steal rule would break
+
+> ⏳ **待分析.** Same marker as the three entries below; recorded while
+> the user was away, tables only.
+
+`divsteal.py` -> `biohub-divsteal`, CPU, 71.1 min. divgate2 with its 5a
+branch instrumented: for every GT division rejected because the second
+daughter already had a parent, the ranker's probability for the edge
+`_add_safe_divisions` WOULD make against the edge the ILP DID make, the
+two distances, and whether the competing edge is a real GT edge.
+
+ANCHORS exact: F4-6bba adj_J 0.9216 / div_J 0.0606, F4-44b6 0.8353,
+F4-zh 0.8118.
+
+### F4-zh, 54 divisions rejected at 5a
+
+| | |
+|---|---|
+| competing edge annotated at both ends | 27 (50.0%) |
+| ... of those, a TRUE GT edge | **8 (29.6%)** |
+| daughter had more than one parent | 0 |
+| p_mother median (p25 / p75) | **0.182** (0.122 / 0.284) |
+| p_other median (p25 / p75) | **0.765** (0.356 / 0.826) |
+| p_mother > p_other | 10 of 48 scored (20.8%) |
+| margin > 0.1 / 0.2 / 0.3 | 7 (14.6%) / 5 (10.4%) / 2 (4.2%) |
+| d_mother median | 6.91 um |
+| d_other median | 1.13 um |
+
+### F4-6bba and F4-44b6, one case each
+
+Neither competing edge has both endpoints annotated, so `true_other` is
+not measurable in either domain.
+
+| | 6bba (n=1) | 44b6 (n=1) |
+|---|---|---|
+| p_mother | 0.447 | 0.797 |
+| p_other | 0.108 | 0.280 |
+| d_mother | 10.49 um | 5.78 um |
+| d_other | 1.78 um | 2.64 um |
+
+Cost: 71.1 min CPU, no GPU quota, no submission slot.
+
 ## 2026-09-02 -- ⏳ UNREVIEWED: divgate2, which of the orphan-fork patch's eight conditions rejects a real division
 
 > ⏳ **待分析. The user has not read this entry, divwhy or edgewhy.**
