@@ -44,10 +44,10 @@ Absolute bytes: 55707206 262,623,879 · 55757064 262,803,696 · 55772253
 
 ⏳ **THREE RUNS FROM 2026-09-02 ARE UNREAD (待分析).** `edgewhy`,
 `divwhy` (read v2, not v1) and `divgate2` are recorded below with their
-tables and anchors and no conclusion filed against them. Three more ran the same
+tables and anchors and no conclusion filed against them. Four more ran the same
 night and are recorded the same way: `divsweep` (DIV_DIVERGE_UM 2.25 /
-1.50 / 1.00 / 0.50 / 0.00, post-link, scored), `divsteal` and
-`rankwhy`. Do not act on any of them
+1.50 / 1.00 / 0.50 / 0.00, post-link, scored), `divsteal`, `rankwhy`
+and `velwhy`. Seven entries in all, all dated 2026-09-02. Do not act on any of them
 before the user has read them.
 
 ⚠ **DO NOT ask the user to set the final selection** (the user,
@@ -238,6 +238,39 @@ real and remain unaddressed by every route now tried.**
    nothing (entry below). The -0.73 density penalty is NOT in the
    ranker's feature space -- per-dataset AUC is flat against density
    while adj_J is not.
+
+## 2026-09-02 -- ⏳ UNREVIEWED: velwhy, the velocity is mostly present and re-ordering by it recovers 12-19%
+
+> ⏳ **待分析.** Same marker as the entries below; tables only.
+
+`velwhy.py` -> `biohub-velwhy`, CPU, 35.2 min. rankwhy's rank >= 1
+population, with the source's velocity magnitude and the true target's
+position under two alternative orderings of the SAME candidate list:
+the ranker's column 0 (raw distance) and column 4 (distance from the
+velocity-predicted position). Case counts reproduce rankwhy exactly
+(173 / 152 / 1,510). Anchors exact.
+
+| | F4-6bba (173) | F4-44b6 (152) | F4-zh (1,510) |
+|---|---|---|---|
+| velocity EXACTLY ZERO | **42 (24.3%)** | 8 (5.3%) | 121 (8.0%) |
+| where non-zero: median / p90 (um) | 2.17 / 4.60 | 2.16 / 4.79 | 1.61 / 3.59 |
+| true target first by RAW distance | 5 (2.9%) | 0 (0.0%) | 9 (0.6%) |
+| **true target first by PREDICTED distance** | **27 (15.6%)** | **29 (19.1%)** | **187 (12.4%)** |
+| predicted beats raw | 36 (20.8%) | 36 (23.7%) | 246 (16.3%) |
+| predicted loses to raw | 13 (7.5%) | 20 (13.2%) | 199 (13.2%) |
+| median d_true / md_true (um) | 6.90 / 6.94 | 6.59 / 6.68 | 5.89 / 6.41 |
+| median d_top / md_top (um) | 3.32 / 3.56 | 2.29 / 3.14 | 2.13 / 2.68 |
+| median candidates | 2.0 | 3.0 | 4.0 |
+
+`md_true` exceeds `d_true` in all three domains and `md_top` exceeds
+`d_top`, so the velocity prediction moves the source away from both
+candidates; the re-ordering gain comes from the relative change, not
+from the prediction landing nearer the true target.
+
+This is a re-ordering measurement on a fixed candidate list, not a
+scored pipeline change.
+
+Cost: 35.2 min CPU, no GPU quota, no submission slot.
 
 ## 2026-09-02 -- ⏳ UNREVIEWED: rankwhy, what the ranker prefers when the correct target is not first
 
