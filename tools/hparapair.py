@@ -31,6 +31,7 @@ whether the ranker and the ILP convert it, and the ranker pkl was fitted on
 refine coordinates (see make_hparabench.py). Negative or null therefore
 leaves the retrain-on-hpara question open at a cost of four GPU hours.
 """
+import re
 import sys
 import csv
 import math
@@ -43,6 +44,29 @@ NDRAW = 2000
 SEED = 8080
 
 
+_NPWRAP = re.compile(r"^np\.\w+\(([^)]*)\)$")
+
+
+def _num(v):
+    """Parse one cell, tolerating numpy's repr, and REFUSE to guess.
+
+    The bench dumps with `repr(value)`. Under numpy 2.x that is
+    `np.float64(0.91)`, not `0.91`, so a naive `float(v)` raises -- and the
+    obvious except-clause turns the whole column into NaN while every table
+    below still prints. That is the silent-wrong-number failure this project
+    has a rule about, so anything unparseable raises here instead.
+    """
+    if v is None:
+        raise ValueError("missing cell")
+    s = v.strip()
+    m = _NPWRAP.match(s)
+    if m:
+        s = m.group(1)
+    if s in ("nan", "np.float64(nan)", ""):
+        return float("nan")
+    return float(s)
+
+
 def load(p):
     rows = {}
     with open(p, encoding="utf-8") as fh:
@@ -52,9 +76,13 @@ def load(p):
                 if k in ("dataset", "fold"):
                     continue
                 try:
-                    d[k] = float(v)
-                except (TypeError, ValueError):
-                    d[k] = float("nan")
+                    d[k] = _num(v)
+                except (TypeError, ValueError) as e:
+                    raise SystemExit(
+                        f"{p}: cannot parse column {k!r} of "
+                        f"{r['dataset']}: {v!r} ({e}). Fix the parser -- "
+                        f"turning this into NaN would print a full set of "
+                        f"plausible tables built on a dropped column.")
             d["_fold"] = int(r["fold"])
             rows[r["dataset"]] = d
     return rows
