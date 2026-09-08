@@ -1481,14 +1481,37 @@ recipe makes the U-Net D4-equivariant, and the size of the shift here
 
 **Residue -- what this does NOT close.**
 
-- **It measures TTA on the EDGE features only.** Their step also runs the
-  D4 ensemble on DETECTION, where the views are merged as peaks rather than
-  averaged as a field -- a different operation with a different failure mode,
-  and one this probe leaves untouched. If their +0.005 is real, that is where
-  it should be looked for.
+- **It measures TTA on the EDGE features only, with the DETECTIONS held
+  fixed.** That is deliberate -- it keeps the `(t, i, j)` rows identical
+  across arms so the AUC compares the same pairs -- but their step averages
+  the detection logits and the features together in one pass. Ours isolates
+  the feature half.
 - 6bba only, 12 movies. No 44b6, no zebrahub.
 - Our U-Net is not theirs. A D4-augmented model would be a different
   experiment, not a re-run of this one.
+
+**A correction to the first draft of this entry, which said their +0.005
+should be looked for in DETECTION TTA "which we do not run". We do run it.**
+`fuse6bba.branch_maps4` and `detfuse3` build every one of the four F4
+heatmaps as *"the sigmoid of its 4-flip logit mean"* -- identity, flip y,
+flip x, flip both -- and our detector has worked that way since F4 landed
+(LB 0.925, 2026-08-31). What the public notebook has that we do not is
+**eight** views there instead of four, on the OFFICIAL detector rather than
+our ensemble. Two things bear on whether that gap is worth anything, and
+both point the same way: `tta8` is indistinguishable from `tta4` here, so
+doubling the view count bought nothing on this network; and our detector's
+four flips are *the same four transforms* `tta4` uses (`_d4_fwd` views 0-3
+are exactly `_flip`'s), so this is not an exotic augmentation that our
+pipeline has never seen.
+
+**Which sharpens the mechanism, and makes it testable rather than a story.**
+The same four-flip average that our detector has used successfully for
+weeks makes the edge probability worse. The difference is not the transform,
+it is what reads the averaged map. **Peak-finding is robust to a blur that
+leaves the maximum where it was; a head that reads the feature VALUE at a
+point is not.** Our detector averages LOGITS and takes one sigmoid at the
+end, which is the numerically right way to do it; `model.encode`'s
+`unet_out` is averaged as it comes.
 
 **With this, all six differences from the public 0.946 notebook are closed:**
 three from the existing record (disappearance cost, ILP division weight,
