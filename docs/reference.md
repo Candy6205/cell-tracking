@@ -13,6 +13,14 @@
 | 2026-09-22 | Team merger / new-entrant deadline (confirmed via API) |
 | 2026-09-29 | Final submission (UTC+8: 09-30 07:59) |
 
+**EVERY Kaggle timestamp is UTC; the dev machine is UTC+8.** Submission
+dates, `kernels list --lastRunTime`, everything the API returns. Verified
+2026-09-08: a kernel pushed at local 11:45 came back as `lastRunTime
+2026-09-08 03:41:51`. Subtracting a Kaggle timestamp from `date` without
+converting adds a phantom 8 hours -- it once turned a 4-hour-old pending
+submission into "12 hours, unusually long". Use `date -u` for the
+comparison, or add 8 to the Kaggle time to get local.
+
 ## The metric
 
 `score = adjusted_edge_jaccard + 0.1 * division_jaccard`

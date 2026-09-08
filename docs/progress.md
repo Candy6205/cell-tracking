@@ -1225,6 +1225,19 @@ volume" and "the UNet degrades at its own z border" produce identical tables
 and only the second is fixable. On `44b6_a2bb48bb` the first sweep puts the
 missed cell at z=52 of 63.
 
+**v5 (2026-09-08): v4's fade was the drop-out bug a FOURTH time.** v4 faded
+to alpha 0.16 and reached that floor 8 planes out, so on a 64-plane sweep
+every distant marker was invisible over bright tissue -- markers hidden with
+opacity instead of an `if`. Measured on the output: blue circles reached only
+19 of 64 planes on `44b6_a2bb48bb` and 34 of 64 on `6bba_3a1849c2`, the red
+miss marker only 9. v5 floors alpha at 0.50, fades over 40 voxels instead of
+10, carries the depth cue mainly in RADIUS (down to 30% at distance) and dash,
+and draws a dark backing ring so a thin cyan line survives a white nucleus.
+**64 of 64 planes now carry every marker, blue and red.** The lesson is in
+`working-agreement.md` under "Anything you omit will be read as a negative" --
+and note that the fix for it was itself the same bug twice more, which is why
+the rule says PREFER ENCODING TO DROPPING rather than "filter carefully".
+
 **v4 (2026-09-08): STOP DROPPING MARKERS -- the same bug a third time.** The
 user, on v3: "我是说你那个视频上的蓝圈… 这个标注是隔几帧有一个？". v3 drew a
 circle only while the cell was within one voxel of the displayed plane, so on

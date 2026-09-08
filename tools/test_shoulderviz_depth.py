@@ -47,11 +47,13 @@ for i, d in enumerate(dz):
     print(f"  {d:>6.1f} {rgba[i, 3]:>7.3f} {lw[i]:>6.2f} {size[i]:>7.1f} "
           f"{str(bool(near[i])):>7}")
 assert np.all(np.diff(rgba[:, 3]) <= 0), "alpha must not rise with distance"
-assert rgba[:, 3].min() >= 0.15, "a marker must never fade to nothing"
+assert rgba[:, 3].min() >= 0.45, (
+    "v4's first cut floored alpha at 0.16, which is invisible over bright "
+    "tissue -- the drop-out bug achieved with opacity. Floor must stay high.")
 assert rgba[0, 3] == 1.0, "an in-plane marker must be fully opaque"
 assert near[:3].all() and not near[3:].any(), near
 assert lw[0] > lw[-1], "far markers must be thinner"
-print("  OK: monotone, floored at 0.16, in-plane is solid and opaque")
+print("  OK: monotone, floored at 0.50, in-plane is solid and opaque")
 
 print("\n2. matplotlib accepts per-point lw + RGBA with a collection linestyle")
 rng = np.random.default_rng(0)
@@ -67,14 +69,16 @@ fig.canvas.draw()
 img = np.asarray(fig.canvas.buffer_rgba())[..., :3]
 print(f"  rendered {img.shape} {img.dtype}, "
       f"{len(ax.collections)} collections drawn")
-assert len(ax.collections) == 3, \
-    f"expected near-blue + far-blue + near-red, got {len(ax.collections)}"
+assert len(ax.collections) == 5, (
+    f"expected blue backing + blue near + blue far, red backing + red near; "
+    f"got {len(ax.collections)}")
 
 print("\n3. every marker is drawn -- none is silently dropped")
 n_drawn = sum(len(c.get_offsets()) for c in ax.collections)
-assert n_drawn == len(pts) + len(mk), (n_drawn, len(pts) + len(mk))
-print(f"  {n_drawn} offsets for {len(pts)} GT + {len(mk)} miss   OK "
-      "(this is the v3 bug: it would be 2)")
+expect = 2 * (len(pts) + len(mk))   # each marker also gets a backing ring
+assert n_drawn == expect, (n_drawn, expect)
+print(f"  {n_drawn} offsets for {len(pts)} GT + {len(mk)} miss, backing "
+      f"rings included   OK (this is the v3 bug: it would be 4)")
 
 print("\n4. near and far are visibly different in the pixels")
 blue = ((img[..., 2].astype(int) - img[..., 0]) > 40) & (img[..., 1] > 60)
@@ -83,7 +87,7 @@ print(f"  blue pixels {int(blue.sum())}, red pixels {int(red.sum())}")
 assert blue.sum() > 0 and red.sum() > 0, "markers did not reach the canvas"
 a0 = _depth_style(np.array([0.0]), (0.25, 0.75, 1.0), 90.0, 1.1)[2][0, 3]
 a1 = _depth_style(np.array([12.0]), (0.25, 0.75, 1.0), 90.0, 1.1)[2][0, 3]
-assert a0 - a1 > 0.4, (a0, a1)
+assert a0 - a1 > 0.15, (a0, a1)
 print(f"  in-plane alpha {a0:.2f} vs 12 voxels away {a1:.2f}   OK")
 
 print("\n5. the empty case must not raise (frames with no GT in the crop)")

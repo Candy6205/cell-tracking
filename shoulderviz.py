@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt                              # noqa: E402
 import imageio.v2 as imageio                                 # noqa: E402
 
-SCRIPT_VERSION = "2026-09-08d-shoulderviz"
+SCRIPT_VERSION = "2026-09-08e-shoulderviz"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 CODE_ROOTS = [
@@ -300,12 +300,20 @@ def _depth_style(dz, rgb, s_in, lw_in):
     drawn instead: bright, thick and solid in-plane; fading, thinner and
     dashed as it goes away, with a floor so it never disappears entirely.
     The user, 2026-09-08: "连贯一点其实我也能看出来细胞下去了又或者暗掉了".
+
+    v4a NOTE: v4's first cut faded to alpha 0.16 and hit that floor 8 planes
+    out, which on a 64-plane stack meant every distant marker was invisible
+    over bright tissue -- the drop-out bug AGAIN, this time achieved with
+    opacity instead of an if-statement. The fade is now shallow and floored
+    at 0.5, and the depth cue is carried mainly by RADIUS and dash density,
+    which stay readable at any contrast. A dark backing ring (drawn by
+    `_scat`) keeps the marker legible over a bright field.
     """
     d = np.abs(np.asarray(dz, float))
-    a = np.clip(1.0 - d / 10.0, 0.16, 1.0)
+    a = np.clip(1.0 - d / 40.0, 0.50, 1.0)
     near = d <= 1.5
-    size = s_in * np.clip(1.0 - d / 26.0, 0.55, 1.0)
-    lw = np.where(near, lw_in, np.where(d <= 4.0, lw_in * 0.55, lw_in * 0.34))
+    size = s_in * np.clip(1.0 - d / 16.0, 0.30, 1.0)
+    lw = np.where(near, lw_in, np.where(d <= 4.0, lw_in * 0.7, lw_in * 0.5))
     rgba = np.tile(np.asarray(rgb + (1.0,), float), (len(d), 1))
     rgba[:, 3] = a
     return size, lw, rgba, near
@@ -320,6 +328,11 @@ def _scat(ax, pts, dz, rgb, s_in, lw_in):
     if not len(pts):
         return
     size, lw, rgba, near = _depth_style(dz, rgb, s_in, lw_in)
+    # a dark backing ring first: half these crops are bright tissue, and a
+    # thin cyan line on a white nucleus is as invisible as one that was never
+    # drawn
+    ax.scatter(pts[:, 1], pts[:, 0], s=size, facecolors="none",
+               edgecolors=(0, 0, 0, 0.55), linewidths=lw * 2.6)
     for msk, ls in ((near, "solid"), (~near, (0, (2, 2)))):
         if msk.any():
             ax.scatter(pts[msk, 1], pts[msk, 0], s=size[msk],
