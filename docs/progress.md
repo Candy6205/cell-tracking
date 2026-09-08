@@ -1457,6 +1457,24 @@ its own**, and this project's rule is to submit a mechanism, not a local
 number. It is written down here so it can ride along with the next change to
 this stage that has a mechanism of its own.
 
+#### Two more free nulls off the same table, before anyone spends a run on them
+
+**A per-SOURCE gate cut buys nothing.** Forks come from two stages -- the
+ILP's own (`src` 0, 112 counted, 22 true) and the geometric patch's (`src` 1,
+187 counted, 28 true) -- and they share one threshold. Splitting it, best of
+a 10 x 10 grid: ILP 0.05 / patch 0.03, **+0.00017 score**, which is WORSE
+than simply moving the single cut. The reason is in the survival rates:
+at 0.03 the gate keeps 0.91 of true ILP forks against 0.93 of true patch
+ones, and 0.13 of false against 0.17. **The two sources are the same problem
+to this gate**, which is what you would expect given that `src` is already
+one of its twenty features.
+
+**And the cut itself is at its plateau.** Sweeping the single threshold:
+0.03 (ships) 0.2805, 0.04 **0.2848 (+0.00043 score)**, 0.05 0.2675, 0.02
+0.2686. The peak is one grid step wide on 299 forks and 50 true events;
+divbench3 already priced this axis at +0.0009 and closed it. Recorded so the
+next reader does not re-run the sweep to rediscover a fifth of a noise width.
+
 #### ⚠ WHAT THIS APPROXIMATES, stated because the whole entry rests on it
 
 `tools/divradius.py` filters the fork proposals a run at the shipped radii
