@@ -1,33 +1,27 @@
 {
-  "id": "faustine649/biohub-gapcross",
-  "title": "Biohub gapcross",
-  "code_file": "gapcross.py",
+  "id": "faustine649/biohub-ep2hpcache",
+  "title": "Biohub ep2hpcache",
+  "code_file": "ep2hpcache.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": false,
+  "enable_gpu": true,
   "enable_tpu": false,
-  "enable_internet": true,
+  "enable_internet": false,
   "dataset_sources": [
-    "pilkwang/biohub-tracking-support-pack-50ep-v1",
-    "faustine649/biohub-dctrain-175-weights",
-    "faustine649/cell-tracking"
+    "pilkwang/biohub-temporal-unet3d-seed314159-v1",
+    "pilkwang/biohub-tracking-support-pack-50ep-v1"
   ],
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
-    "faustine649/biohub-zh-detect",
     "faustine649/biohub-poolsize",
-    "faustine649/biohub-fusecache",
-    "faustine649/biohub-edgeprob",
     "faustine649/biohub-edgeprob2",
-    "faustine649/biohub-edgeprob-rank2",
-    "faustine649/biohub-fuse6bba",
-    "faustine649/biohub-ep6bba"
+    "faustine649/biohub-hparacache"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
   "model_sources": [],
-  "machine_shape": "None"
+  "machine_shape": "NvidiaTeslaT4"
 }

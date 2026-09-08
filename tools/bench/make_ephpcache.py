@@ -61,6 +61,11 @@ rep('''CACHES_F4 = _walk_files(lambda fn: fn[len("fdet_F4_"):-len(".npz")]
 rep('''assert len(CACHES_F4) >= 116, ("fewer than 24 fdet_F4_*.npz under ''',
     '''assert len(CACHES_F4) >= 24, ("fewer than 24 fdet_F4hp_*.npz under ''')
 
+# 2026-09-09: hparacache went 24 -> 140 movies, so the two 24-only asserts
+# below now fail by design. The selection itself is already right -- it takes
+# every movie that HAS an fdet_F4hp_ cache -- so only the checks change: the
+# 128 6bba must all be there (that is what the bench scores) and the count
+# must match the caches actually mounted.
 rep('''names_f4 = [n for n in ALL_TRAIN
             if n.startswith("6bba_") and n not in set(HOLDOUT_6BBA)]
 assert len(names_f4) == 116, len(names_f4)''',
@@ -68,10 +73,15 @@ assert len(names_f4) == 116, len(names_f4)''',
 # 175-movie pool stays on refine coordinates and keeps its shipped
 # edgeprob_F4_ rows; see make_hparabench.py for why.
 names_f4 = [n for n in ALL_TRAIN if n in set(CACHES_F4)]
-assert len(names_f4) == 24, (len(names_f4), sorted(names_f4)[:5])
-assert sorted(names_f4) == sorted(list(HOLDOUT_6BBA) + list(SET_44B6)), (
-    "the hpara caches are not the 12 + 12 evaluation movies: "
-    f"{sorted(set(names_f4) ^ set(list(HOLDOUT_6BBA) + list(SET_44B6)))}")''')
+assert len(names_f4) == len(CACHES_F4), (len(names_f4), len(CACHES_F4))
+assert len(names_f4) >= 128, (
+    f"only {len(names_f4)} hpara caches -- the bench scores 128 6bba "
+    f"movies and every one of them needs an edgeprob_F4hp_ row")
+_six = [n for n in ALL_TRAIN if n.startswith("6bba_")]
+_gap = [n for n in _six if n not in set(names_f4)]
+assert not _gap, (
+    f"{len(_gap)} of the 128 6bba movies have no fdet_F4hp_ cache: "
+    f"{_gap[:5]}")''')
 
 rep('''    label = name if arm == "base" else f"F4_{name}"''',
     '''    label = name if arm == "base" else f"F4hp_{name}"''')

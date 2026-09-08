@@ -61,10 +61,8 @@ rep('''        OUT / f"edgeprob2_{label}.npz",''',
 rep('''    mb = (OUT / f"edgeprob2_{label}.npz").stat().st_size / 2 ** 20''',
     '''    _ship = SHIPPED_EP2.get(name)
     if _ship is None:
-        NPF_BAD.append(f"{name}(no shipped cache)")
-        print(f"  !! {name}: no shipped edgeprob2_F4_ to check n_per_frame "
-              f"against -- the only available check on this run is off",
-              flush=True)
+        NPF_NOCHK.append(name)
+        pass   # expected off the 24; counted, not failed
     else:
         _z = np.load(_ship)
         _old = np.asarray(_z["n_per_frame"], np.int64)
@@ -93,20 +91,33 @@ assert len(jobs) == len(names_f4) == 24, (len(jobs), len(names_f4))
 print(f"jobs: 0 base (dropped) + {len(names_f4)} F4hp = {len(jobs)}",
       flush=True)''')
 
+# 2026-09-09: EVAL_24 -> every movie that has an fdet_F4hp_ cache, because
+# hparacache now covers 140 and the bench scores 128 6bba. Selected the same
+# way ephpcache does rather than hardcoding a second list that could drift.
 rep('''names_f4 = list(EVAL_24)''',
-    '''names_f4 = list(EVAL_24)
+    '''names_f4 = [n for n in ALL_TRAIN if n in set(CACHES_F4)]
+assert len(names_f4) == len(CACHES_F4), (len(names_f4), len(CACHES_F4))
+_six_ = [n for n in ALL_TRAIN if n.startswith("6bba_")]
+_gap_ = [n for n in _six_ if n not in set(names_f4)]
+assert not _gap_ and len(names_f4) >= 128, (
+    f"{len(_gap_)} of the 128 6bba movies have no fdet_F4hp_ cache "
+    f"({_gap_[:5]}); the bench scores all 128 and needs a row for each")
 SHIPPED_EP2 = _walk_files(lambda fn: fn[len("edgeprob2_F4_"):-len(".npz")]
                           if fn.startswith("edgeprob2_F4_")
                           and fn.endswith(".npz") else None)
 print(f"shipped edgeprob2_F4_ caches for the n_per_frame check: "
       f"{len(SHIPPED_EP2)}", flush=True)
-NPF_BAD = []''')
+NPF_BAD = []
+NPF_NOCHK = []''')
 
 rep('''    print(f"EDGEPROB2 OK ({n_base} base + {n_f4} F4 of {len(jobs)})",
           flush=True)''',
     '''    print(f"n_per_frame check: {len(names_f4) - len(NPF_BAD)} of "
-          f"{len(names_f4)} datasets reproduce the shipped counts"
-          + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly"),
+          f"{len(names_f4) - len(NPF_NOCHK)} checkable datasets "
+          f"reproduce the shipped counts"
+          + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly")
+          + f"; {len(NPF_NOCHK)} had no shipped edgeprob2_F4_ to check "
+            f"against (expected: only the 24 eval movies were ever cached)",
           flush=True)
     print(f"EP2HPCACHE {'OK' if not NPF_BAD else 'NPF MISMATCH'} "
           f"({n_base + n_f4} of {len(jobs)})", flush=True)''')

@@ -405,13 +405,20 @@ print(f"fdet_F4 caches mounted: {len(CACHES_F4)}", flush=True)
 assert len(CACHES_F4) >= 24, ("fewer than 24 fdet_F4hp_*.npz under "
                               "/kaggle/input -- attach biohub-fusecache "
                               "for the F4 detections")
-names_f4 = list(EVAL_24)
+names_f4 = [n for n in ALL_TRAIN if n in set(CACHES_F4)]
+assert len(names_f4) == len(CACHES_F4), (len(names_f4), len(CACHES_F4))
+_six_ = [n for n in ALL_TRAIN if n.startswith("6bba_")]
+_gap_ = [n for n in _six_ if n not in set(names_f4)]
+assert not _gap_ and len(names_f4) >= 128, (
+    f"{len(_gap_)} of the 128 6bba movies have no fdet_F4hp_ cache "
+    f"({_gap_[:5]}); the bench scores all 128 and needs a row for each")
 SHIPPED_EP2 = _walk_files(lambda fn: fn[len("edgeprob2_F4_"):-len(".npz")]
                           if fn.startswith("edgeprob2_F4_")
                           and fn.endswith(".npz") else None)
 print(f"shipped edgeprob2_F4_ caches for the n_per_frame check: "
       f"{len(SHIPPED_EP2)}", flush=True)
 NPF_BAD = []
+NPF_NOCHK = []
 
 if SMOKE:
     names = [HOLDOUT_6BBA[0], SET_44B6[0]]
@@ -724,10 +731,8 @@ for k, (arm, name) in enumerate(jobs, 1):
         n_per_frame=fwd.n)
     _ship = SHIPPED_EP2.get(name)
     if _ship is None:
-        NPF_BAD.append(f"{name}(no shipped cache)")
-        print(f"  !! {name}: no shipped edgeprob2_F4_ to check n_per_frame "
-              f"against -- the only available check on this run is off",
-              flush=True)
+        NPF_NOCHK.append(name)
+        pass   # expected off the 24; counted, not failed
     else:
         _z = np.load(_ship)
         _old = np.asarray(_z["n_per_frame"], np.int64)
@@ -782,8 +787,11 @@ complete = (not failed and not skipped_time
             and n_base == 0 and n_f4 == len(names_f4))
 if complete:
     print(f"n_per_frame check: {len(names_f4) - len(NPF_BAD)} of "
-          f"{len(names_f4)} datasets reproduce the shipped counts"
-          + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly"),
+          f"{len(names_f4) - len(NPF_NOCHK)} checkable datasets "
+          f"reproduce the shipped counts"
+          + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly")
+          + f"; {len(NPF_NOCHK)} had no shipped edgeprob2_F4_ to check "
+            f"against (expected: only the 24 eval movies were ever cached)",
           flush=True)
     print(f"EP2HPCACHE {'OK' if not NPF_BAD else 'NPF MISMATCH'} "
           f"({n_base + n_f4} of {len(jobs)})", flush=True)
