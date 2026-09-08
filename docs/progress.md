@@ -1364,6 +1364,72 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### hparabench ROUND 2 + zhpara PUSHED (2026-09-09, three CPU kernels). Full coverage at last: 128 of 128 scored movies now differ between the arms instead of 12, the AUC discriminator widens with it, and zebrahub gets its own harness. THE READING IS FIXED HERE, BEFORE THE NUMBERS
+
+Round 1 could not answer its own question. It scored 128 6bba movies and
+only TWELVE carried hpara coordinates, so every aggregate was diluted about
+tenfold and had to be re-read on the changed subset by hand; its AUC
+discriminator never ran at all (the version on Kaggle was still round 1's).
+Three cache kernels have since landed -- `hparacache` v3 at 140 movies,
+`ephpcache` and `ep2hpcache` behind it -- so the arm can finally be what it
+was supposed to be.
+
+**What is running.**
+
+| kernel | arm | scope |
+|---|---|---|
+| `biohub-hparabench` | `DET_SRC=F4HP` | 128 6bba + the 12 44b6 D187 rows, hpara coordinates |
+| `biohub-hparabench-ref` | `DET_SRC=F4` | the same, refine coordinates, hard anchors asserted |
+| `biohub-zhpara` | REF vs HP | zebrahub, both arms in one run, dcmerge's solver |
+
+**One real bug was caught by its own new assert, and it is worth recording
+because it would have produced a NUMBER rather than a crash.** v6 died in
+60 seconds on
+
+> `edgeprob2: only 12 of the 128 scored 6bba movies have an F4hp cache`
+
+`edgeprob2` is the OPTIONAL second head -- divbench9 reads it with
+`.get(name)` -- and only 24 movies have an `edgeprob2_F4_` cache at all, so
+116 of the 128 scored movies are solved without it **in both arms**.
+`ep2hpcache` cached 140. Merging all 140 in would have handed the hpara arm
+a second head on 116 movies where the control has none: the arms would then
+have differed in the PIPELINE, not in the placement, and the delta would
+have measured the second head. **The override now REPLACES and never ADDS**
+-- the hpara dict is cut down to the keys the refine arm already has -- and
+a movie with a refine cache and no hpara counterpart is a hard error.
+
+**PRE-REGISTERED READING, round 2.** Same two-by-two as round 1, now with
+the power to use it. `AUC` is the fitted ranker's out-of-fold AUC on
+`poolsize`'s labels, same pairs, same labels, same model, the ONE difference
+being where the points were placed.
+
+| AUC | 6bba score | reading |
+|---|---|---|
+| down | down | the ranker MIS-READS hpara. It was fitted on refine coordinates and never saw ones this clean; refitting is the fix and the ~6 GPU hours are justified |
+| flat | down | the ranker is fine and something downstream ate it -- the ILP's thresholds and the patch constants were all tuned on refine coordinates |
+| flat / up | flat | it genuinely does not convert. Placement is better (`refinecmp`, jitter −31%) and the score cannot see it. Park the direction with that as the finding |
+| up | up | it converts, and round 1's −0.0018 was the twelve-movie dilution talking |
+
+**And the domain rule applies, so the 6bba column alone decides nothing.**
+Three domains this time: 6bba (128 movies, the scored set), 44b6 (the 12
+D187 rows, printed by both arms), zebrahub (`zhpara`, every crop carrying
+both caches). A change counts when the sign agrees; a win in one domain is a
+property of that domain. ⚠ `zhpara` runs a DIFFERENT pipeline -- dcmerge's
+solver has no edge head and no fork gate -- so it answers "does better
+placement help the LINKER", and `hparabench` answers "does it help the
+shipped submission". Those are two questions and the write-up must not merge
+them.
+
+**What `zhpara` anchors, all three cheap and all three catching a real
+failure mode.** The REF arm must reproduce dcmerge v2's recorded zebrahub
+BASE (edge_J 0.8036, adj_J 0.8093, div_J 0.0230) on dcmerge's own 8 crops;
+the hpara cache must carry byte-identical ground truth, or the arms are
+scored against different truths; and the detection count must match frame by
+frame, because hpara re-places and never re-detects. It also prints
+`|hpara − refine|` per crop, so a null cannot be confused with a no-op --
+the distinction `ttascore` had to make tonight on the TTA arm.
+
+
 ### ⭐⭐⭐⭐ EDGE-FEATURE TTA VERDICT (2026-09-09, `ttaprobe` v3 69 min T4 + `ttascore` 2 min CPU, gate anchored 12/12): averaging the U-Net features over D4 views makes our edge probability **WORSE**, −0.0042 AUC, 12/12 movies, bootstrap P(>0) = 0.000. The last public-0.946 candidate is closed and the ~20 GPU hours are REFUSED
 
 The sixth and last difference between our configuration and the public 0.946
