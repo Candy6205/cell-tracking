@@ -1,22 +1,33 @@
 {
-  "id": "faustine649/biohub-zhhpcache",
-  "title": "Biohub zhhpcache",
-  "code_file": "zhhpcache.py",
+  "id": "faustine649/biohub-gapcross",
+  "title": "Biohub gapcross",
+  "code_file": "gapcross.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": true,
+  "enable_gpu": false,
   "enable_tpu": false,
-  "enable_internet": false,
+  "enable_internet": true,
   "dataset_sources": [
-    "xiaoleilian/biohub-unet3d-weights",
-    "xiaoleilian/biohub-unet3d-weights-v2models"
+    "pilkwang/biohub-tracking-support-pack-50ep-v1",
+    "faustine649/biohub-dctrain-175-weights",
+    "faustine649/cell-tracking"
   ],
   "kernel_sources": [
-    "faustine649/biohub-zebrahub-extract",
-    "faustine649/biohub-zh-detect"
+    "faustine649/biohub-edge-ranker",
+    "faustine649/biohub-cache-train",
+    "faustine649/biohub-zh-detect",
+    "faustine649/biohub-poolsize",
+    "faustine649/biohub-fusecache",
+    "faustine649/biohub-edgeprob",
+    "faustine649/biohub-edgeprob2",
+    "faustine649/biohub-edgeprob-rank2",
+    "faustine649/biohub-fuse6bba",
+    "faustine649/biohub-ep6bba"
   ],
-  "competition_sources": [],
+  "competition_sources": [
+    "biohub-cell-tracking-during-development"
+  ],
   "model_sources": [],
-  "machine_shape": "NvidiaTeslaT4"
+  "machine_shape": "None"
 }
