@@ -183,8 +183,19 @@ SET_44B6 = [
 ]
 assert len(SET_44B6) == 12 and len(set(SET_44B6)) == 12
 
-NAMES = HOLDOUT_6BBA + SET_44B6
-assert len(NAMES) == 24, len(NAMES)
+# 2026-09-08: EXTENDED FROM 24 TO 140. The 24-movie run answered "does the
+# placement change anything" and could not answer "by how much": hparabench
+# scores all 128 6bba movies, only 12 of which had hpara coordinates, so 116
+# rows were identical between the arms and the score delta landed inside the
+# holdout's own 0.002-0.003 noise -- 90% interval [-0.0050, +0.0015], which
+# is equally consistent with a real regression and with a small gain. The
+# only way to resolve that is to give every scored movie hpara coordinates.
+# The 12 44b6 stay in even though this bench never scores them: 18 extra
+# minutes, and dropping them would break the downstream override asserts.
+NAMES = HOLDOUT_6BBA + NAMES_6BBA + SET_44B6
+assert len(NAMES) == 140 and len(set(NAMES)) == 140, len(NAMES)
+print(f"NAMES: {len(HOLDOUT_6BBA)} holdout + {len(NAMES_6BBA)} pool 6bba "
+      f"+ {len(SET_44B6)} 44b6 = {len(NAMES)}", flush=True)
 
 # ---- the anchor caches ----------------------------------------------------
 OLD = {}
@@ -193,7 +204,8 @@ for _d in pathlib.Path("/kaggle/input").glob("*/**/fdet_F4_*.npz"):
 print(f"anchor caches found: {len(OLD)} fdet_F4_*.npz", flush=True)
 _missing = [n for n in NAMES if n not in OLD]
 assert not _missing, (
-    f"{len(_missing)} of the 24 bench movies have no fdet_F4_ cache to "
+    f"{len(_missing)} of the {len(NAMES)} bench movies have no fdet_F4_ "
+    f"cache to "
     f"anchor against -- attach faustine649/biohub-fusecache as a "
     f"kernel_source. Missing: {_missing[:4]}")
 ANCHOR_FAILS = []''')
