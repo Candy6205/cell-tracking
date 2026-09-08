@@ -1364,6 +1364,125 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ THE PUBLIC 0.946 NOTEBOOK, READ AGAINST OUR RECORD (2026-09-08/09). Six of its knobs differ from ours; THREE we already measured and rejected with reasons, ONE is architectural, and only TWO are live. Plus the three-domain hpara caches, which now exist for 6bba, 44b6 AND zebrahub
+
+The user, on being told public notebooks were appearing faster than our own
+score moves: *"真是伤脑筋，一堆人上赶着开源。我那分的速度还没人家开源的速度
+快"*. Then: *"除了这一点以外没有别的有用的信息了吗"*, and the systematic
+read below is the answer to that.
+
+**Three notebooks, ONE lineage.** `biohub-cell-tracking-0-946-lb` (Reyhan
+Ksatria, 2026-09-08), `biohub-harmonic-fusion` (120 votes) and
+`biohub-942tta` (96 votes) are the same code; harmonic-fusion is 942tta with
+the comments stripped and a new title. It is not three teams passing us, it
+is one.
+
+**Their whole pipeline is driven by 57 `BIOHUB_*` environment variables, and
+the official `predict_unet_transformer.py` reads NONE of them** (checked: 0
+occurrences). The knobs are theirs, added by `_patch_text` rewriting the same
+official script we use at runtime. So nothing is a switch we can flip -- but
+the tuned VALUES are readable, and so are the patches.
+
+**The comparison that matters, done by MEANING not by name.** Of eleven
+constants that exist on both sides, **five are byte-identical** -- 2.25,
+10.0, 0.0076, 0.00375, 0.48. Numbers like 0.0076 do not coincide: both
+pipelines descend from the same public baseline and most of the
+configuration IS shared. The user's objection to an earlier draft of this
+entry -- *"你的意思是让我放弃我们调了这么久的参数直接用别人的吗"* -- was
+right to reject the framing, because there is no rival SET to adopt. There
+are six numbers.
+
+| | theirs | ours | verdict |
+|---|---|---|---|
+| gap radius `GAP1_GATE_UM` | 5.0 | **9.0** | LIVE. Ours is the untouched public baseline; THEY moved it |
+| short filter | 6 | 4 | live only paired with their rescue, below |
+| division parent / sister um | 9.0 / 14.0 | 12.0 / 15.0 | open |
+| ILP disappearance | 2 | 1.5 | **REJECTED, measured** |
+| ILP division weight | 1.2 | 0.55 | **ARCHITECTURAL, not a knob** |
+| gap density adaptive | on | absent | **not worth it, measured from their code** |
+
+**Rejected on our own evidence, not on taste:**
+
+* **disappearance 2.** `ilpsweep` (2026-09-05) already ran the notebook's ILP
+  settings on our nodes: **+0.0002 / −0.0115 / −0.0010**, deleting only 6-15%
+  of our nodes where theirs deletes 39%, and the chains it deletes are
+  **62% / 91% / 58% TRUE edges** where the scorer looks. REF is the local
+  optimum of that knob. Their 2 is tuned for a node set far smaller than ours
+  (18,618 against our 23,371 on the same movie).
+* **ILP division weight 1.2.** The user's point, and the constant's own
+  comment confirms it: ours is *"set from the fine sweep's argmax"*, swept
+  WITH the fork gate present. The public baseline is 1.0; they went UP to
+  make the ILP emit divisions natively and filter them with geometry +
+  DeepCenter, we went DOWN to 0.55 and let the learned fork gate decide.
+  Copying 1.2 would flood the graph with divisions the gate was never fitted
+  to arbitrate. Different stage doing the work, not a better number.
+* **gap density adaptive.** Read from their source rather than their prose:
+  the radius moves by `clip(0.040 * (local_spacing - 6.5), ±0.125)` um, i.e.
+  **at most ±0.125 on a 5 um radius -- 2.5%** -- and `GAIN 0.04` needs a 3 um
+  departure from the reference to reach even that. It also appears nowhere in
+  their own 0.934 -> 0.939 -> 0.941 -> 0.946 progression, so no gain is
+  attributed to it.
+
+**The one thing that is not a tuned number at all, and the only candidate
+with a stated delta: EDGE-FEATURE TTA (+0.005, their 0.941 -> 0.946).** Their
+own summary: the eight D4 views were already averaged into the DETECTION
+logits, but the UNet feature map handed to the edge predictor came from the
+original orientation only. The code difference is one character:
+
+```python
+_,       det_flip = model.encode(imgs_flip)   # baseline: features discarded
+_u_flip, det_flip = model.encode(imgs_flip)   # theirs: kept, inverted, averaged
+```
+
+`model.encode` returns BOTH; the baseline throws the features away. With
+detection TTA already on it costs them nothing. **Our `edgeprob_cache.py`
+comment is correct and is exactly why this gap exists here:** *"det_tta only
+affects the detection logits, which are discarded here... Off saves three
+U-Net passes per window."* Right about the official code -- which is why they
+had to ADD feature TTA -- and it leaves our edge features single-view.
+
+`ttaprobe` (pushed 2026-09-09) decides whether it is worth ~20 GPU hours,
+for about one. It wraps `model.encode` so the D4 average happens inside it,
+leaving `predict_video` byte-identical and `det_tta` off; detections cannot
+move because `_detect_cells_pooled` is already injected. 12 holdout movies x
+3 arms (1, 4, 8 views), labelling its own pairs, reporting single-column AUC
+of `p_fwd` -- no bench, no ILP, no thresholds. It also prints how far the
+probabilities moved and the encode-call counts, so a flat AUC can be told
+apart from a wrapper that silently did nothing.
+
+**`gapcross` (pushed): the two live candidates, CROSSED.** The user, going to
+bed: *"注意不同候选之间会不会互相影响，比如说一个放开限制一个收紧限制之类的"*.
+That is this situation exactly:
+
+* our only pre-fork-gate LB win was **loosening** the gap BUDGET
+  (0.003 -> 0.02, +0.002), and it worked because the budget was provably
+  binding -- 30 of 83 datasets at the cap, 64% of demand unrepaired;
+* their step **tightened** the gap RADIUS. A tighter radius proposes fewer
+  repairs, so it can un-bind the budget and delete our +0.002 by itself.
+
+Six arms off ONE ILP solve per movie (`patch_final` rebuilds from a fresh
+copy): REF, g5, g5c3, **g9c3 as a CONTROL that must lose**, s6, s6r.
+
+And the interaction that makes a candidate a provable no-op alone: their
+rescue only considers components of length `[4, OUTPUT_MIN_TRACK_LEN)`. **We
+run SHORT_MIN = 4, so that window is EMPTY here.** Porting the rescue alone
+would change nothing and read as a null result about the rescue. The unit
+under test is (SHORT_MIN 6 + rescue).
+
+**Separately, the three-domain hpara caches all landed, both anchors exact:**
+
+| kernel | scope | cost | anchor |
+|---|---|---|---|
+| `hparacache` v3 | **140** movies (128 6bba + 12 44b6) | 203 min T4 | every frame of every movie reproduces `fdet_F4_` exactly |
+| `zhhpcache` | **41 zebrahub crops** | 44 min T4 | 4,100 of 4,100 frames reproduce `zhdet_` exactly |
+
+|hpara − refine|: 6bba/44b6 p50 median **0.460** um (p90 0.789, max 1.479),
+zebrahub p50 **0.673** (p90 1.059, max 4.674, 1.28M detections). The
+zebrahub displacement being larger is expected from a different instrument
+and voxel size, and it is the first hpara number that exists for a third
+domain at all -- which is what the user's *"比赛的验证集两个都不是"* makes the
+point of.
+
 ### ⭐⭐⭐ hparabench ROUND 1 (2026-09-08, biohub-hparabench v4 + hparabench-ref, ~170 min CPU each, control anchor EXACT): THE BETTER PLACEMENT DOES NOT CONVERT. Edges get slightly WORSE (adj_J −0.0018 on the 12 movies it touches) and the apparent score gain is TWO division events. Round 2 with the AUC discriminator is pushed, because "not worth it" and "the ranker mis-reads it" are still not separated
 
 `refinecmp` established that `hpara` PLACES the detections better -- jitter
