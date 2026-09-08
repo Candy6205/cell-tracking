@@ -956,6 +956,131 @@ The 2026-08-28 table would then have a sixth row, and this is the first
 entry added to it whose argument was a mechanism (the gate's ordering,
 plus a label-shuffle control) rather than a local number.
 
+### ⭐⭐⭐⭐ zprofile VERDICT (2026-09-08, biohub-zprofile, 1 min CPU): THE ZERO-PADDING EXPLANATION IS DEAD -- the z-edge sag exists on 44b6 and NOT on 6bba, and one network cannot have a domain-specific padding artifact. The mirror-padding experiment is cancelled. Plus the hpara pipeline arm, pushed
+
+Two lines opened out of refinecmp and shoulderfeat, on the user's ordering:
+"那个hpara换成流水线臂可以先做，因为z边缘那个岔路我没有听懂".
+
+**1. `hparacache` (GPU, ~35 min) + `hparabench` / `hparabench_ref` (CPU).**
+`fdet_F4_<name>.npz` stores only final coordinates and scores, so `hpara`
+-- which needs the heatmap -- cannot be recomputed from it. Only the 24 bench
+movies are re-cached, at fuse6bba's 82 s/movie.
+
+THE DESIGN CHOICE, and it makes the arm conservative: NMS runs ONCE, on the
+`refine` coordinates, and the survivors are placed both ways. That holds
+detection COUNT, ORDER and IDENTITY fixed, so the cached edge-head
+probabilities stay validly joined by (t, i, j) -- and it forgoes hpara's
++0.0008 recall, which came from NMS acting on better coordinates. The arm
+therefore measures placement ALONE.
+
+`hparabench` is divbench9 with 51 lines changed: `DET_SRC` repoints `FDET_F4`
+at the hpara caches, the F4 anchors demote to soft in that run only, and the
+per-movie rows are dumped to CSV so the two runs pair for a bootstrap. The
+control (`hparabench_ref`, `DET_SRC=F4`) keeps divbench9's 0.9216 hard
+anchor, so it validates the harness on its own.
+
+`tools/test_hparacache.py` plants a Gaussian at a known sub-voxel position:
+the shift cuts placement error 0.646 -> 0.044 um on clean blobs. That test
+exists because the kernel's anchor CANNOT catch a no-op shift -- the anchor
+IS the control arm, and a no-op would pass it while making both arms
+byte-identical.
+
+`hparabench_ref` v1 died on a missing `faustine649/biohub-edgeprob2` source
+(copied from divbench9's docstring, which predates it). v2 has it.
+
+**2. `zprofile` (CPU, ~1 min): the diagnostic that splits the z-edge fork.**
+shoulderfeat's finding has two mechanisms behind it:
+
+  (a) the cell is physically half outside the imaged volume -- nothing
+      recovers it, at any architecture;
+  (b) the detector degrades at the z border of its own input -- fixable.
+
+**The padding facts, checked in the code rather than asserted.** Every 3D
+convolution in the repo is `nn.Conv3d(..., 3, padding=1)`, and
+**`padding_mode` appears zero times**, so all of them use PyTorch's default
+zeros. That covers both architectures in play -- `UNet3D` (the three xl
+branches) and `_DCDeepCenterUNet3D` (the OFFICIAL DeepCenter, and our ep05
+retrain of it) -- and therefore also the public 0.948 notebook, which runs
+the official weights. The whole volume goes through in one forward pass
+(`branch_maps4`), so the only boundary is the real one.
+
+Accumulating the receptive field: 2 convs per block, `MaxPool3d(2)` pooling
+**z as well**, 64 -> 32 -> 16 -> 8. Encoder reach in original planes is
+2 + 4 + 8 + 16 = 30, and the decoder adds about as much again -- against a
+stack that is only **64 planes deep**. In z no voxel is far from a fabricated
+neighbourhood. In y/x, hundreds of voxels wide, only a thin rim is. That
+asymmetry is the shape of shoulderfeat's finding.
+
+**A SEPARATE HOLE THIS EXPOSED, unrelated to the shoulder cells and not yet
+tested: a `state_dict` does not carry `padding_mode`.** If the original
+authors trained the official DeepCenter with reflect padding, our
+reimplementation would load their weights without a single error and run
+inference with the wrong padding. Checkable by comparing our heatmap against
+the public notebook's on one volume.
+
+**What `zprofile` measures.** gtsplit's CSVs already carry `h_gt` -- the F4
+heatmap value at the annotated voxel -- for all 13,646 GT cells, not just the
+313. Joining those to each cell's z from the geff, against the true stack
+depth read from the zarr metadata:
+
+  * h_gt sagging at BOTH z edges among cells the detector FOUND is branch
+    (b): systematic, output-level, and a z-calibration curve or reflect
+    padding is the cheap undo;
+  * h_gt flat in z among matched cells, with only the missed ones weak, kills
+    the attenuation story and makes (a) the better reading.
+
+The matched cells are 97.6% / 96.0% of GT and are the control -- their
+profile is a readout of the DETECTOR against depth, independent of the
+question. **The caveat recorded before the numbers**: a real biological
+gradient would also bend this curve, so only a SYMMETRIC sag at both ends
+points at the network -- tissue has no reason to be symmetric about the
+middle of the imaging volume.
+
+**THE RESULT, and it kills branch (b).** All 24 movies are Z=64 and every
+GT cell joined. Among the cells the detector FOUND:
+
+| | 6bba | 44b6 |
+|---|---|---|
+| h_gt, within 4 planes of an edge | 0.385 (n=2,096) | 0.205 (n=316) |
+| h_gt, 12+ planes in | 0.366 (n=6,309) | 0.306 (n=2,064) |
+| **ratio** | **1.054 -- no sag at all** | **0.672 -- 33% down** |
+| miss rate, 0-4 planes from an edge | 2.67% | 8.89% |
+| miss rate, 10+ planes in | 2.13% | 1.90% |
+| **ratio** | **1.26x** | **4.68x** |
+
+**One network, one architecture, one padding mode, Z=64 in every movie of
+both domains -- and the effect is present in one domain and absent in the
+other. A zero-padding artifact cannot do that**: the convolution does not
+know which embryo it is looking at. On 6bba the edge cells are if anything
+BRIGHTER than the interior ones. Branch (b) is refuted, and with it the whole
+fix space -- reflect padding, z-calibration, depth-dependent thresholds,
+partial convolutions, z-crop augmentation. **The mirror-padding experiment is
+cancelled before it was pushed.**
+
+44b6's sag is symmetric in RAW z (z 0-5 -> 0.219, z 55-63 -> 0.194, middle
+0.30-0.32), which also rules out simple light attenuation -- that would be
+monotone, one end dark. Symmetric means both ends of the stack graze the
+sample, i.e. a roughly centred embryo whose top and bottom planes cut
+partially-imaged cells. That is branch (a): physical, and nothing recovers
+those cells.
+
+**AND IT SHARPENS shoulderfeat's OWN FINDING.** The 17-of-18 sign test stands
+-- it is a fact about medians -- but the miss-rate table shows the edge is
+worth only **1.26x on 6bba** against **4.68x on 44b6**. The z-edge story is
+overwhelmingly a 44b6 story, which shoulderfeat's per-movie table did not make
+visible because it reported position, not rate. Anyone reading "the shoulder
+cells sit at a z edge" as a pipeline-wide lever should read this row first.
+
+**The fix space, HAD it turned out to be (b)**, since the user asked whether
+mirror padding is the only option (it is not, and it is the weakest):
+inference-only -- reflect-pad z and crop back, a measured z-calibration curve
+on the heatmap, or a depth-dependent detection threshold; retraining --
+random z-crop augmentation, reflect padding in the architecture, or partial
+convolutions. Reflect padding at inference is a DISTRIBUTION SHIFT for a
+model trained with zeros, which is exactly why it is an experiment and not a
+fix, and why its control is that the interior must not move.
+
+
 ### ⭐⭐⭐⭐ shoulderfeat (2026-09-08, biohub-shoulderfeat v2, geffs only, no images, no GPU): THE 313 SHOULDER CELLS SIT AT A z EDGE OF THE STACK -- in 17 of 18 movies they are nearer an edge than that movie's own cells (sign test p = 1.5e-5), at BOTH ends, not deep. And only 32% of them are isolated single frames; the rest are multi-frame holes `gap_close` cannot span
 
 The user, 2026-09-08: "好烦，这个点除了在山坡上以外就没有任何特征吗！"

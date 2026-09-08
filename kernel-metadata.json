@@ -14,6 +14,7 @@
   ],
   "kernel_sources": [
     "faustine649/biohub-edgeprob",
+    "faustine649/biohub-edgeprob2",
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
     "faustine649/biohub-poolsize",
