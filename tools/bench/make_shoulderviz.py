@@ -72,7 +72,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt                              # noqa: E402
 import imageio.v2 as imageio                                 # noqa: E402
 
-SCRIPT_VERSION = "2026-09-08e-shoulderviz"
+SCRIPT_VERSION = "2026-09-08f-shoulderviz"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 CODE_ROOTS = [
@@ -216,6 +216,43 @@ def _frame(ax, m, lo, hi, pts, pdz, marks, mdz, roi, title):
     ax.set_axis_off()
 
 
+def _walk(n0, lo, hi, nid_xyz, par, kids):
+    """The focal cell's own lineage over frames [lo, hi], as (t,z,y,x).
+
+    v5 and earlier drew the red marker from `miss_bt`, i.e. "every cell
+    flagged at THIS frame". But a cell is flagged only on the frame it was
+    missed on, so across a +-5 window the red circle vanished on most
+    frames and, when another shoulder cell happened to be in view, jumped
+    to it -- measured on 44b6_a2bb48bb_zoom0: present on 3 of 6 frames, at
+    (187,237), (169,219) and (171,327). It looked like the cell teleported
+    100 px in one frame. The user: "你这个圈怎么好几帧都在原地".
+
+    So follow the GT lineage instead. Other shoulder cells need no special
+    marker: every one of them is an annotated cell and is already drawn in
+    the blue set.
+    """
+    seen, out = {n0}, []
+    v0 = nid_xyz.get(n0)
+    if v0 is not None:
+        out.append(v0)
+    for link in (par, kids):
+        cur = [n0]
+        while cur:
+            nxt = []
+            for n in cur:
+                for m in link.get(n, ()):
+                    if m in seen:
+                        continue
+                    w = nid_xyz.get(m)
+                    if w is None or not (lo <= w[0] <= hi):
+                        continue
+                    seen.add(m)
+                    out.append(w)
+                    nxt.append(m)
+            cur = nxt
+    return out
+
+
 def render(name, hits):
     zp = zarr_path(ROOT, "train", name)
     img = open_image(zp)
@@ -228,13 +265,21 @@ def render(name, hits):
     nid_xyz = {int(n): (int(tt), float(z_), float(y_), float(x_))
                for n, tt, z_, y_, x_ in zip(gt["node_ids"], gt["t"], gt["z"],
                                             gt["y"], gt["x"])}
+    kids, par = defaultdict(list), defaultdict(list)
+    _known = set(nid_xyz)
+    for _a, _b in gt["edges"]:
+        _a, _b = int(_a), int(_b)
+        if _a in _known and _b in _known:
+            kids[_a].append(_b)
+            par[_b].append(_a)
+
     miss_bt = defaultdict(list)
     for tt, nn, hg, hw in hits:
         v = nid_xyz.get(nn)
         if v is None:
             print(f"  ! {name}: node {nn} not in the geff", flush=True)
             continue
-        miss_bt[int(tt)].append((v[1], v[2], v[3], hg, hw))
+        miss_bt[int(tt)].append((nn, v[1], v[2], v[3], hg, hw))
     samp = np.asarray(img[0]).astype(np.float32)
     lo, hi = (float(np.percentile(samp, 1.0)),
               float(np.percentile(samp, 99.8)))
@@ -255,9 +300,9 @@ def render(name, hits):
         g = np.asarray([[y_, x_] for _z, y_, x_ in allg], float).reshape(-1, 2)
         gd = np.asarray([z_ - zmid for z_, _y, _x in allg], float)
         km = miss_bt.get(t, [])
-        k = np.asarray([[y_, x_] for _z, y_, x_, _a, _b in km],
+        k = np.asarray([[y_, x_] for _n, _z, y_, x_, _a, _b in km],
                        float).reshape(-1, 2)
-        kd = np.asarray([z_ - zmid for z_, _y, _x, _a, _b in km], float)
+        kd = np.asarray([z_ - zmid for _n, z_, _y, _x, _a, _b in km], float)
         n_in = int((np.abs(gd) <= SLAB / 2.0).sum())
         _frame(ax, m, lo, hi, g, gd, k, kd, None,
                f"{name}  t={t}   slab z {zs0}-{zs1} of {Z}   GT {len(g)} "
@@ -271,11 +316,11 @@ def render(name, hits):
           flush=True)
 
     # ---- zooms, dimmest first: those are the hardest cases --------------
-    flat = sorted(((t, z_, y_, x_, hg, hw)
+    flat = sorted(((t, nn, z_, y_, x_, hg, hw)
                    for t, lst in miss_bt.items()
-                   for z_, y_, x_, hg, hw in lst), key=lambda r: r[4])
+                   for nn, z_, y_, x_, hg, hw in lst), key=lambda r: r[5])
     step = max(1, len(flat) // N_ZOOM)
-    for k, (t, z_, y_, x_, hg, hw) in enumerate(flat[::step][:N_ZOOM]):
+    for k, (t, nn, z_, y_, x_, hg, hw) in enumerate(flat[::step][:N_ZOOM]):
         ry = int(round(ZOOM_UM / sc[1]))
         rx = int(round(ZOOM_UM / sc[2]))
         y0, y1 = max(0, int(y_) - ry), min(img.shape[2], int(y_) + ry)
@@ -286,21 +331,30 @@ def render(name, hits):
         fig, ax = plt.subplots(figsize=(5.2, 5.2), facecolor="k")
         fr = []
         zmid2 = (zz0 + zz1 - 1) / 2.0
-        for tt in range(max(0, t - ZOOM_DT), min(T, t + ZOOM_DT + 1)):
+        lo_t, hi_t = max(0, t - ZOOM_DT), min(T, t + ZOOM_DT + 1) - 1
+        # the FOCAL cell followed through the window along the GT lineage,
+        # so the red circle marks one cell rather than "whatever was flagged
+        # on this frame" -- see `walk`
+        trk = defaultdict(list)
+        for tq, zq, yq, xq in _walk(nn, lo_t, hi_t, nid_xyz, par, kids):
+            trk[int(tq)].append((zq, yq, xq))
+        n_trk = sum(len(v) for v in trk.values())
+        for tt in range(lo_t, hi_t + 1):
             m = _mip(img, tt, z_, slab=5, roi=roi)
             vis = [(zq, yy, xx) for zq, yy, xx in gbt.get(tt, [])
                    if y0 <= yy < y1 and x0 <= xx < x1]
             g = np.asarray([[yy - y0, xx - x0] for _z, yy, xx in vis],
                            float).reshape(-1, 2)
             gd = np.asarray([zq - zmid2 for zq, _y, _x in vis], float)
-            vm = [(zq, yy, xx) for zq, yy, xx, _a, _b in miss_bt.get(tt, [])
-                  if y0 <= yy < y1 and x0 <= xx < x1]
+            vm = trk.get(tt, [])
             mk = np.asarray([[yy - y0, xx - x0] for _z, yy, xx in vm],
                             float).reshape(-1, 2)
             md = np.asarray([zq - zmid2 for zq, _y, _x in vm], float)
             _frame(ax, m, clo, chi, g, gd, mk, md, roi,
-                   f"{name} zoom{k}  t={tt}  slab z {zz0}-{zz1} of {Z}"
-                   + (f"   <- the miss (h={hg:.3f}, win={hw:.3f})"
+                   f"{name} zoom{k}  t={tt}  slab z {zz0}-{zz1} of {Z}   "
+                   f"red = ONE cell, tracked ({n_trk} of "
+                   f"{hi_t - lo_t + 1} frames)"
+                   + (f"   <- MISSED HERE (h={hg:.3f}, win={hw:.3f})"
                       if tt == t else "")
                    + "\\nsolid = on this slab, dashed+faint = that many z away")
             fig.canvas.draw()
