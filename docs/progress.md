@@ -1157,9 +1157,11 @@ in 95.88-102.38 um against 0.36-2.3% in the middle.
 mechanically -- a cell against the end of the stack is only partly imaged,
 so its response is weak and never forms its own maximum -- and it is
 knowable AT INFERENCE with no labels at all, which nothing else about
-these cells has been. It also ties to the 17 shoulder cells whose
-annotated position is literally outside the volume (`h_gt` NaN, entry
-above).
+these cells has been. (An earlier draft tied this to 17 shoulder cells
+said to be "outside the volume" -- that reading is WITHDRAWN, see the
+SUPERSEDED note in the shoulderviz entry: those are a y/x index
+off-by-one in our own measurement, and 30 of the 48 such cells were
+matched by the detector, so they are in the image.)
 
 **THE ALTERNATIVE THIS DOES NOT SETTLE, and it is the actionable one.**
 Two mechanisms produce the same table: (a) the cell is physically half
@@ -1352,16 +1354,34 @@ that test never measured and cannot rule out. A movie can be sparse
 overall and still pack its cells into chains -- `6bba_3a1849c2` is
 exactly that.
 
-**One hard number that came out of the CSVs while the render ran.**
-`h_gt` is NaN in gtpeak exactly when the GT voxel index falls outside
-the heatmap volume, i.e. the annotated position is outside the imaged
-field. That is **48 of 13,646 GT cells (0.35%)**, of which 30 are still
-matched (a detection within 7 um can claim them from inside) and **17
-are in the 313 shoulder bucket = 5.4% of it**. It is almost entirely
-44b6, and 34 of the 48 are one movie, `44b6_c96cfa10`, on what looks
-like a single lineage drifting out of frame over t=64..94. Small, but
-it is the first feature of a shoulder cell that needs no heatmap at
-all, and those 17 are unrecoverable by any detector change.
+**One number that came out of the CSVs while the render ran -- and the
+WRONG reading of it, corrected the same day.** `h_gt` is NaN in gtpeak
+exactly when the rounded GT index falls outside the heatmap array: **48
+of 13,646 GT cells (0.35%)**, of which 30 are still matched and **17 are
+in the 313 shoulder bucket**. It is almost entirely 44b6, 34 of the 48
+in one movie, `44b6_c96cfa10`, along what looks like a single lineage
+over t=64..94.
+
+**SUPERSEDED, 2026-09-08:** this entry first read that as "the annotated
+position is outside the imaged field" and counted those 17 as
+information that was never recorded. The user killed it in one line:
+"可是不是人工标注的吗，怎么可能飘出高度之外" -- **a human cannot annotate
+a cell that is not in the picture.** And the refutation was already
+inside the same paragraph: **30 of the 48 were MATCHED BY THE
+DETECTOR**, which only ever runs inside the volume. They are in the
+image.
+
+The mechanism that actually fits is our own index arithmetic. gtpeak
+reads `yc = int(round(gt_vox[j, 1] / POOL))` with `POOL = 4`; the pooled
+axis has `Y/4` columns, so a cell in the last ~2 raw voxels of y (or x)
+rounds to index `Y/4`, one past the end, and reads NaN. z is not pooled
+and `round(z)` cannot leave `[0, Z-1]` for an in-volume cell, so z is
+not the culprit. **These 17 are cells against the y/x border of the
+frame that OUR MEASUREMENT could not read, not cells outside the
+volume**, and nothing follows from them about recoverability. The
+"edge + out-of-volume ~= 14% of the 313" figure derived from this is
+withdrawn; the z-edge attribution alone stands at ~27/313 ~= 9%.
+Unverified detail, cheap to settle: which axis, and by how much.
 
 **v3 (2026-09-08, 2.8 min): MP4, and a Z SWEEP.** The user, on v1: "这个渲染
 出来我也完全分辨不出来细胞在哪里呢，可能在下面被z轴叠掉了？" -- correct, and
