@@ -35,16 +35,15 @@ So this arm measures what better COORDINATES do to the ranker, the ILP and
 the patches, with the head held at its refine-based value. It also forgoes
 hpara's +0.0008 recall, which came from NMS acting on better coordinates.
 
-AND A THIRD, discovered when the control run demanded the 116 + 59 pool
-caches: **this bench RETRAINS the +BIDIR ranker in-run on the 175-movie
-pool**, whose fdet_F4_ caches are not re-cached here -- re-caching all 187
-movies is about four GPU hours against 35 minutes for the 24. So the ranker
-is trained on REFINE coordinates and applied to HPARA ones. That is a genuine
-train/test mismatch, and it is also exactly the practical question ("can the
-placement be swapped in without retraining anything?"). A positive result is
-therefore trustworthy and a negative one is NOT decisive: it would leave open
-that a ranker trained on hpara coordinates does better, which costs the four
-hours to settle.
+AND A THIRD, found while fixing the control run's sources: the bench LOADS
+`edge_ranker_ep175v3_bidir.pkl` rather than fitting it, and that pkl was
+fitted by `edgeprob-rank2` on the 175-movie pool's REFINE-based features.
+So the ranker is fixed, was fitted on refine coordinates, and is applied
+here to hpara ones. Re-fitting it means re-caching all 187 movies (about
+four GPU hours against 35 minutes for the 24) and re-running
+`edgeprob-rank2`. That is exactly the practical question -- can the
+placement be swapped in without retraining anything -- so a POSITIVE result
+is trustworthy and a NEGATIVE one is not decisive.
 
 All three approximations push the same way: they make the arm conservative.
 

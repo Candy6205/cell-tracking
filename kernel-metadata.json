@@ -1,7 +1,4 @@
 {
-  "id": "faustine649/biohub-hparabench-ref",
-  "title": "Biohub hparabench ref",
-  "code_file": "hparabench_ref.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
@@ -13,19 +10,22 @@
     "faustine649/cell-tracking"
   ],
   "kernel_sources": [
-    "faustine649/biohub-edgeprob",
-    "faustine649/biohub-edgeprob2",
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
+    "faustine649/biohub-zh-detect",
     "faustine649/biohub-poolsize",
     "faustine649/biohub-fusecache",
+    "faustine649/biohub-edgeprob",
+    "faustine649/biohub-edgeprob2",
+    "faustine649/biohub-edgeprob-rank2",
     "faustine649/biohub-fuse6bba",
-    "faustine649/biohub-fuse44b6",
-    "faustine649/biohub-ep6bba",
-    "faustine649/biohub-ep44b6"
+    "faustine649/biohub-ep6bba"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
-  "model_sources": []
+  "model_sources": [],
+  "id": "faustine649/biohub-hparabench-ref",
+  "title": "Biohub hparabench ref",
+  "code_file": "hparabench_ref.py"
 }

@@ -985,22 +985,28 @@ exists because the kernel's anchor CANNOT catch a no-op shift -- the anchor
 IS the control arm, and a no-op would pass it while making both arms
 byte-identical.
 
-`hparabench_ref` needed three pushes to get its sources right -- v1 missed
-`biohub-edgeprob2` (copied from divbench9's docstring, which predates it),
-v2 missed the POOL caches. The v2 failure is the informative one: the bench
-**retrains the +BIDIR ranker in-run on the 175-movie pool**, so it needs
-`fuse6bba` / `fuse44b6` / `ep6bba` / `ep44b6` as well -- ten kernel sources
-in total.
+`hparabench_ref` burned FOUR pushes on its source list, which is a
+process failure worth naming: v1 missed `biohub-edgeprob2`, v2 missed the
+pool's `fdet_F4_` caches, v3 missed `biohub-edgeprob-rank2`. Every one came
+from copying the list out of divbench9's DOCSTRING, which records what the
+sources were when it was written. v4 pulls divbench9's real metadata
+(`py kag.py kernels pull <ref> -m`) and copies it verbatim -- and that list
+contains two sources nobody would guess (`biohub-zh-detect`,
+`biohub-edgeprob-rank2`) and excludes two that look obviously required
+(`fuse44b6`, `ep44b6`). `kernel_sources` also appears to cap at 10. The rule
+is now in `working-agreement.md`.
 
-**That fact changes what the hpara arm can conclude, and it is recorded here
-before the result.** Only the 24 eval movies are re-cached with hpara; the
-175-movie pool stays on refine, because re-caching all 187 is about four GPU
-hours against 35 minutes. So the ranker is TRAINED on refine coordinates and
-APPLIED to hpara ones. That is the practical question -- can the placement be
-swapped in without retraining anything -- so a POSITIVE result is
-trustworthy. A NEGATIVE one is not decisive: it would leave open that a
-ranker trained on hpara coordinates does better, and settling that costs the
-four hours.
+**What v3's failure taught, and it is the caveat that governs this arm.**
+The bench does NOT retrain the ranker: it LOADS
+`edge_ranker_ep175v3_bidir.pkl`, fitted by `edgeprob-rank2` on the
+175-movie pool's features -- which are refine-based. So the ranker is
+FIXED, was fitted on REFINE coordinates, and is here applied to HPARA ones.
+Re-fitting it would mean re-caching all 187 movies (about four GPU hours
+against 35 minutes for the 24) and re-running `edgeprob-rank2` on top.
+That is exactly the practical question -- can the placement be swapped in
+without retraining anything -- so a POSITIVE result is trustworthy. A
+NEGATIVE one is NOT decisive: it would leave open that a ranker fitted on
+hpara coordinates does better.
 
 **2. `zprofile` (CPU, ~1 min): the diagnostic that splits the z-edge fork.**
 shoulderfeat's finding has two mechanisms behind it:

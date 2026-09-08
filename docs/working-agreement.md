@@ -72,6 +72,27 @@ wrong if it does not read that file first:
 3. **Start one background waiter per run**, and grep it for
    `complete|error|cancel` — silence is indistinguishable from
    still-running (trap 6).
+4. **When you assemble a script from a predecessor, take the SOURCE LIST
+   from that predecessor's real metadata, not from its docstring**:
+
+   ```bash
+   py kag.py kernels pull faustine649/biohub-<pred> -p <tmp> -m
+   ```
+
+   Docstrings record what the sources were when the docstring was
+   written. On 2026-09-08 `hparabench_ref` burned three pushes on this:
+   the divbench9 docstring predates `biohub-edgeprob2`, and it never
+   mentions that the bench RETRAINS the ranker on the 175-movie pool and
+   therefore needs the pool's caches too. The real list also turned out
+   to include two sources nobody would guess (`biohub-zh-detect`,
+   `biohub-edgeprob-rank2`) and to exclude two that seemed obviously
+   required (`fuse44b6`, `ep44b6`). **`kernel_sources` appears to cap at
+   10**, so a new source means dropping an old one — another reason to
+   start from the exact list rather than a plausible one.
+5. **Reading a bench kernel's log is slow**, because `kernels output`
+   downloads the whole working directory and these kernels leave a
+   cloned repo and a wheelhouse in it; the `.log` arrives LAST. Budget
+   minutes, not seconds, and start it in the background.
 
 ### The assembly pattern
 
