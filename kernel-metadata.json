@@ -1,23 +1,22 @@
 {
-  "id": "faustine649/biohub-ep2hpcache",
-  "title": "Biohub ep2hpcache",
-  "code_file": "ep2hpcache.py",
+  "id": "faustine649/biohub-ttaprobe",
+  "title": "Biohub ttaprobe",
+  "code_file": "ttaprobe.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
   "enable_gpu": true,
   "enable_tpu": false,
-  "enable_internet": false,
+  "enable_internet": true,
   "dataset_sources": [
-    "pilkwang/biohub-temporal-unet3d-seed314159-v1",
-    "pilkwang/biohub-tracking-support-pack-50ep-v1"
+    "pilkwang/biohub-tracking-support-pack-50ep-v1",
+    "faustine649/cell-tracking"
   ],
   "kernel_sources": [
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
     "faustine649/biohub-poolsize",
-    "faustine649/biohub-edgeprob2",
-    "faustine649/biohub-hparacache"
+    "faustine649/biohub-fusecache"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
