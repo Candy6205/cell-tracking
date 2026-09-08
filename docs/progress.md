@@ -1364,6 +1364,107 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐ hparabench ROUND 1 (2026-09-08, biohub-hparabench v4 + hparabench-ref, ~170 min CPU each, control anchor EXACT): THE BETTER PLACEMENT DOES NOT CONVERT. Edges get slightly WORSE (adj_J −0.0018 on the 12 movies it touches) and the apparent score gain is TWO division events. Round 2 with the AUC discriminator is pushed, because "not worth it" and "the ranker mis-reads it" are still not separated
+
+`refinecmp` established that `hpara` PLACES the detections better -- jitter
+p50 1.29 -> 0.89 um on 6bba, a 31% cut, at no node cost. This asks the next
+question: does the ranker and the ILP CONVERT that into score.
+
+**Control first.** `hparabench_ref` (DET_SRC=F4) reproduces divbench9 on all
+four columns over its 128 rows -- edge_J 0.9104, adj_J 0.9133, div_J 0.1337,
+score 0.9266 -- so the harness did not move and everything below is about
+hpara.
+
+**Twelve movies changed, not 128.** The bench scores `SIX` = all 128 6bba
+movies; the hpara caches cover the 24 EVALUATION movies, of which 12 are
+6bba. The other 12 are 44b6 and **this bench never scores 44b6 at all** (the
+71 44b6 movies are training data only, on BASE coordinates) -- so those 12
+caches produced nothing and this round says NOTHING about 44b6. The 116
+untouched movies are identical in both arms, which dilutes the aggregate by
+about 10x; every table below is the 12 that moved.
+
+| | refine (ships) | hpara | delta |
+|---|---|---|---|
+| edge_J | 0.9235 | 0.9217 | **−0.0018** |
+| adj_J | 0.9265 | 0.9248 | **−0.0018** |
+| div_J | 0.0769 | 0.1250 | +0.0481 |
+| **score** | 0.9342 | 0.9373 | **+0.0031** |
+
+**The +0.0031 is two division events, and that is the whole of it.** Counts,
+before writing any mechanism about them:
+
+| | div TP | div FP | div FN | edge TP | edge FP | edge FN |
+|---|---|---|---|---|---|---|
+| refine | 3 | 27 | 9 | 9,836 | 338 | 477 |
+| hpara | 5 | 28 | 7 | 9,828 | 350 | 485 |
+| delta | **+2** | +1 | −2 | **−8** | **+12** | **+8** |
+
+Twelve GT divisions across twelve movies; 3 caught became 5. div_J carries
+0.1 weight but the base is small enough that two events move it 0.048. That
+is noise wearing the shape of a result.
+
+**What IS stable is the edge side, and it is NEGATIVE.** −8 TP, +12 FP, +8 FN
+out of ~10,650, every component the same direction. Per movie 6 up 6 down.
+The paired bootstrap spans zero everywhere: CHANGED-only +0.0026
+[−0.0023, +0.0077], all-128 +0.0003 [−0.0002, +0.0009].
+
+**The tested claim, narrowly.** With the ranker FIXED and fitted on BASE
+coordinates, swapping refine for hpara on 12 movies does not improve the
+6bba score, and moves the edges slightly the wrong way. It does NOT touch
+`refinecmp`: that measured placement, and placement is still better.
+
+**Residue -- what this direction still owns.**
+
+- The placement result is untouched and independently measured (recall UP,
+  offset down, jitter down 31%, on BOTH domains).
+- The edge regression is small but coherent, and coherent is what a
+  DISTRIBUTION SHIFT looks like: the ranker never saw coordinates this
+  clean. That is a live alternative to "not worth it" and this round cannot
+  rule it out.
+- 44b6 is completely unmeasured here.
+- n = 12 movies, 12 divisions. Nothing about this round has the power to
+  settle anything.
+
+**Round 2, pushed 2026-09-08 (v5 both arms, ~170 min CPU each, no GPU).**
+The discriminator: label the F4/F4HP pair rows with `label_rows` -- which
+reads the GT itself, so it costs only CPU -- and score them with the SAME
+fitted model, out of fold, on the same 12 movies. Same pairs, same labels,
+same model; the ONE difference is where the points were placed.
+
+| AUC | score | reading |
+|---|---|---|
+| down | down | the ranker MIS-READS hpara; refitting is the fix and the 6 GPU h is justified |
+| flat | down | the ranker is fine, the ILP's refine-tuned thresholds ate it |
+| flat | flat | it genuinely does not convert -- park the direction |
+
+**Cost of the decisive experiment, measured not guessed**, from the three
+cache kernels' own runtimes: hparacache 24 movies / 35.9 min, ephpcache
+15.2, ep2hpcache 15.1 -> about **6 GPU hours** to extend all three to 128
+movies. Do not spend it until the AUC says which world we are in.
+
+**Two process failures this round, both worth naming.**
+
+1. **`hparapair` aggregated the score wrong** and was caught only because
+   the control was run through the anchor: adj_edge_jaccard is NOT
+   `edge_J * (1 - 0.1 * ratio)` on the aggregate. The scorer applies the
+   node penalty PER SAMPLE and weight-averages the per-sample adjusted
+   values by `tp+fp+fn`. The wrong form read 0.9126 against a recorded
+   0.9133 -- **0.0007, four times the effect being measured**. Fixed from
+   `tracking_cellmot/metrics.py` directly, and the anchor is now asserted in
+   the output rather than printed as a number to eyeball.
+
+2. **The F4HP arm was marked ERROR on a completely successful run.** It
+   scored 128/128, wrote its CSV, then died on
+   `ANCHOR_D187 0.9204 want 0.9216` and `REF_FORKS`. The maker DID demote
+   the anchors -- it edited `ANCHOR_HARD`/`ANCHOR_SOFT`, and those two
+   anchors never consult those dicts; both compare against a hard-coded
+   number and append straight to `ANCHOR_FAIL`. Two anchor mechanisms, and
+   the demotion touched the one that was not in the way. Both anchors sit on
+   HOLDOUT_6BBA -- the very 12 movies this arm changes -- so a miss is the
+   measurement. Now printed as `[expected]`; any other anchor still aborts.
+   The CSV is written before the assert, which is why v4's data was usable
+   and no re-run was needed for this alone.
+
 ### ⭐⭐⭐⭐⭐ refinecmp (2026-09-08, biohub-refinecmp v3, 36.5 min T4, both anchors exact): PUTTING THE DETECTION AT THE PARABOLIC VERTEX OF THE HEATMAP CUTS THE INVENTED MOTION BY 31% ON 6bba AND 7% ON 44b6, AT NO NODE COST. `hpara` beats the shipped `refine` on both domains, in both recall and jitter
 
 The user, 2026-09-08: "refine跑吧". gtpeak had just measured that F4's
