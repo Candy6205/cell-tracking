@@ -1364,6 +1364,58 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐ gapcross RESULT (2026-09-09, 238 min CPU, anchor exact, CONTROL PASSED): the interaction does NOT bite, and both live post-link candidates from the public notebook are worth nothing here. Only edge-feature TTA is left
+
+Anchor `ANCHOR_D187 F4-6bba(12) adj_J 0.9216 -> OK (+0.0000)`. Control
+`g9c3` -- the pre-cap20 baseline -- **loses, −0.0006**, so the harness is
+genuinely exercising the gap stage and the other five rows are readable.
+That check was written into the script's own output before the run, not
+argued afterwards.
+
+| arm | gate | cap | short | rescue | adj_J | div_J | score | d score |
+|---|---|---|---|---|---|---|---|---|
+| REF | 9.0 | 0.02 | 4 | off | 0.9133 | 0.1337 | 0.9266 | +0.0000 |
+| g5 | **5.0** | 0.02 | 4 | off | 0.9132 | 0.1340 | 0.9266 | **−0.0001** |
+| g5c3 | **5.0** | **0.003** | 4 | off | 0.9127 | 0.1344 | 0.9261 | −0.0005 |
+| g9c3 | 9.0 | **0.003** | 4 | off | 0.9124 | 0.1360 | 0.9260 | −0.0006 (CONTROL) |
+| s6 | 9.0 | 0.02 | **6** | off | 0.9133 | 0.1343 | 0.9267 | +0.0001 |
+| s6r | 9.0 | 0.02 | **6** | **on** | 0.9134 | 0.1343 | 0.9268 | +0.0002 |
+
+**THE INTERACTION THE 2x2 EXISTED FOR: it does not bite.** Read the
+diagonals. At the loose budget, tightening the radius costs −0.0001
+(REF -> g5). At the tight budget, tightening the radius costs −0.0001 more
+(g9c3 −0.0006 -> g5c3 −0.0005, i.e. nothing, and slightly the other way).
+**The radius does nothing at EITHER budget.** Our +0.002 leaderboard win
+came from the budget and cannot be un-bound by their radius, which is the
+question the user asked before going to bed. It is also the answer that a
+one-at-a-time test could not have given: g5 alone reads "harmless", g5c3
+alone reads "−0.0005 = the radius is bad", and only the square shows the
+budget carrying both.
+
+**And it costs the candidate.** Their `GAP_CLOSE_UM` 5.0 buys nothing here.
+Ours is still the untouched public baseline 9.0 and can stay there.
+
+**The short-track pair, also nothing.** `SHORT_MIN` 4 -> 6 is +0.0001,
+consistent with the leaderboard record for the reverse move (6 -> 4 scored
+0.000). Adding the rescue on top is a further +0.0001. The mechanism is NOT
+broken -- the log shows it proposing 236 components and rescuing 114 of
+them, 503 nodes -- it simply does not pay.
+
+**HOW TO READ SIX ROWS INSIDE ±0.0006.** accdiag put this holdout's own
+noise at 0.002-0.003. Every row here is smaller than that, so the honest
+statement is **"no detectable effect", not "zero"** -- the distinction this
+session got wrong once already, reading an interval that spanned both −0.005
+and +0.0015 as "nothing is broken". What IS established is comparative and
+survives the noise floor: whatever the radius does, it does the same thing
+at both budgets.
+
+**What is left.** Of the six differences between our configuration and the
+public 0.946 notebook's, five are now closed -- three from the existing
+record (disappearance, ILP division weight, density-adaptive gap) and two
+measured here. The remaining one is the only candidate that was never a
+tuned number: **edge-feature TTA**, `ttaprobe`, queued behind Kaggle's
+two-concurrent-GPU-session limit.
+
 ### ⭐⭐⭐⭐ THE PUBLIC 0.946 NOTEBOOK, READ AGAINST OUR RECORD (2026-09-08/09). Six of its knobs differ from ours; THREE we already measured and rejected with reasons, ONE is architectural, and only TWO are live. Plus the three-domain hpara caches, which now exist for 6bba, 44b6 AND zebrahub
 
 The user, on being told public notebooks were appearing faster than our own
