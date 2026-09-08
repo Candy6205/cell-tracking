@@ -1381,7 +1381,36 @@ frame that OUR MEASUREMENT could not read, not cells outside the
 volume**, and nothing follows from them about recoverability. The
 "edge + out-of-volume ~= 14% of the 313" figure derived from this is
 withdrawn; the z-edge attribution alone stands at ~27/313 ~= 9%.
-Unverified detail, cheap to settle: which axis, and by how much.
+**MEASURED, `nanwhere` (2026-09-08, biohub-nanwhere, <1 min CPU)**, because
+the user stopped the theorising: "我不行了，到底是什么情况，你去量一下吧我求
+求你了". Every one of the 24 movies is **Z=64, Y=256, X=256**, pooled to
+64 x 64, and `Y % 4 == X % 4 == 0` so `pool_xy` discards nothing (**0 GT
+cells in the truncated strip**). Of the 48 NaN cells:
+
+| axis out of range | count |
+|---|---|
+| y | 26 |
+| x | 22 |
+| **z** | **0** |
+
+**Not one is out of range in z.** Their y or x is **254 or 255** -- the last
+one or two pixels of the frame -- while their z is ordinary (1, 5, 12, 17,
+35, 51, 59, 60...). `round(254 / 4) = round(255 / 4) = 64`, and the pooled
+axis has indices 0..63. So it is exactly the off-by-one: **ordinary cells
+against the border of the frame, read one index past the end by the
+diagnostic**.
+
+**Blast radius: none.** `h_gt` is a diagnostic column only; the pipeline
+never indexes the heatmap at GT positions, so no score, bench number or
+submission is affected. There is also no coverage hole -- 64 pooled columns
+cover all 256 rows exactly.
+
+**The process failure, recorded because it is the point.** I invented a
+mechanism ("a lineage drifting out of frame over t=64..94"), wrote it into
+this log as a finding, and defended it through two rounds of questions,
+while the refutation sat in my own paragraph: 30 of the 48 were MATCHED BY
+THE DETECTOR. The measurement that settled it cost under a minute and could
+have been run the moment the NaNs appeared.
 
 **v3 (2026-09-08, 2.8 min): MP4, and a Z SWEEP.** The user, on v1: "这个渲染
 出来我也完全分辨不出来细胞在哪里呢，可能在下面被z轴叠掉了？" -- correct, and
