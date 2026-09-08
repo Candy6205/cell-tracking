@@ -315,6 +315,22 @@ rep('''SHIPPED = {p.name[len("edgeprob_F4_"):-len(".npz")]: p
 
 rep('EDGEPROB INCOMPLETE', 'TTAPROBE INCOMPLETE')
 
+
+# the original file asserts the job list equals the two arms it no longer has
+rep('''assert len(jobs) == len(names) + len(names_f4)''',
+    '''assert len(jobs) == len(ARM_VIEWS) * len(HOLDOUT_6BBA) == 36''')
+
+# and every holdout movie needs an fdet_F4_ cache to read primaries from --
+# v1 mounted only biohub-fusecache (32 caches, none of them the holdout) and
+# died on an assert three lines later that said nothing about the cause.
+rep('''names_f4 = list(EVAL_24)''',
+    '''names_f4 = list(EVAL_24)
+_miss_hold = [n for n in HOLDOUT_6BBA if n not in CACHES_F4]
+assert not _miss_hold, (
+    f"{len(_miss_hold)} of the 12 holdout movies have no fdet_F4_ cache "
+    f"({_miss_hold[:4]}) -- attach faustine649/biohub-fuse6bba as well as "
+    f"biohub-fusecache; between them they carry 148")''')
+
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
                    "ttaprobe.py")
 open(os.path.abspath(out), "w", encoding="utf-8", newline="\n").write(src)

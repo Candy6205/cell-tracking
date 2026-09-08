@@ -336,6 +336,11 @@ assert len(CACHES_F4) >= 24, ("fewer than 24 fdet_F4_*.npz under "
                               "/kaggle/input -- attach biohub-fusecache "
                               "for the F4 detections")
 names_f4 = list(EVAL_24)
+_miss_hold = [n for n in HOLDOUT_6BBA if n not in CACHES_F4]
+assert not _miss_hold, (
+    f"{len(_miss_hold)} of the 12 holdout movies have no fdet_F4_ cache "
+    f"({_miss_hold[:4]}) -- attach faustine649/biohub-fuse6bba as well as "
+    f"biohub-fusecache; between them they carry 148")
 
 if SMOKE:
     names = [HOLDOUT_6BBA[0], SET_44B6[0]]
@@ -367,7 +372,7 @@ ARM_P = {a: [] for a, _ in ARM_VIEWS}
 ARM_Y = {a: [] for a, _ in ARM_VIEWS}
 jobs = [(f"F4|{a}|{v}", n) for a, v in ARM_VIEWS for n in HOLDOUT_6BBA]
 assert len(jobs) == 36, len(jobs)
-assert len(jobs) == len(names) + len(names_f4)
+assert len(jobs) == len(ARM_VIEWS) * len(HOLDOUT_6BBA) == 36
 print(f"jobs: {len(names)} base + {len(names_f4)} F4 = {len(jobs)}",
       flush=True)
 
