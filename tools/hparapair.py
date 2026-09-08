@@ -198,7 +198,7 @@ up = sum(1 for n in CHANGED if d_one[n] > 0)
 dn = sum(1 for n in CHANGED if d_one[n] < 0)
 print(f"  up {up}, down {dn}, flat {len(CHANGED) - up - dn} of the "
       f"{len(CHANGED)} that changed"
-      f"   (sign test p = {2 * sum(math.comb(up + dn, k) for k in range(min(up, dn) + 1)) / 2 ** (up + dn):.4f})"
+      f"   (two-sided sign test p = {min(1.0, 2 * sum(math.comb(up + dn, k) for k in range(min(up, dn) + 1)) / 2 ** (up + dn)):.4f})"
       if up + dn else "  every changed movie is flat on SCORE")
 
 print("\n=== 3. aggregates ===")

@@ -248,6 +248,30 @@ if _p4:
 del LAB4
 gc.collect()''')
 
+
+# THE F4HP ARM MUST NOT ABORT ON AN ANCHOR IT EXISTS TO MOVE. The demotion
+# above edits ANCHOR_HARD / ANCHOR_SOFT, but D187 and REF_FORKS never consult
+# those dicts -- both compare against a HARD-CODED number and append straight
+# to ANCHOR_FAIL. So v4 ran all 128 movies, wrote hparabench_F4HP.csv, and
+# then died on
+#
+#   AssertionError: hard anchor miss: [('ANCHOR_D187', 'F4-6bba', 0.9204,
+#                    0.9216), ('REF_FORKS', 'F4-6bba', 52250, 50249)]
+#
+# with the kernel marked ERROR on a run whose numbers were all correct. Both
+# anchors are built on HOLDOUT_6BBA -- the same 12 movies whose coordinates
+# this arm changes -- so a miss there is the MEASUREMENT, not a fault. They
+# stay printed, and any OTHER anchor still aborts.
+rep('''assert not ANCHOR_FAIL, f"hard anchor miss: {ANCHOR_FAIL}"''',
+    '''if DET_SRC == "F4HP":
+    _moved = [f for f in ANCHOR_FAIL if f[0] in ("ANCHOR_D187", "REF_FORKS")]
+    ANCHOR_FAIL = [f for f in ANCHOR_FAIL if f not in _moved]
+    for _f in _moved:
+        print(f"  [expected] {_f[0]} {_f[1]} moved to {_f[2]} from {_f[3]} -- "
+              f"this anchor sits on the 12 movies whose coordinates this arm "
+              f"changes, so it CANNOT hold; it is the measurement", flush=True)
+assert not ANCHOR_FAIL, f"hard anchor miss: {ANCHOR_FAIL}"''')
+
 rep('DIVBENCH9 OK', 'HPARABENCH OK')
 rep('DIVBENCH9 INCOMPLETE', 'HPARABENCH INCOMPLETE')
 

@@ -3094,6 +3094,13 @@ print(f"\n  {_csv.name} written ({len(PER)} movies, {len(_keys)} columns). "
       f"which is exactly the failure this comparison is exposed to.",
       flush=True)
 
+if DET_SRC == "F4HP":
+    _moved = [f for f in ANCHOR_FAIL if f[0] in ("ANCHOR_D187", "REF_FORKS")]
+    ANCHOR_FAIL = [f for f in ANCHOR_FAIL if f not in _moved]
+    for _f in _moved:
+        print(f"  [expected] {_f[0]} {_f[1]} moved to {_f[2]} from {_f[3]} -- "
+              f"this anchor sits on the 12 movies whose coordinates this arm "
+              f"changes, so it CANNOT hold; it is the measurement", flush=True)
 assert not ANCHOR_FAIL, f"hard anchor miss: {ANCHOR_FAIL}"
 if len(ROWS) == len(SIX) and not INCOMPLETE:
     print("HPARABENCH OK", flush=True)
