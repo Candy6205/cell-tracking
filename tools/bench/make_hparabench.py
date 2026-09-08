@@ -95,10 +95,19 @@ if DET_SRC == "F4HP":
     assert len(FDET_F4HP) >= 24, (
         "DET_SRC is F4HP but no fdet_F4hp_*.npz is attached -- add "
         "faustine649/biohub-hparacache as a kernel_source")
+    # OVERRIDE, not replace. Only the 24 EVAL movies are re-cached with
+    # hpara; the 175-movie pool stays on refine (re-caching all 187 is four
+    # GPU hours against 35 minutes), and the bench asserts an fdet_F4_ cache
+    # for all 128 6bba movies further down. v1 assigned FDET_F4 = FDET_F4HP
+    # and died on 116 missing 6bba pool caches.
     _both = sorted(set(FDET_F4) & set(FDET_F4HP))
-    print(f"  repointing the F4 path at the hpara caches "
-          f"({len(_both)} names in both)", flush=True)
-    FDET_F4 = dict(FDET_F4HP)''')
+    FDET_F4 = {**FDET_F4, **FDET_F4HP}
+    print(f"  hpara caches override {len(_both)} of {len(FDET_F4)} F4 "
+          f"entries; the rest of the pool stays on refine", flush=True)
+    assert len(_both) == 24, (
+        f"expected the 24 eval movies to be overridden, got {len(_both)} -- "
+        f"a mismatch here would silently score some eval movies on refine "
+        f"coordinates and call it the hpara arm")''')
 
 # ---- the anchors move on purpose in the HP run ----------------------------
 rep('''ANCHOR_TOL = 0.0005''',
