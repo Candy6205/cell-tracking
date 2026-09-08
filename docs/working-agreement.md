@@ -286,6 +286,57 @@ step.
 **An offline AUC is not a score.** On 2026-08-24 edge AUC anti-predicted
 the pipeline three times running. Measure adj_J.
 
+### Anchor the POPULATION, not only the number (2026-09-09)
+
+`ttaprobe` v3 ran 36 GPU passes, wrote every cache, and then printed an
+AUC table that was wrong by one subscript:
+
+```python
+prim = load_primaries(name, "F4")          # [ (N_t, 3) ] per frame
+mp = match(np.asarray(prim[t_][0], ...))   # <- row 0 OF THE FRAME
+```
+
+`load_primaries` returns a list of arrays, not a list of
+`(coords, scores)` tuples, so `prim[t][0]` is the FIRST DETECTION of
+frame `t`. Only detection index 0 could ever be matched, as source or as
+target. Nothing raised. Nothing was NaN. The table looked ordinary --
+three arms, a positive rate near 0.5, an AUC near 0.7 -- and reported
+tta4 at −0.052 where the truth is −0.004.
+
+**The only thing that gave it away was a row count.** 565 labelled rows
+across twelve 100-frame movies is a quarter of one per frame, and
+`accdiag` had recorded ~14,817 for the same rule on the same holdout. The
+corrected readout gives 14,636.
+
+So the anchor rule has a second half. "Always anchor" means an arm must
+reproduce a recorded VALUE; this says an arm must also reproduce a
+recorded SIZE:
+
+- **Print the population, every time.** Rows, movies, positives. A
+  readout that cannot say how many rows it scored cannot be checked.
+- **Assert a floor when the population is known.** `ttascore` refuses to
+  print on fewer than 5,000 rows. That is not a statistical threshold,
+  it is a tripwire for exactly this bug.
+- **Reconstruct the join instead of trusting it.** The real check was
+  cheap: rebuild the gate from the same primaries and demand the cache
+  agrees on the per-frame pair COUNT and on every cached pair sitting
+  inside `GATE_UM`. Passed 12/12, worst distance 10.000 um. A wrong
+  primaries index fails both, at the first movie, before any GPU time.
+
+**Why an index bug is the dangerous kind.** A wrong FILE raises. A wrong
+COLUMN usually shifts a number until it looks silly. A wrong INDEX
+silently selects a subset, and a subset of a real measurement produces a
+plausible table. The failure mode is not a crash, it is a smaller `n` you
+never printed.
+
+**And it was recoverable, which is the other half of the lesson.** The
+bug was in the labeller, which runs after every cache is written, so the
+69 minutes of T4 were intact and `ttascore` redid the readout on CPU in
+two minutes. Cache the expensive stage to disk and keep the readout
+separate: the readout is where the bugs are, and it is the half you want
+to be able to re-run for free.
+
+
 ## Before claiming a term behaves differently in two regimes, differentiate it (2026-08-26)
 
 On 2026-08-26 I wrote a five-star entry arguing that the metric's
