@@ -357,11 +357,12 @@ SHIPPED_EP = _walk_files(lambda fn: fn[len("edgeprob_F4_"):-len(".npz")]
 print(f"shipped edgeprob_F4_ caches for the n_per_frame check: "
       f"{len(SHIPPED_EP)}", flush=True)
 NPF_BAD = []
+NPF_NOCHK = []
 
 jobs = [("F4", n) for n in names_f4]          # the base pass is in biohub-edgeprob
 assert len(jobs) == len(names_f4)
-print(f"jobs: {len(names_f4)} F4hp datasets (the 12 + 12 evaluation "
-      f"movies)", flush=True)
+print(f"jobs: {len(names_f4)} F4hp datasets (every movie hparacache "
+      f"produced; the bench scores the 128 6bba of them)", flush=True)
 
 # ---------------------------------------------------------------- GPU
 
@@ -649,10 +650,7 @@ for k, (arm, name) in enumerate(jobs, 1):
         n_per_frame=fwd.n)
     _ship = SHIPPED_EP.get(name)
     if _ship is None:
-        NPF_BAD.append(f"{name}(no shipped cache)")
-        print(f"  !! {name}: no shipped edgeprob_F4_ to compare n_per_frame "
-              f"against -- the only available check on this run is off",
-              flush=True)
+        NPF_NOCHK.append(name)   # expected off the 24; counted, not failed
     else:
         _z = np.load(_ship)
         _old = np.asarray(_z["n_per_frame"], np.int64)
@@ -705,8 +703,11 @@ if n_done == 0:
 complete = (not failed and not skipped_time
             and n_f4 == len(names_f4))
 print(f"n_per_frame check: {len(names_f4) - len(NPF_BAD)} of "
-      f"{len(names_f4)} datasets reproduce the shipped edgeprob_F4_ counts"
-      + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly"), flush=True)
+      f"{len(names_f4) - len(NPF_NOCHK)} checkable datasets reproduce "
+      f"the shipped edgeprob_F4_ counts"
+      + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly")
+      + f"; {len(NPF_NOCHK)} had no shipped edgeprob_F4_ to compare against "
+        f"(expected: only the 24 eval movies were ever cached)", flush=True)
 if complete and not NPF_BAD:
     print(f"EPHPCACHE OK ({n_f4} F4hp of {len(jobs)})",
           flush=True)
