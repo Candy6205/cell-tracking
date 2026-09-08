@@ -135,17 +135,37 @@ EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}''',
     '''if DET_SRC == "F4HP":
     for _nm, _base, _hp in (("edgeprob", EDGEPROB_F4, EDGEPROB_F4HP),
                             ("edgeprob2", EDGEPROB2_F4, EDGEPROB2_F4HP)):
-        _ov = sorted(set(_base) & set(_hp))
+        # THE OVERRIDE REPLACES, IT NEVER ADDS -- and that is not a
+        # detail. `edgeprob2` is the OPTIONAL second head: divbench9 reads
+        # it with `EP2_OF["F4"].get(name)`, and only 24 movies have an
+        # `edgeprob2_F4_` cache at all, so 116 of the 128 scored movies are
+        # solved without it in BOTH arms. ep2hpcache cached 140. Merging
+        # those in would hand the hpara arm a second head on 116 movies
+        # where the control has none -- the arms would then differ in the
+        # PIPELINE, not in the placement, and the delta would be
+        # unreadable. So the hpara dict is first cut down to the keys the
+        # refine arm already has.
+        _add = sorted(set(_hp) - set(_base))
+        _hp = {k: v for k, v in _hp.items() if k in _base}
+        _miss6 = sorted(n for n in _base
+                        if n.startswith("6bba_") and n not in _hp)
+        assert not _miss6, (
+            f"{_nm}: {len(_miss6)} scored 6bba movies have a REFINE cache "
+            f"with no hpara counterpart ({_miss6[:3]}...) -- those would be "
+            f"scored with a head that read the refine coordinates against "
+            f"hpara points, and the (t, i, j) join fails outright.")
+        _ov = sorted(_hp)
         _ov6 = [n for n in _ov if n.startswith("6bba_")]
-        assert len(_ov6) >= 128, (
-            f"{_nm}: only {len(_ov6)} of the 128 scored 6bba movies have an "
-            f"F4hp cache -- attach biohub-ephpcache and biohub-ep2hpcache "
-            f"(both cache 140). Running without them scores hpara "
-            f"COORDINATES against a head that read the refine ones, and the "
-            f"(t, i, j) join fails outright.")
+        if _nm == "edgeprob":
+            # The MANDATORY head. Every scored movie must have one.
+            assert len(_ov6) >= 128, (
+                f"edgeprob: only {len(_ov6)} of the 128 scored 6bba movies "
+                f"have an F4hp cache -- attach biohub-ephpcache.")
         _base.update(_hp)
         print(f"  {_nm}: {len(_ov)} entries switched to the hpara head "
-              f"({len(_ov6)} of them 6bba)", flush=True)
+              f"({len(_ov6)} of them 6bba); {len(_add)} hpara caches IGNORED "
+              f"because the refine arm has no cache for those movies",
+              flush=True)
 
 EP_OF = {"BASE": EDGEPROB, "F4": EDGEPROB_F4}
 EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}''')
