@@ -124,7 +124,7 @@ rep('''print(f"jobs: {len(names)} base + {len(names_f4)} F4 = {len(jobs)}",
 rep('''if complete:
     print(f"EDGEPROB OK ({n_base} base + {n_f4} F4 of {len(jobs)})",
           flush=True)''',
-    '''print(f"n_per_frame check: {len(names_f4) - len(NPF_BAD)} of "
+    '''print(f"n_per_frame check: {len(names_f4) - len(NPF_NOCHK) - len(NPF_BAD)} of "
       f"{len(names_f4) - len(NPF_NOCHK)} checkable datasets reproduce "
       f"the shipped edgeprob_F4_ counts"
       + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly")

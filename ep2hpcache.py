@@ -786,7 +786,7 @@ if n_done == 0:
 complete = (not failed and not skipped_time
             and n_base == 0 and n_f4 == len(names_f4))
 if complete:
-    print(f"n_per_frame check: {len(names_f4) - len(NPF_BAD)} of "
+    print(f"n_per_frame check: {len(names_f4) - len(NPF_NOCHK) - len(NPF_BAD)} of "
           f"{len(names_f4) - len(NPF_NOCHK)} checkable datasets "
           f"reproduce the shipped counts"
           + (f" -- MISMATCHES: {NPF_BAD}" if NPF_BAD else " exactly")
