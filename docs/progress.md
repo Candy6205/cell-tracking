@@ -1012,8 +1012,52 @@ sources were when it was written. v4 pulls divbench9's real metadata
 (`py kag.py kernels pull <ref> -m`) and copies it verbatim -- and that list
 contains two sources nobody would guess (`biohub-zh-detect`,
 `biohub-edgeprob-rank2`) and excludes two that look obviously required
-(`fuse44b6`, `ep44b6`). `kernel_sources` also appears to cap at 10. The rule
-is now in `working-agreement.md`.
+(`fuse44b6`, `ep44b6`). The rule is now in `working-agreement.md`.
+(An earlier draft of this paragraph added "`kernel_sources` also appears to
+cap at 10" -- WRONG, and struck: 12 sources pushed fine. The real constraint
+is that a named source kernel must have COMPLETED a run; naming one that has
+not only prints a warning and pushes WITHOUT it, which is the silent failure
+to watch for.)
+
+**The pair gate, and the two extra cache kernels it cost (2026-09-08).**
+The first F4HP push died on
+
+    44b6_0b24845f t=0: 40 of 990 harness pairs have no edgeprob row
+
+and the cause is not a bug in either arm. Candidate pairs are DISTANCE-GATED
+at `GATE_UM = 10.0`, and hpara moves every detection by a median 0.43 um, so
+a handful of pairs cross that line in each direction per frame. The
+DETECTIONS are identical -- `hparacache`'s anchor proves that, 24/24 movies
+reproducing `fdet_F4_` exactly -- but the PAIR SET is not, and the cached
+edge probabilities are keyed by `(t, i, j)`. Both heads therefore had to be
+re-cached on hpara coordinates before the bench could join anything:
+
+| kernel | writes | cost | check |
+|---|---|---|---|
+| `biohub-ephpcache` | `edgeprob_F4hp_*` x24 | 15.2 min T4 | n_per_frame 24/24 exact |
+| `biohub-ep2hpcache` | `edgeprob2_F4hp_*` x24 | 15.1 min T4 | n_per_frame 24/24 exact |
+
+`n_per_frame` is the only check available (the probabilities differ by
+construction), and it is the RIGHT one: hparacache neither added nor removed
+a detection, so a per-frame primary count that differs would mean the two
+arms are not scoring the same cells.
+
+`ep2hpcache` needed two versions for a reason worth naming, since it is the
+same shape as the source-list failures above: **v1 inherited
+`edgeprob2_cache`'s job list**, `[("base", n) for n in names] + [("F4", n)
+for n in names_f4]`, which puts 199 base movies AHEAD of the 24 wanted --
+70 minutes in it was still in the base pass, against 16 minutes for the whole
+job once cut. Cutting it exposed two more inherited-tail bugs, both from
+hard-coded label prefixes: `n_f4` counted `edgeprob2_F4_` when the label is
+`F4hp_`, and `complete` demanded `n_base == len(names)` = 199 outputs the
+version never writes. `ephpcache` has the first of those and its landed run
+therefore printed `EPHPCACHE INCOMPLETE ... NOT OK` on a run that cached all
+24 and passed its check 24/24 -- **a false negative; the outputs are good**,
+readable only because that line prints unconditionally there. Both makers
+are fixed; `ephpcache` was NOT re-run, since nothing about its outputs would
+change. General lesson: when a kernel is CUT from another, the tail's
+accounting is written for the ORIGINAL's arms and is the first thing to
+re-read.
 
 **What v3's failure taught, and it is the caveat that governs this arm.**
 The bench does NOT retrain the ranker: it LOADS
