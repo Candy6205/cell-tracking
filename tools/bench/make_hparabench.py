@@ -25,6 +25,18 @@ paired bootstrap can be done on the pair.
                      are EXPECTED to move -- that is the measurement -- so
                      they are printed and warned, never asserted.
 
+ROUND 2 (2026-09-09), and what changed. Round 1 scored 128 6bba movies of
+which only TWELVE carried hpara coordinates -- hparacache v1 cached the 24
+eval movies, and 12 of those are 44b6, which this bench does not score. Every
+aggregate was therefore diluted about 10x and had to be re-read on the
+CHANGED subset by hand. hparacache v3 (140 movies) plus ephpcache /
+ep2hpcache (140 each) close that: ALL 128 scored movies now differ between
+the arms. The coverage assert changed shape with it -- it no longer counts to
+24, it demands that every 6bba movie the bench scores carries an hpara cache,
+because a partial override is a BLEND of two placements reported as one
+number. The AUC discriminator widens the same way, from the 12 holdout movies
+to all 128.
+
 WHAT IS HELD FIXED, stated because it is an approximation. hparacache runs
 NMS once, on the refine coordinates, and places the survivors both ways, so
 the two runs have identical detection COUNT, ORDER and IDENTITY. That keeps
@@ -66,7 +78,7 @@ def rep(old, new, n=1):
 
 
 rep('SCRIPT_VERSION = "2026-09-08b-divbench9"',
-    'SCRIPT_VERSION = "2026-09-08a-hparabench"')
+    'SCRIPT_VERSION = "2026-09-09a-hparabench"')
 
 # ---- the switch -----------------------------------------------------------
 rep('''# Score the BASE primaries too (v1's arm)? Doubles stage B (~+66 min).
@@ -92,22 +104,30 @@ assert len(FDET_F4) >= 24, "attach biohub-fusecache for the F4 detections"
 FDET_F4HP = _walk_files(_npz_prefix("fdet_F4hp_"))
 print(f"fdet_F4hp caches: {len(FDET_F4HP)}", flush=True)
 if DET_SRC == "F4HP":
-    assert len(FDET_F4HP) >= 24, (
-        "DET_SRC is F4HP but no fdet_F4hp_*.npz is attached -- add "
-        "faustine649/biohub-hparacache as a kernel_source")
-    # OVERRIDE, not replace. Only the 24 EVAL movies are re-cached with
-    # hpara; the 175-movie pool stays on refine (re-caching all 187 is four
-    # GPU hours against 35 minutes), and the bench asserts an fdet_F4_ cache
-    # for all 128 6bba movies further down. v1 assigned FDET_F4 = FDET_F4HP
-    # and died on 116 missing 6bba pool caches.
+    assert len(FDET_F4HP) >= 140, (
+        f"DET_SRC is F4HP but only {len(FDET_F4HP)} fdet_F4hp_*.npz are "
+        f"attached -- hparacache v3 caches 140 (128 6bba + 12 44b6). Round 1"
+        f" ran on 24 and could only move 12 of the 128 scored movies.")
+    # OVERRIDE, not replace. hparacache v3 covers 140 movies (all 128 6bba
+    # + the 12 44b6 of the eval draw); the rest of the 187-movie pool stays
+    # on refine. v1 assigned FDET_F4 = FDET_F4HP and died on 116 missing
+    # 6bba pool caches.
+    #
+    # ROUND 1 SCORED 128 MOVIES AND ONLY 12 OF THEM CHANGED, which diluted
+    # every aggregate by about 10x. The check that matters is therefore
+    # COVERAGE OF THE SCORED SET, not a count: every 6bba movie the bench
+    # scores must be on hpara coordinates, or the arm is a blend of the two
+    # placements reported as one.
     _both = sorted(set(FDET_F4) & set(FDET_F4HP))
+    _hp6 = sorted(n for n in FDET_F4HP if n.startswith("6bba_"))
     FDET_F4 = {**FDET_F4, **FDET_F4HP}
     print(f"  hpara caches override {len(_both)} of {len(FDET_F4)} F4 "
-          f"entries; the rest of the pool stays on refine", flush=True)
-    assert len(_both) == 24, (
-        f"expected the 24 eval movies to be overridden, got {len(_both)} -- "
-        f"a mismatch here would silently score some eval movies on refine "
-        f"coordinates and call it the hpara arm")''')
+          f"entries ({len(_hp6)} of them 6bba); the rest of the pool stays "
+          f"on refine", flush=True)
+    assert len(_hp6) >= 128, (
+        f"only {len(_hp6)} 6bba movies carry an fdet_F4hp cache -- the bench "
+        f"scores 128, so {128 - len(_hp6)} of them would silently run on "
+        f"refine coordinates inside the arm called hpara")''')
 
 # ---- and the two heads, overridden the same way ---------------------------
 rep('''EP_OF = {"BASE": EDGEPROB, "F4": EDGEPROB_F4}
@@ -116,14 +136,16 @@ EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}''',
     for _nm, _base, _hp in (("edgeprob", EDGEPROB_F4, EDGEPROB_F4HP),
                             ("edgeprob2", EDGEPROB2_F4, EDGEPROB2_F4HP)):
         _ov = sorted(set(_base) & set(_hp))
-        assert len(_ov) == 24, (
-            f"{_nm}: {len(_ov)} of 24 eval movies have an F4hp cache -- "
-            f"attach biohub-ephpcache and biohub-ep2hpcache. Running "
-            f"without them scores hpara COORDINATES against a head that "
-            f"read the refine ones, and the (t,i,j) join fails outright.")
+        _ov6 = [n for n in _ov if n.startswith("6bba_")]
+        assert len(_ov6) >= 128, (
+            f"{_nm}: only {len(_ov6)} of the 128 scored 6bba movies have an "
+            f"F4hp cache -- attach biohub-ephpcache and biohub-ep2hpcache "
+            f"(both cache 140). Running without them scores hpara "
+            f"COORDINATES against a head that read the refine ones, and the "
+            f"(t, i, j) join fails outright.")
         _base.update(_hp)
-        print(f"  {_nm}: {len(_ov)} eval entries switched to the hpara head",
-              flush=True)
+        print(f"  {_nm}: {len(_ov)} entries switched to the hpara head "
+              f"({len(_ov6)} of them 6bba)", flush=True)
 
 EP_OF = {"BASE": EDGEPROB, "F4": EDGEPROB_F4}
 EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}''')
@@ -204,17 +226,21 @@ assert not ANCHOR_FAIL, f"hard anchor miss: {ANCHOR_FAIL}"''')
 #
 # Costs nothing but CPU: `label_rows` reads the GT itself and the F4 features
 # are already computed for the solve -- they were simply never labelled.
-# Restricted to HOLDOUT_6BBA because those 12 ARE the movies whose
-# coordinates differ between the arms; labelling all 128 would spend 10x the
-# memory to add rows that are identical on both sides.
+# ROUND 2 WIDENS IT TO ALL 128 6bba. Round 1 restricted this to
+# HOLDOUT_6BBA because only those 12 had hpara coordinates; hparacache v3
+# covers all 128, so every scored movie now differs between the arms and
+# belongs in the AUC. ~25 MB of float32 against a `LAB` that already holds
+# all 199 -- the "10x the memory" the round 1 comment worried about is 10x
+# of something small. 44b6 is left out on purpose: FOLD_OF only assigns
+# folds to 6bba, so a 44b6 row could not be scored out of fold.
 rep('''        FEATS[name] = (seeds4, feats4)''',
     '''        FEATS[name] = (seeds4, feats4)
-        if name in set(HOLDOUT_6BBA):
+        if role == "6bba":
             LAB4[name] = label_rows(name, feats4)''')
 
 rep('''FEATS = {}                 # name -> (seeds, feats), 6bba only''',
     '''FEATS = {}                 # name -> (seeds, feats), 6bba only
-LAB4 = {}                  # name -> (X, y) on F4/F4HP features, the 12 only''')
+LAB4 = {}                  # name -> (X, y) on F4/F4HP features, 6bba only''')
 
 rep('''del LAB
 gc.collect()''',

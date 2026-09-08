@@ -1364,6 +1364,102 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ EDGE-FEATURE TTA VERDICT (2026-09-09, `ttaprobe` v3 69 min T4 + `ttascore` 2 min CPU, gate anchored 12/12): averaging the U-Net features over D4 views makes our edge probability **WORSE**, −0.0042 AUC, 12/12 movies, bootstrap P(>0) = 0.000. The last public-0.946 candidate is closed and the ~20 GPU hours are REFUSED
+
+The sixth and last difference between our configuration and the public 0.946
+notebook was the only one that was never a tuned constant: they average the
+U-Net output over D4 views before reading the edge features, and credit it
+with +0.005 (their 0.941 -> 0.946). This measures the mechanism directly, on
+the one thing it can change: is the edge probability more informative?
+
+**The probe. Patch `model.encode`, not `predict_video`.** The U-Net output
+is averaged over `n` D4 views (forward transform, encode, inverse transform,
+mean); the detection logits are left alone, so the DETECTIONS, their order
+and their identity are byte-identical across arms and the cached `(t, i, j)`
+rows join exactly. 36 passes = 12 holdout 6bba movies x `noTTA/tta4/tta8`,
+7,128 encode calls, 23,760 extra U-Net passes.
+
+**The wrapper is not a no-op, and the log said so before any AUC existed.**
+`fwd>0.5` falls on 12 of 12 movies; median `p_fwd` falls on 11 of 12
+(0.827 -> 0.728 on `2312ac41`, 0.669 -> 0.399 on `283bf9f1`). Whatever
+came back was going to be a real number.
+
+| arm | views | AUC `p_fwd` | AUC `p_rev` | AUC `prod` | vs noTTA | \|dp\| p50 / p90 |
+|---|---|---|---|---|---|---|
+| noTTA | 1 | 0.99037 | 0.99073 | **0.99194** | +0.00000 | -- |
+| tta4 | 4 | 0.98548 | 0.98674 | **0.98777** | **−0.00417** | 0.019 / 0.093 |
+| tta8 | 8 | 0.98589 | 0.98672 | **0.98786** | **−0.00408** | 0.020 / 0.102 |
+
+14,636 labelled pairs, 0.6625 positive, `poolsize`'s own labelling rule, the
+same rows in every arm.
+
+**It is not a wash, it is a loss, and it is not noise.** Per movie, tta4 is
+worse on **12 of 12** and tta8 on 10 of 12. Movie-level paired bootstrap,
+2,000 draws: tta4 −0.00415 90% CI [−0.00563, −0.00276], tta8 −0.00408
+[−0.00599, −0.00232], **P(>0) = 0.000 for both.** And the view count does
+not rescue it -- tta8 is indistinguishable from tta4, so this is not "not
+enough views".
+
+**THE TESTED CLAIM, narrowly.** With our ranker fixed, D4-averaging the
+U-Net features before the edge head makes the resulting forward, reverse and
+product probabilities LESS able to separate true children from gated
+non-children on 6bba. The ~20 GPU hours to re-cache all three edge-probability
+datasets under TTA are refused on that.
+
+**Why it can lose rather than merely fail to help.** TTA is only free when
+the network is equivariant under the transforms being averaged. Averaging
+the outputs of a network that is NOT is a blur, and a blurred heat map costs
+exactly the local contrast the edge head reads. Nothing in our training
+recipe makes the U-Net D4-equivariant, and the size of the shift here
+(median |dp| 0.02, p90 0.10) says it is not close.
+
+**Residue -- what this does NOT close.**
+
+- **It measures TTA on the EDGE features only.** Their step also runs the
+  D4 ensemble on DETECTION, where the views are merged as peaks rather than
+  averaged as a field -- a different operation with a different failure mode,
+  and one this probe leaves untouched. If their +0.005 is real, that is where
+  it should be looked for.
+- 6bba only, 12 movies. No 44b6, no zebrahub.
+- Our U-Net is not theirs. A D4-augmented model would be a different
+  experiment, not a re-run of this one.
+
+**With this, all six differences from the public 0.946 notebook are closed:**
+three from the existing record (disappearance cost, ILP division weight,
+density-adaptive gap), two by `gapcross` (gap radius, short-track floor +
+rescue), and edge-feature TTA here. **Nothing in that notebook is left to
+port.**
+
+#### The bug this ran into, and the check that now exists
+
+`ttaprobe` v3 printed its own AUC table and it was **wrong**, by one
+subscript:
+
+```python
+prim = load_primaries(name, "F4")          # [ (N_t, 3) ] per frame
+mp = match(np.asarray(prim[t_][0], ...))   # <- row 0 OF THE FRAME
+```
+
+`load_primaries` returns a list of arrays, not a list of `(coords, scores)`
+tuples, so `prim[t][0]` is the first DETECTION of frame `t`. Only detection
+index 0 could ever match, as source or as target. It printed a table on
+**565 rows where the correct rule gives 14,636** -- and reported tta4 at
+−0.052, an order of magnitude off the truth. The bug is in the labeller,
+which runs after every cache is written, so the GPU work was intact and
+`ttascore` redid the readout on CPU for 2 minutes.
+
+**What caught it was not the code, it was a known population size.** 565
+labelled rows across 12 movies is a quarter of one per frame; `accdiag` had
+recorded ~14,817 for the same rule on the same holdout. `ttascore` now
+carries both checks the probe lacked:
+
+- **the gate anchor** -- rebuild `gated_pairs` from its own primaries and
+  demand the cache agrees on the per-frame pair COUNT and on every cached
+  pair being inside `GATE_UM`. Passed 12/12, worst distance 10.000 um.
+  A wrong primaries index fails both.
+- **a row-count floor** -- refuse to print a table on under 5,000 rows.
+
+
 ### ⭐⭐⭐ gapcross RESULT (2026-09-09, 238 min CPU, anchor exact, CONTROL PASSED): the interaction does NOT bite, and both live post-link candidates from the public notebook are worth nothing here. Only edge-feature TTA is left
 
 Anchor `ANCHOR_D187 F4-6bba(12) adj_J 0.9216 -> OK (+0.0000)`. Control
