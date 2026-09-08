@@ -1808,6 +1808,7 @@ print(f"\n=== FEATURES + JOIN: {len(_jobs)} passes, all 199 train movies on "
       f"BASE (xl) primaries + BASE edgeprob; every 6bba movie keeps its full "
       f"features for the solve ===", flush=True)
 FEATS = {}                 # name -> (seeds, feats), 6bba only
+LAB4 = {}                  # name -> (X, y) on F4/F4HP features, the 12 only
 LAB = {}                   # name -> (X, y) labelled rows, all 199
 for k_, (name, role) in enumerate(_jobs):
     t0 = time.time()
@@ -1825,6 +1826,8 @@ for k_, (name, role) in enumerate(_jobs):
         seeds4, feats4 = features_ext(name, dets4, T4, EP_OF["F4"][name],
                                       EP2_OF["F4"].get(name))
         FEATS[name] = (seeds4, feats4)
+        if name in set(HOLDOUT_6BBA):
+            LAB4[name] = label_rows(name, feats4)
         n4 = f" F4 pairs={int(sum(len(p) for p, _r, _P, _C in feats4))}"
         del dets4
     print(f"[{k_ + 1}/{len(_jobs)}] {name} {role}"
@@ -1879,6 +1882,33 @@ for k in (0, 1):
     del Xa, ya, Xh, yh
     gc.collect()
 del LAB
+gc.collect()
+
+print(f"\n=== RANKER AUC ON {DET_SRC} COORDINATES (out of fold, the "
+      f"{len(LAB4)} movies whose coordinates differ between the arms) ===",
+      flush=True)
+print("  Same pairs, same GT labels, same fitted model as stage B; the ONLY "
+      "difference from the arm this is compared against is where the points "
+      "were placed. A drop here says the RANKER mis-reads hpara; a drop in "
+      "score with this flat says the damage is downstream.", flush=True)
+_p4, _y4 = [], []
+for _k in (0, 1):
+    _ns = [n for n in sorted(LAB4) if FOLD_OF[n] == _k]
+    if not _ns:
+        continue
+    _X = np.concatenate([LAB4[n][0] for n in _ns]).astype(np.float32)[:, COLS]
+    _y = np.concatenate([LAB4[n][1] for n in _ns])
+    _p = MODELS_FOLD[_k].predict_proba(_X)[:, 1]
+    _p4.append(_p)
+    _y4.append(_y)
+    print(f"  fold{_k}: {len(_ns)} movies, {len(_y)} rows ({_y.mean():.3f} "
+          f"pos), AUC {_auc(_y, _p):.5f}", flush=True)
+if _p4:
+    _yy = np.concatenate(_y4)
+    print(f"  POOLED {DET_SRC}: {len(_yy)} rows, AUC "
+          f"{_auc(_yy, np.concatenate(_p4)):.5f}   <- compare arm to arm",
+          flush=True)
+del LAB4
 gc.collect()
 MODELS = {}                # arm_model() is kept but unused here
 

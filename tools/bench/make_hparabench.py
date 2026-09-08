@@ -183,6 +183,71 @@ print(f"\\n  {_csv.name} written ({len(PER)} movies, {len(_keys)} columns). "
 
 assert not ANCHOR_FAIL, f"hard anchor miss: {ANCHOR_FAIL}"''')
 
+
+# ---------------------------------------------------------------------------
+# THE DISCRIMINATOR. A null or negative result on this arm has TWO causes and
+# the aggregate score cannot tell them apart:
+#
+#   (a) hpara places the detections better but nothing downstream converts it
+#       -- the honest "not worth it";
+#   (b) the ranker MIS-READS the new coordinates. It is fitted on BASE
+#       features and applied to F4 ones, so both arms already carry a
+#       distribution shift; hpara widens it by a median 0.43 um per point.
+#
+# Same pairs, same GT labels, same fitted model, ONE thing different: the
+# coordinates the features were computed from. So:
+#
+#   AUC down,   score down  -> (b), the ranker broke; refitting is the fix
+#   AUC flat,   score down  -> the ranker is fine, something downstream ate
+#                              it (the ILP's thresholds were tuned on refine)
+#   AUC flat,   score flat  -> (a), it genuinely does not convert
+#
+# Costs nothing but CPU: `label_rows` reads the GT itself and the F4 features
+# are already computed for the solve -- they were simply never labelled.
+# Restricted to HOLDOUT_6BBA because those 12 ARE the movies whose
+# coordinates differ between the arms; labelling all 128 would spend 10x the
+# memory to add rows that are identical on both sides.
+rep('''        FEATS[name] = (seeds4, feats4)''',
+    '''        FEATS[name] = (seeds4, feats4)
+        if name in set(HOLDOUT_6BBA):
+            LAB4[name] = label_rows(name, feats4)''')
+
+rep('''FEATS = {}                 # name -> (seeds, feats), 6bba only''',
+    '''FEATS = {}                 # name -> (seeds, feats), 6bba only
+LAB4 = {}                  # name -> (X, y) on F4/F4HP features, the 12 only''')
+
+rep('''del LAB
+gc.collect()''',
+    '''del LAB
+gc.collect()
+
+print(f"\\n=== RANKER AUC ON {DET_SRC} COORDINATES (out of fold, the "
+      f"{len(LAB4)} movies whose coordinates differ between the arms) ===",
+      flush=True)
+print("  Same pairs, same GT labels, same fitted model as stage B; the ONLY "
+      "difference from the arm this is compared against is where the points "
+      "were placed. A drop here says the RANKER mis-reads hpara; a drop in "
+      "score with this flat says the damage is downstream.", flush=True)
+_p4, _y4 = [], []
+for _k in (0, 1):
+    _ns = [n for n in sorted(LAB4) if FOLD_OF[n] == _k]
+    if not _ns:
+        continue
+    _X = np.concatenate([LAB4[n][0] for n in _ns]).astype(np.float32)[:, COLS]
+    _y = np.concatenate([LAB4[n][1] for n in _ns])
+    _p = MODELS_FOLD[_k].predict_proba(_X)[:, 1]
+    _p4.append(_p)
+    _y4.append(_y)
+    print(f"  fold{_k}: {len(_ns)} movies, {len(_y)} rows ({_y.mean():.3f} "
+          f"pos), AUC {_auc(_y, _p):.5f}", flush=True)
+if _p4:
+    _yy = np.concatenate(_y4)
+    print(f"  POOLED {DET_SRC}: {len(_yy)} rows, AUC "
+          f"{_auc(_yy, np.concatenate(_p4)):.5f}   <- compare arm to arm",
+          flush=True)
+del LAB4
+gc.collect()''')
+
 rep('DIVBENCH9 OK', 'HPARABENCH OK')
 rep('DIVBENCH9 INCOMPLETE', 'HPARABENCH INCOMPLETE')
 
