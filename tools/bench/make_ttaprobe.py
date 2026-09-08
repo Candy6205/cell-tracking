@@ -331,6 +331,34 @@ assert not _miss_hold, (
     f"({_miss_hold[:4]}) -- attach faustine649/biohub-fuse6bba as well as "
     f"biohub-fusecache; between them they carry 148")''')
 
+
+# `_label_pairs` uses defaultdict, which edgeprob_cache never imports -- v2
+# ran all 36 GPU passes (69 min, 23,760 extra U-Net passes), wrote every
+# cache and then died on the LAST line with NameError. The outputs were
+# fine; the readout was not. Import it where the other stdlib imports are.
+rep('''import json
+import os''',
+    '''import json
+import os
+from collections import defaultdict''')
+
+# The completion line inherited edgeprob_cache's arms and prefixes and so
+# printed "TTAPROBE INCOMPLETE (36 base + 0 F4 of 36)" on a run that wrote
+# all 36 -- the labels here are noTTA_/tta4_/tta8_, none of which start
+# with "edgeprob_F4_". Third instance of this family; see the
+# working-agreement rule "When you CUT a kernel, re-read its completion
+# block first".
+rep('''n_f4 = sum(1 for p in written if p.name.startswith("edgeprob_F4_"))
+n_base = len(written) - n_f4''',
+    '''n_f4 = sum(1 for p in written
+           if any(p.name.startswith(f"edgeprob_{a}_") for a, _ in ARM_VIEWS))
+n_base = len(written) - n_f4''')
+
+rep('''complete = (not failed and not skipped_time
+            and n_base == len(names) and n_f4 == len(names_f4))''',
+    '''complete = (not failed and not skipped_time
+            and n_base == 0 and n_f4 == len(jobs))''')
+
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
                    "ttaprobe.py")
 open(os.path.abspath(out), "w", encoding="utf-8", newline="\n").write(src)

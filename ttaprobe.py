@@ -113,6 +113,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import defaultdict
 import pathlib
 import pickle
 import random
@@ -747,7 +748,8 @@ for k, (arm, name) in enumerate(jobs, 1):
          skipped_time=skipped_time, datasets=counts), indent=1))
 
 written = sorted(OUT.glob("edgeprob_*.npz"))
-n_f4 = sum(1 for p in written if p.name.startswith("edgeprob_F4_"))
+n_f4 = sum(1 for p in written
+           if any(p.name.startswith(f"edgeprob_{a}_") for a, _ in ARM_VIEWS))
 n_base = len(written) - n_f4
 n_done = len(written)
 total_mb = sum(p.stat().st_size for p in written) / 2 ** 20
@@ -763,7 +765,7 @@ if n_done == 0:
     raise SystemExit("[degraded] nothing was cached -- do NOT read this run "
                      "as a success")
 complete = (not failed and not skipped_time
-            and n_base == len(names) and n_f4 == len(names_f4))
+            and n_base == 0 and n_f4 == len(jobs))
 if complete:
     print(f"EDGEPROB OK ({n_base} base + {n_f4} F4 of {len(jobs)})",
           flush=True)
