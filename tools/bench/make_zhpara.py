@@ -86,6 +86,15 @@ N_ZH = 8
 SET_ZH = sorted(ZH_REF)[:N_ZH]
 ANCHOR8 = list(SET_ZH)
 BOTH = sorted(set(ZH_REF) & set(ZH_HP))
+# v1 was OOM-KILLED after 9 of 41 crops (89 min). Two fixes, and the second
+# is the one that mattered: order the crops SMALLEST FIRST so a kill costs
+# the fewest, and write the CSV after every crop so a kill costs nothing at
+# all. v1's nine crops survived only because they were printed to the log.
+# The eight anchor crops are forced to the front regardless of size -- an
+# unanchored partial run is not readable.
+_size = {k: v.stat().st_size for k, v in ZH_REF.items()}
+BOTH = ANCHOR8 + sorted((n for n in BOTH if n not in set(ANCHOR8)),
+                        key=lambda n: _size.get(n, 0))
 print(f"  zhdet caches: refine {len(ZH_REF)}, hpara {len(ZH_HP)}, "
       f"crops carrying BOTH {len(BOTH)}", flush=True)
 assert len(BOTH) >= 8, (
@@ -133,8 +142,24 @@ print(f"  HARD ANCHOR: the REF arm over {len(ANCHOR8)} crops must reproduce "
       f"div_J 0.0230. A miss means the harness moved and nothing below is "
       f"readable.", flush=True)
 
+def _checkpoint():
+    """Rewrite the per-crop CSV after every crop. A run that is killed at
+    crop 9 of 41 should still hand back nine crops of data."""
+    if not done:
+        return
+    ks = sorted({k for t, _ in ARM_SRC for n in done for k in ZROWS[t][n]})
+    with open("/kaggle/working/zhpara.csv", "w", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write("crop,arm,n_gt," + ",".join(ks) + "\n")
+        for n in done:
+            for t, _ in ARM_SRC:
+                fh.write(f"{n},{t},{NGT[n]}," +
+                         ",".join(repr(ZROWS[t][n].get(k)) for k in ks) + "\n")
+
+
 GT_DIR = pathlib.Path("/kaggle/working/ps_zh_gt")
 GT_DIR.mkdir(parents=True, exist_ok=True)
+import shutil                                                  # noqa: E402
 ARM_SRC = [("REF", ZH_REF), ("HP", ZH_HP)]
 ZROWS = {tag: {} for tag, _ in ARM_SRC}
 NGT = {}
@@ -206,6 +231,15 @@ for name in BOTH:
     apply_config(None, None)
     NGT[name] = int(len(gt_arr))
     done.append(name)
+    # v1 held every crop's GT graph and both prediction graphs for the whole
+    # run. Zebrahub crops reach 50,494 nodes; nine of them was enough to be
+    # killed.
+    del gtg, _r, gt_arr, gt_e, _dd
+    for _d in (pathlib.Path(f"/kaggle/working/ps_zh_{t}")
+               for t, _ in ARM_SRC):
+        for _g in _d.glob("*.geff"):
+            shutil.rmtree(_g, ignore_errors=True)
+    _checkpoint()
     print(f"  [{len(done)}/{len(BOTH)}] {name}: T={T} nodes={sum(n_ref):,} "
           f"gt={len(gt_arr):,} moved p50 {np.percentile(_dd, 50):.3f} um  "
           f"adj_J REF {_adj_of(ZROWS['REF'][name]):.4f} -> HP "
@@ -243,6 +277,8 @@ if len(_a8) == len(ANCHOR8):
         if not ok:
             ANCHOR_FAIL.append((k, got, want))
 else:
+    # The 8 anchor crops run FIRST, so this only fires if the run died
+    # inside them -- in which case there is nothing to read anyway.
     ANCHOR_FAIL.append(("anchor crops incomplete", len(_a8), len(ANCHOR8)))
 assert not ANCHOR_FAIL, (
     f"zebrahub anchor miss: {ANCHOR_FAIL} -- the harness is not dcmerge's "
