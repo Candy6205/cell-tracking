@@ -433,9 +433,9 @@ missing = [n for n in names_f4 if n not in names]
 assert not missing, f"F4 datasets outside the base list: {missing}"
 
 # One job per (arm, dataset): the base pass first, then the F4 pass.
-jobs = [("base", n) for n in names] + [("F4", n) for n in names_f4]
-assert len(jobs) == len(names) + len(names_f4)
-print(f"jobs: {len(names)} base + {len(names_f4)} F4 = {len(jobs)}",
+jobs = [("F4", n) for n in names_f4]      # base dropped, see above
+assert len(jobs) == len(names_f4) == 24, (len(jobs), len(names_f4))
+print(f"jobs: 0 base (dropped) + {len(names_f4)} F4hp = {len(jobs)}",
       flush=True)
 
 # ---------------------------------------------------------------- GPU
@@ -758,11 +758,12 @@ for k, (arm, name) in enumerate(jobs, 1):
          gate_um=GATE_UM, scale=SCALE.tolist(), downsample=list(map(int, DS)),
          reverse=REVERSE, seed_44b6=SEED_44B6, set_44b6=SET_44B6,
          pool32=POOL32, holdout_6bba=HOLDOUT_6BBA,
-         groups=dict(base=names, F4=names_f4), failed=failed,
+         groups=dict(base=[], F4=names_f4), failed=failed,
          skipped_time=skipped_time, datasets=counts), indent=1))
 
 written = sorted(OUT.glob("edgeprob2_*.npz"))
-n_f4 = sum(1 for p in written if p.name.startswith("edgeprob2_F4_"))
+n_f4 = sum(1 for p in written
+           if p.name.startswith("edgeprob2_F4hp_"))
 n_base = len(written) - n_f4
 n_done = len(written)
 total_mb = sum(p.stat().st_size for p in written) / 2 ** 20
@@ -778,7 +779,7 @@ if n_done == 0:
     raise SystemExit("[degraded] nothing was cached -- do NOT read this run "
                      "as a success")
 complete = (not failed and not skipped_time
-            and n_base == len(names) and n_f4 == len(names_f4))
+            and n_base == 0 and n_f4 == len(names_f4))
 if complete:
     print(f"n_per_frame check: {len(names_f4) - len(NPF_BAD)} of "
           f"{len(names_f4)} datasets reproduce the shipped counts"

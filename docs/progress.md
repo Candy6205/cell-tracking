@@ -14,8 +14,9 @@
 the fork gate retrained on BOTH domains' counted forks
 (`fork_gate_joint.pkl`, p > 0.03) on the 0.943 pipeline, **+0.001**.
 Its pre-registered band called that WEAK TRANSFER: keep it, and read
-division-side bench deltas as an upper bound (local said +0.0037,
-predicted +0.003, LB gave +0.001). `submit_joint.py` is the
+a division-side bench delta as an upper bound on the LB delta rather
+than a forecast of it (local +0.0037, predicted +0.003, LB +0.001) --
+which is a caveat on the FORECAST, not a reason to skip small gains. `submit_joint.py` is the
 production script. Previous best 0.943, ref 56055405 (2026-09-07) — submit-gate: the
 fork gate (divbench3, fork_gate_f4.pkl at p > 0.03) on the 0.933
 pipeline, **+0.010, the largest single LB gain on record**, with
@@ -1270,11 +1271,29 @@ domain weighting. LB delivered a third of that.
 [+0.0016, +0.0060] did contain the outcome, so the bootstrap was not wrong --
 the POINT ESTIMATE was optimistic. That is the second data point of this
 shape: divbench3's fork gate predicted +0.012 and LB gave +0.010 (a good
-match), while this one predicted +0.003 and gave +0.001. The difference
-between the two is that divbench3's gain was large enough to survive a 3x
-haircut and this one is not. **Read future division-side bench numbers as an
-upper bound, not an estimate**, and stop treating a +0.003 local delta as
-worth a submission slot on its own.
+match), while this one predicted +0.003 and gave +0.001. **Read a
+division-side bench delta as an upper bound on the LB delta, not as a
+forecast of it.**
+
+**But that is a statement about the FORECAST, not about the change** --
+a distinction the first draft of this entry got wrong, and the user
+corrected: *"不用因为LB分数增长不达预期而觉得以后这个都不值得提交。我们无从
+得知public score的影片构成，只要LB正，本地正，这个肯定是有提升的"*. The
+correction is right and the reasoning is worth keeping: **we do not know
+which movies the public score is computed on**. The bench's 24 movies are
+one mix; the public split is another, unknown one, and it is itself a small
+sample. A local +0.0037 landing as a public +0.001 is therefore consistent
+with three different worlds -- the bench over-values the change, the public
+mix happens to contain fewer of the movies it helps, or the public split is
+just noisy -- and one LB reading cannot separate them. What IS established
+is the sign: **local positive and LB positive, so it is a real gain**, and
+it is kept.
+
+So the rule this entry sets is narrow: do not quote a local delta as the
+expected LB delta. It is NOT "a small local gain is not worth submitting" --
+small gains are how this line has moved (+0.010, then +0.001, both kept,
+both from the division side), and a submission is the only instrument that
+reads the hidden set at all.
 
 **The 2026-08-28 LB table gains a sixth row**, and it is the second
 consecutive win from the division line:

@@ -78,6 +78,21 @@ rep('''    mb = (OUT / f"edgeprob2_{label}.npz").stat().st_size / 2 ** 20''',
         _z.close()
     mb = (OUT / f"edgeprob2_{label}.npz").stat().st_size / 2 ** 20''')
 
+# DROP THE BASE PASS. edgeprob2_cache runs 199 base jobs before its F4 ones,
+# and v1 of this kernel inherited that: 199 movies of pure waste -- they only
+# recompute what biohub-edgeprob2 already holds, on detcache primaries this
+# run does not touch -- and the 24 jobs actually wanted sit at the END of the
+# list. Measured on v1: 70 minutes in and still in the base pass, against
+# ~25 minutes for the whole job if it starts with the F4hp work.
+rep('''jobs = [("base", n) for n in names] + [("F4", n) for n in names_f4]
+assert len(jobs) == len(names) + len(names_f4)
+print(f"jobs: {len(names)} base + {len(names_f4)} F4 = {len(jobs)}",
+      flush=True)''',
+    '''jobs = [("F4", n) for n in names_f4]      # base dropped, see above
+assert len(jobs) == len(names_f4) == 24, (len(jobs), len(names_f4))
+print(f"jobs: 0 base (dropped) + {len(names_f4)} F4hp = {len(jobs)}",
+      flush=True)''')
+
 rep('''names_f4 = list(EVAL_24)''',
     '''names_f4 = list(EVAL_24)
 SHIPPED_EP2 = _walk_files(lambda fn: fn[len("edgeprob2_F4_"):-len(".npz")]
@@ -96,6 +111,30 @@ rep('''    print(f"EDGEPROB2 OK ({n_base} base + {n_f4} F4 of {len(jobs)})",
     print(f"EP2HPCACHE {'OK' if not NPF_BAD else 'NPF MISMATCH'} "
           f"({n_base + n_f4} of {len(jobs)})", flush=True)''')
 rep('EDGEPROB2 INCOMPLETE', 'EP2HPCACHE INCOMPLETE')
+
+
+# The completion accounting was written for a two-arm run and counts the
+# WRONG PREFIX for this one: the label is `F4hp_`, so the file is
+# `edgeprob2_F4hp_<name>.npz`, which does not start with `edgeprob2_F4_`.
+# Left alone it reports n_f4 = 0, calls all 24 outputs "base", and prints
+# INCOMPLETE on a run that fully succeeded. ephpcache has the same bug and
+# its landed run's final line should be read with that in mind -- its
+# n_per_frame line prints unconditionally, which is why the check was still
+# readable there.
+rep('''n_f4 = sum(1 for p in written if p.name.startswith("edgeprob2_F4_"))''',
+    '''n_f4 = sum(1 for p in written
+           if p.name.startswith("edgeprob2_F4hp_"))''')
+
+# ... and with no base arm, requiring n_base == len(names) demands 199
+# outputs this run never sets out to write.
+rep('''complete = (not failed and not skipped_time
+            and n_base == len(names) and n_f4 == len(names_f4))''',
+    '''complete = (not failed and not skipped_time
+            and n_base == 0 and n_f4 == len(names_f4))''')
+
+# The manifest would otherwise claim 199 base datasets were produced.
+rep('''         groups=dict(base=names, F4=names_f4), failed=failed,''',
+    '''         groups=dict(base=[], F4=names_f4), failed=failed,''')
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
                    "ep2hpcache.py")
