@@ -13,10 +13,12 @@
 **BEST IS NOW 0.944, ref 56086066** (2026-09-08) — submit-joint:
 the fork gate retrained on BOTH domains' counted forks
 (`fork_gate_joint.pkl`, p > 0.03) on the 0.943 pipeline, **+0.001**.
-Its pre-registered band called that WEAK TRANSFER: keep it, and read
-a division-side bench delta as an upper bound on the LB delta rather
-than a forecast of it (local +0.0037, predicted +0.003, LB +0.001) --
-which is a caveat on the FORECAST, not a reason to skip small gains. `submit_joint.py` is the
+Its pre-registered band called that WEAK TRANSFER: keep it. Read
+the public score as a DIRECTION, sign only -- local +0.0037 landing
+as LB +0.001 is not a finding, because movie-to-movie weight inside
+one domain spans 4.3x (p90/p10 labelled edges, n=128) and the public
+subset is unknown. The reading to be alarmed by is local-positive
+with LB NEGATIVE. `submit_joint.py` is the
 production script. Previous best 0.943, ref 56055405 (2026-09-07) — submit-gate: the
 fork gate (divbench3, fork_gate_f4.pkl at p > 0.03) on the 0.933
 pipeline, **+0.010, the largest single LB gain on record**, with
@@ -45,7 +47,7 @@ output. Previous best 0.925, ref 55889500 (2026-08-31, F4). Full history:
 | 56014734 | nb948-asis: the public "0.948" notebook forked UNCHANGED (not our pipeline) | — | 0.935 | NOT 0.948; 204,966,451 bytes = 24% less output than ours |
 | **56030644** | **submit-f48: ILP candidate floor 0.10 -> 0.48, nothing else** | 55974245 = 0.932 | **0.933** | **+0.001, NEW BEST, with −1.43% output; the hidden set carries almost no weak chains of ours** |
 | **56055405** | **submit-gate: the fork gate (fork_gate_f4.pkl, p > 0.03) on the 0.933 pipeline, nothing else** | 56030644 = 0.933 | **0.943** | **+0.010, NEW BEST, LARGEST GAIN ON RECORD; −0.04% output; the bench said +0.012 and LB agreed** |
-| **56086066** | **submit-joint: the same gate RETRAINED on 128 6bba + 71 44b6 counted forks** | 56055405 = 0.943 | **0.944** | **+0.001, NEW BEST; its own pre-registered band = weak transfer; local +0.0037 was 3x optimistic** |
+| **56086066** | **submit-joint: the same gate RETRAINED on 128 6bba + 71 44b6 counted forks** | 56055405 = 0.943 | **0.944** | **+0.001, NEW BEST; its own pre-registered band = weak transfer. Sign is the reading; the gap to local +0.0037 is not** |
 
 Hidden-test output size, `total_bytes` from the submission metadata,
 paired against each change's own control:
@@ -1267,33 +1269,42 @@ the hidden set.** divbench8 measured +0.0037 with a 90% interval of
 [+0.0016, +0.0060] and the entry predicted "about +0.003" after the 85/15
 domain weighting. LB delivered a third of that.
 
-**What that costs the bench's credibility, precisely.** The interval
-[+0.0016, +0.0060] did contain the outcome, so the bootstrap was not wrong --
-the POINT ESTIMATE was optimistic. That is the second data point of this
-shape: divbench3's fork gate predicted +0.012 and LB gave +0.010 (a good
-match), while this one predicted +0.003 and gave +0.001. **Read a
-division-side bench delta as an upper bound on the LB delta, not as a
-forecast of it.**
+**HOW TO READ AN LB DELTA AT ALL -- the standing rule, replacing two
+earlier drafts of this paragraph that both got it wrong.** The first said
+"stop treating a +0.003 local delta as worth a submission slot"; the second
+retreated to "read a bench delta as an upper bound on the LB delta". Both
+still treat the SIZE of an LB move as information. It mostly is not, and the
+user's correction is the rule to keep:
 
-**But that is a statement about the FORECAST, not about the change** --
-a distinction the first draft of this entry got wrong, and the user
-corrected: *"不用因为LB分数增长不达预期而觉得以后这个都不值得提交。我们无从
-得知public score的影片构成，只要LB正，本地正，这个肯定是有提升的"*. The
-correction is right and the reasoning is worth keeping: **we do not know
-which movies the public score is computed on**. The bench's 24 movies are
-one mix; the public split is another, unknown one, and it is itself a small
-sample. A local +0.0037 landing as a public +0.001 is therefore consistent
-with three different worlds -- the bench over-values the change, the public
-mix happens to contain fewer of the movies it helps, or the public split is
-just noisy -- and one LB reading cannot separate them. What IS established
-is the sign: **local positive and LB positive, so it is a real gain**, and
-it is kept.
+> 不用太因为LB分数而消极。因为不同的影片哪怕是同一组的都有很大的差别，更不
+> 要说验证集完全是盲的，我们无从推断算出public score的那部分验证集是取的哪
+> 一部分。所以理想情况下，验证集的分布应该和训练集是一样的，那么public score
+> 就当一个方向就可以。如果本地全正，LB负了才是要警惕的。
 
-So the rule this entry sets is narrow: do not quote a local delta as the
-expected LB delta. It is NOT "a small local gain is not worth submitting" --
-small gains are how this line has moved (+0.010, then +0.001, both kept,
-both from the division side), and a submission is the only instrument that
-reads the hidden set at all.
+**Read the public score as a DIRECTION. Only the sign carries information.**
+
+- **ALARM: local positive across the board, LB NEGATIVE.** That is the
+  reading that says something is wrong -- the bench and the hidden set
+  disagree in kind, not in degree.
+- **NOT alarm: LB positive but smaller than the local delta.** Nothing to
+  diagnose. Do not spend a paragraph on it, do not downgrade the bench, and
+  do not let it argue against submitting the next small gain.
+
+**Why the magnitude cannot be read, measured rather than asserted.** Movies
+inside ONE domain are not interchangeable. Over the 128 6bba movies in
+divbench9's own run log: candidate pairs run 3,581 to 272,577 (**76x**,
+p90/p10 23.6x) and LABELLED GT EDGES run 295 to 6,716 (**22.8x**, p90/p10
+4.3x). The competition score sums edge TP/FP/FN across movies and divides
+once, so a movie's weight in the aggregate IS its edge count -- which means
+two different subsets of the same pool can weight the same change by 4x
+before any modelling difference enters. The public split is one such unknown
+subset, and it is small. In the ideal case its distribution matches the
+training pool's, which is exactly why the sign transfers and the magnitude
+need not.
+
+So: **local positive and LB positive = a real gain**, kept, and that is the
+whole reading. divbench8's [+0.0016, +0.0060] contained the outcome; the
+point estimate being nearer the top of its own interval is not a finding.
 
 **The 2026-08-28 LB table gains a sixth row**, and it is the second
 consecutive win from the division line:

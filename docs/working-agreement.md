@@ -434,6 +434,42 @@ n = 1 on the positive side, so this is a hypothesis. It is the first
 thing that has ever distinguished a leaderboard success from a
 leaderboard failure here, and it costs nothing to apply.
 
+### Read the public score as a DIRECTION -- sign only (2026-09-08)
+
+Two more paired rows exist now, both from the division line and both
+positive: the fork gate (local +0.012, **LB +0.010**) and submit-joint
+(local +0.0037, **LB +0.001**). Writing up the second one, this file's
+own author twice turned the shortfall into a rule -- first "a +0.003
+local delta is not worth a submission slot", then "read a bench delta as
+an upper bound" -- and the user struck both down:
+
+> 不用太因为LB分数而消极。因为不同的影片哪怕是同一组的都有很大的差别，更不要
+> 说验证集完全是盲的，我们无从推断算出public score的那部分验证集是取的哪一部
+> 分。所以理想情况下，验证集的分布应该和训练集是一样的，那么public score就当
+> 一个方向就可以。如果本地全正，LB负了才是要警惕的。
+
+- **ALARM: local positive across the board, LB NEGATIVE.** The bench and
+  the hidden set disagree in KIND. Four of the five rows in the table
+  above are exactly this, and that is what the table is for.
+- **NOT alarm: LB positive but smaller than local.** No diagnosis, no
+  paragraph, no downgrade of the bench, and above all not an argument
+  against submitting the next small gain.
+
+**The magnitude cannot be read, and this is measured, not assumed.**
+Movies inside one domain are not interchangeable. Across the 128 6bba
+movies in divbench9's own run log: candidate pairs 3,581 to 272,577
+(76x, p90/p10 23.6x); **labelled GT edges 295 to 6,716 (22.8x, p90/p10
+4.3x)**. The score sums edge TP/FP/FN across movies and divides once, so
+a movie's WEIGHT in the aggregate is its edge count. Two subsets of the
+same pool can therefore weight one change by 4x against each other
+before any modelling difference enters, and the public split is one
+unknown, small subset. If its distribution matches the training pool's
+-- the ideal case -- the SIGN is what transfers; the size need not.
+
+This does not soften *Submit a MECHANISM, not a local number* above:
+that rule governs what is worth a submission BEFORE it is spent. This
+one governs how to read the number that comes back.
+
 ## Write down what was COUNTED, not what it means (2026-09-08)
 
 Three entries on this project stated, as fact, that the detector has no
