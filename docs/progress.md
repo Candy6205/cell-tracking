@@ -10,7 +10,13 @@
 
 ## HANDOFF (2026-08-26, replacing the 2026-08-24 one below)
 
-**BEST IS NOW 0.943, ref 56055405** (2026-09-07) — submit-gate: the
+**BEST IS NOW 0.944, ref 56086066** (2026-09-08) — submit-joint:
+the fork gate retrained on BOTH domains' counted forks
+(`fork_gate_joint.pkl`, p > 0.03) on the 0.943 pipeline, **+0.001**.
+Its pre-registered band called that WEAK TRANSFER: keep it, and read
+division-side bench deltas as an upper bound (local said +0.0037,
+predicted +0.003, LB gave +0.001). `submit_joint.py` is the
+production script. Previous best 0.943, ref 56055405 (2026-09-07) — submit-gate: the
 fork gate (divbench3, fork_gate_f4.pkl at p > 0.03) on the 0.933
 pipeline, **+0.010, the largest single LB gain on record**, with
 0.04% less hidden output (266,152,167 bytes); above the public
@@ -38,6 +44,7 @@ output. Previous best 0.925, ref 55889500 (2026-08-31, F4). Full history:
 | 56014734 | nb948-asis: the public "0.948" notebook forked UNCHANGED (not our pipeline) | — | 0.935 | NOT 0.948; 204,966,451 bytes = 24% less output than ours |
 | **56030644** | **submit-f48: ILP candidate floor 0.10 -> 0.48, nothing else** | 55974245 = 0.932 | **0.933** | **+0.001, NEW BEST, with −1.43% output; the hidden set carries almost no weak chains of ours** |
 | **56055405** | **submit-gate: the fork gate (fork_gate_f4.pkl, p > 0.03) on the 0.933 pipeline, nothing else** | 56030644 = 0.933 | **0.943** | **+0.010, NEW BEST, LARGEST GAIN ON RECORD; −0.04% output; the bench said +0.012 and LB agreed** |
+| **56086066** | **submit-joint: the same gate RETRAINED on 128 6bba + 71 44b6 counted forks** | 56055405 = 0.943 | **0.944** | **+0.001, NEW BEST; its own pre-registered band = weak transfer; local +0.0037 was 3x optimistic** |
 
 Hidden-test output size, `total_bytes` from the submission metadata,
 paired against each change's own control:
@@ -896,7 +903,7 @@ the bench has a hard ceiling -- 151 GT divisions exist in the entire
 train set, so no division mechanism can ever be selected locally at a
 resolution finer than this.
 
-### ⏳ submit-joint SUBMITTED as ref 56086066 (2026-09-08), awaiting LB; divbench9 running
+### submit-joint SUBMITTED as ref 56086066 (2026-09-08); RESULT IS IN, LB 0.944 -- see the LANDED entry above for the verdict against this entry's pre-registered bands
 
 The joint fork gate is at the leaderboard. Kernel `biohub-submit-joint`
 v1 ran clean on GPU and wrote `submission.csv`, 234,761 rows.
@@ -1235,6 +1242,53 @@ because each row uses only its own movie's cells -- which is why the
 headline finding above survived the bug and was in fact found from that
 table. The lesson is the generic one: a label set that covers part of the
 data makes every unlabelled row a silent negative.
+
+### ⭐⭐⭐⭐ submit-joint LANDED: LB 0.944, ref 56086066 (2026-09-08) -- NEW BEST, +0.001 over its own control. The pre-registered reading says WEAK TRANSFER, and the local bench over-valued this change by about 3x
+
+The fork gate retrained on both domains' counted forks (`fork_gate_joint.pkl`,
+128 6bba + 71 44b6 movies, p > 0.03) on the 0.943 pipeline, nothing else
+changed. Control: ref 56055405 = 0.943, the same code with the 6bba-only gate.
+
+**LB 0.944, so +0.001.**
+
+**The reading was fixed before the score existed** (entry below), and it lands
+squarely in the middle band:
+
+| band | meaning | |
+|---|---|---|
+| >= +0.002 | the joint gate transfers; "train on every batch you have labels for" becomes a general move | |
+| **0.000 to +0.002** | **transfers weakly** | **<- +0.001** |
+| negative | the local gain was 6bba-specific and the 85/15 weighting was the suspect | |
+
+So it is kept, and the estimate is revised down, exactly as the band said it
+would be: **not a reason to revert, but +0.0037 local is not worth +0.0037 on
+the hidden set.** divbench8 measured +0.0037 with a 90% interval of
+[+0.0016, +0.0060] and the entry predicted "about +0.003" after the 85/15
+domain weighting. LB delivered a third of that.
+
+**What that costs the bench's credibility, precisely.** The interval
+[+0.0016, +0.0060] did contain the outcome, so the bootstrap was not wrong --
+the POINT ESTIMATE was optimistic. That is the second data point of this
+shape: divbench3's fork gate predicted +0.012 and LB gave +0.010 (a good
+match), while this one predicted +0.003 and gave +0.001. The difference
+between the two is that divbench3's gain was large enough to survive a 3x
+haircut and this one is not. **Read future division-side bench numbers as an
+upper bound, not an estimate**, and stop treating a +0.003 local delta as
+worth a submission slot on its own.
+
+**The 2026-08-28 LB table gains a sixth row**, and it is the second
+consecutive win from the division line:
+
+| ref | change | control | LB | verdict |
+|---|---|---|---|---|
+| 56055405 | fork gate, 6bba-only | 56030644 = 0.933 | 0.943 | +0.010, largest on record |
+| **56086066** | **fork gate retrained on 6bba + 44b6** | **56055405 = 0.943** | **0.944** | **+0.001, NEW BEST, weak transfer** |
+
+`submit_joint.py` is the production script. The only difference from
+`submit_gate.py` is the pickle name plus an assert that the loaded gate really
+carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
+silently-6bba-only gate from being submitted as the joint one.
+
 
 ### ⭐⭐⭐⭐⭐ refinecmp (2026-09-08, biohub-refinecmp v3, 36.5 min T4, both anchors exact): PUTTING THE DETECTION AT THE PARABOLIC VERTEX OF THE HEATMAP CUTS THE INVENTED MOTION BY 31% ON 6bba AND 7% ON 44b6, AT NO NODE COST. `hpara` beats the shipped `refine` on both domains, in both recall and jitter
 
