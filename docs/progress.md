@@ -1364,6 +1364,117 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ divradius (2026-09-09, 30 s of laptop CPU, BOTH gate anchors EXACT): the last OPEN row of the public-notebook comparison closes, and the "named, fixable defect" at `DIV_PARENT_UM` 12 vs `GATE_UM` 10 gets a CEILING -- +0.0022 score at perfect play, which is inside this holdout's noise
+
+My own entry a few hours ago claimed all six differences from the public
+0.946 notebook were closed. **That was wrong: the comparison table's own
+verdict column says `division parent / sister um` (theirs 9.0 / 14.0, ours
+12.0 / 15.0) is OPEN**, and it had never been measured. It is measured now,
+and it cost nothing -- `hparabench_ref` already writes `forks_dw55.csv`, one
+row per fork with all 20 gate features, `d_pq`, `d_s` and the label.
+
+**The gate is reproduced locally, and both anchors are exact.** Same recipe
+as divbench9 -- `HistGradientBoostingClassifier(max_iter=100,
+learning_rate=0.05, min_samples_leaf=10, random_state=0)`, 20 features, two
+alternating movie folds, out of fold, cut `p > 0.03`:
+
+| gate | got | recorded | |
+|---|---|---|---|
+| 6bba only | 42 / 47 / 83, div_J 0.2442 | divbench3 `REF + gate6` 0.2442 | **exact** |
+| **+ divbench5's 67 counted 44b6 forks in both folds** | **46 / 39 / 79, div_J 0.2805** | divbench8 `REF + joint` 0.2805 | **exact** |
+
+The second is what ships (LB 0.944, ref 56086066), so every row below is
+against the gate that is actually in front of these radii.
+
+#### The result: their parent radius costs us four thousandths
+
+| arm | TP/FP/FN | div_J | d div_J | **d score** | counted cut | TP cut |
+|---|---|---|---|---|---|---|
+| **12.0 / 15.0 (SHIPS)** | 46/39/79 | **0.2805** | +0.0000 | +0.00000 | 0 | 0 |
+| `DIV_PARENT_UM` 11.0 | 43/38/82 | 0.2638 | −0.0167 | −0.00167 | 10 | 3 |
+| `DIV_PARENT_UM` **10.0** (= `GATE_UM`) | 39/30/86 | 0.2516 | −0.0289 | −0.00289 | 29 | 7 |
+| `DIV_PARENT_UM` **9.0** (theirs) | 37/28/88 | 0.2418 | **−0.0387** | **−0.00387** | 49 | 10 |
+| `DIV_SISTER_UM` **14.0** (theirs) | 46/39/79 | 0.2805 | +0.0000 | +0.00000 | 1 | 0 |
+| `DIV_SISTER_UM` 13.0 | 46/37/79 | 0.2840 | +0.0035 | +0.00035 | 6 | 0 |
+| `DIV_SISTER_UM` **12.0** | 46/34/79 | **0.2893** | **+0.0088** | **+0.00088** | 15 | **0** |
+| `DIV_SISTER_UM` 11.0 | 43/31/82 | 0.2756 | −0.0048 | −0.00048 | 30 | 3 |
+| theirs, both: 9.0 / 14.0 | 37/28/88 | 0.2418 | −0.0387 | −0.00387 | 49 | 10 |
+
+**Their 9.0 / 14.0 would cost us −0.004 score.** The parent half is a clear
+loss at every cut, the sister half is an exact zero. **REJECTED, measured**
+-- and that empties the comparison table: nothing in the public 0.946
+notebook is left to port.
+
+#### The mechanism the record proposed, and why it is wrong
+
+The record (2026-09-08, the fork-table read) named a defect: `DIV_PARENT_UM`
+is 12.0 while `GATE_UM` -- the ranker's own pair gate -- is 10.0, so a fork
+proposed out there carries NaN in `p_q`, `pf_q`, `pr_q` and `rank_gap`, four
+of the twenty gate features. 23 of 299 counted forks are in that state, and
+the band is enriched in real divisions. The obvious repair is to pull the
+patch's reach back to 10.0 so the gate always has its features. **It loses
+0.003, and the survival table says why:**
+
+| band | counted | TP | FP | TP kept | FP kept | **TP survival** | **FP survival** |
+|---|---|---|---|---|---|---|---|
+| `d_pq <= 10`, inside the gate | 270 | 43 | 227 | 39 | 30 | **0.91** | **0.13** |
+| `d_pq > 10`, four NaN features | 29 | 7 | 22 | 7 | 9 | **1.00** | **0.41** |
+
+**The gate is not blind out there. It is less selective** -- 41% of false
+forks survive against 13% inside -- **and it keeps every single true one.**
+So the band contains 7 real divisions and 9 surviving false ones, and
+cutting it at the radius throws away all 7 to remove all 9. In a metric
+where a lost TP moves to FN, that is the wrong direction twice over.
+
+**The ceiling on fixing it properly, which is the number this line was
+missing.** Suppose the missing features were supplied and the gate then
+played that band perfectly -- every one of the 7 true forks kept, all 9
+surviving false ones cut. That is 46 / 30 / 79, div_J 0.3020, **+0.0215
+div_J = +0.0022 score.** `accdiag` puts this holdout's own noise at
+0.002-0.003. **The whole defect is worth, at perfect play, about one noise
+width** -- so widening the ranker's pair gate to populate fork features
+(distinct from widening it for the LINKER, which `gate-sweep`, `gate2` and
+`zgate` all closed) does not pay for its bench run. The defect is real and
+the record was right to name it; it is just small.
+
+#### `DIV_SISTER_UM` 12.0, recorded as a candidate rather than a change
+
+It is monotone, it costs **zero** true forks at every step down to 12, and
+it is worth +0.0009 score. Why it works is visible in the separation:
+
+| | TP p50 | TP p90 | FP p50 | FP p90 |
+|---|---|---|---|---|
+| `d_pq` | 6.10 | 10.73 | 6.00 | 9.79 |
+| `d_s` | 8.88 | **10.43** | 7.12 | **11.17** |
+
+**True daughters are further apart than false pairs, but their spread is
+TIGHTER** -- TP p90 10.43 against FP p90 11.17. A cut at 12 sits above every
+true fork's sister distance and inside the false tail. At 11 it starts
+biting: −3 TP, and by 10 it is −0.0022.
+
++0.0009 is a third of the noise floor. **It does not justify a submission on
+its own**, and this project's rule is to submit a mechanism, not a local
+number. It is written down here so it can ride along with the next change to
+this stage that has a mechanism of its own.
+
+#### ⚠ WHAT THIS APPROXIMATES, stated because the whole entry rests on it
+
+`tools/divradius.py` filters the fork proposals a run at the shipped radii
+already made; it does not re-run `_add_safe_divisions` at a smaller radius.
+The two differ where the caps bind -- `DIV_GLOBAL_CAP`, `DIV_FRAME_CAP` and
+the `used_p` / `used_q` exclusivity mean a dropped proposal can free a slot
+for another one. Proposals sort by `d_pq + 0.15 * d_s`, so the far ones sort
+LAST and win contested slots least often, which bounds how much that can
+matter. It does not make it zero. **The −0.004 verdict on their 9.0 is far
+outside anything that could flip; the +0.0009 on sister 12.0 is not, and is
+labelled a candidate rather than a result for exactly that reason.**
+
+Also: 6bba only, 299 counted forks, 50 true. And the joint gate was retrained
+here on the 12.0-radius fork population; an arm at 10.0 would retrain on its
+own. Retraining cannot recover a fork that was never proposed, so that works
+against the tightened arms only in the direction they already lose.
+
+
 ### hparabench ROUND 2 + zhpara PUSHED (2026-09-09, three CPU kernels). Full coverage at last: 128 of 128 scored movies now differ between the arms instead of 12, the AUC discriminator widens with it, and zebrahub gets its own harness. THE READING IS FIXED HERE, BEFORE THE NUMBERS
 
 Round 1 could not answer its own question. It scored 128 6bba movies and
@@ -1513,10 +1624,14 @@ point is not.** Our detector averages LOGITS and takes one sigmoid at the
 end, which is the numerically right way to do it; `model.encode`'s
 `unet_out` is averaged as it comes.
 
-**With this, all six differences from the public 0.946 notebook are closed:**
-three from the existing record (disappearance cost, ILP division weight,
-density-adaptive gap), two by `gapcross` (gap radius, short-track floor +
-rescue), and edge-feature TTA here. **Nothing in that notebook is left to
+**With this, six of the SEVEN differences from the public 0.946 notebook are
+closed:** three from the existing record (disappearance cost, ILP division
+weight, density-adaptive gap), two by `gapcross` (gap radius, short-track
+floor + rescue), and edge-feature TTA here. ⚠ The first draft of this
+paragraph said "all six" and dropped one -- the comparison table's own
+verdict column marks `division parent / sister um` **open**, and it had never
+been measured. `divradius`, the entry above, closes it (their 9.0 / 14.0
+costs −0.004 score). **Nothing in that notebook is left to
 port.**
 
 #### The bug this ran into, and the check that now exists
@@ -1633,7 +1748,7 @@ are six numbers.
 |---|---|---|---|
 | gap radius `GAP1_GATE_UM` | 5.0 | **9.0** | LIVE. Ours is the untouched public baseline; THEY moved it |
 | short filter | 6 | 4 | live only paired with their rescue, below |
-| division parent / sister um | 9.0 / 14.0 | 12.0 / 15.0 | open |
+| division parent / sister um | 9.0 / 14.0 | 12.0 / 15.0 | **REJECTED, measured** (`divradius` 2026-09-09: their parent radius −0.0039 score, their sister radius an exact zero) |
 | ILP disappearance | 2 | 1.5 | **REJECTED, measured** |
 | ILP division weight | 1.2 | 0.55 | **ARCHITECTURAL, not a knob** |
 | gap density adaptive | on | absent | **not worth it, measured from their code** |
