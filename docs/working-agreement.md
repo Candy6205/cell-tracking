@@ -109,6 +109,64 @@ Two rules learned the hard way:
   at startup and wasted the queue wait. It cannot catch a missing MODULE
   or a data source the inherited preamble asserts on — check those by
   reading the preamble's imports and asserts.
+- **When an assembly adds a NEW CODE PATH rather than re-parameterising
+  an existing one, test that path on synthetic data before pushing**
+  (2026-09-07). `divbench4` added a steal pass to the division patch and
+  eight fork features. Both were clean under pyflakes and both were
+  broken:
+  - stage B calls `PATCH_CAPS.clear()` per arm and the patch then does
+    `PATCH_CAPS["orphan_added"] += n` on a **plain dict** — `KeyError` on
+    the first movie of stage B, 40 minutes in.
+  - the steal required `q` to be the nearest STEALABLE node to `c1`,
+    copied from the orphan pass's "nearest orphan" test — but `c1` is
+    itself stealable and is its own nearest neighbour, so **every steal
+    proposal was rejected**. That one is silent: three arms would have
+    run for three hours and returned REF three times.
+  A 200-line synthetic test (`tools/test_divbench4_steal.py`, which
+  `exec`s the functions straight out of the shipped file so it tests the
+  real text) found both in ten minutes. The rule is not "write tests";
+  it is that **a re-parameterisation inherits its correctness from the
+  run it was cut from and a new path does not**, and the silent failure
+  mode — an arm that runs and returns the control — is exactly the one
+  an anchor cannot catch, because the anchor is the control.
+
+## Anything you omit will be read as a negative (2026-09-08)
+
+Three separate failures in one afternoon, all the same shape:
+
+- `shoulderviz` v1 drew a circle for every annotated cell onto a Z slab
+  pinned at `Z//2`. Cells at other depths became rings on empty space.
+  The user: "我也完全分辨不出来细胞在哪里呢". It read as *the detector
+  missed a cell that is plainly there* -- the opposite of the truth.
+- `shoulderviz` v3 "fixed" that by HIDING every marker more than one voxel
+  off-plane. On a 64-plane sweep a cell was then visible for three planes
+  and the circles blinked. It read as *the annotation is sparse in time*.
+  It is not: 23 of 24 movies annotate every frame.
+- `shoulderfeat` v1 iterated all 199 train movies when only 24 had ever
+  been measured. The other 175 contributed ~120,000 cells labelled "not a
+  shoulder cell" because nobody had looked, diluting every rate tenfold.
+
+A viewer -- human or the next session -- cannot distinguish "absent from
+the data" from "dropped by the tool". They will always read the first.
+
+So: **when something is filtered out of a display or a denominator, say so
+in the artifact itself, or do not filter.** Concretely --
+
+1. Prefer ENCODING to DROPPING. A marker that fades, thins and goes dashed
+   with distance still tells you the cell is there and where it went; a
+   marker that disappears tells you nothing and implies something false.
+2. Put the count of what was filtered in the frame: `GT 40 (12 in slab)`
+   costs nothing and makes the filter visible.
+3. A partial label set makes every unlabelled row a silent negative.
+   Restrict to the labelled subset and print how many that is, or state
+   the dilution.
+4. This is the display twin of the DENOMINATOR rule below. That rule is
+   about comparing two rates; this one is about a single picture or table
+   that quietly answers a different question than the one asked.
+
+The tell that you have done it again: the viewer proposes a mechanism for
+what they are seeing ("被z轴叠掉了", "标注是隔几帧一个") and the mechanism
+is about your tool rather than about the biology. Check the tool first.
 
 ## An experiment kills a CLAIM, not a direction (2026-08-30)
 
@@ -341,6 +399,73 @@ Two corollaries:
 n = 1 on the positive side, so this is a hypothesis. It is the first
 thing that has ever distinguished a leaderboard success from a
 leaderboard failure here, and it costs nothing to apply.
+
+## Write down what was COUNTED, not what it means (2026-09-08)
+
+Three entries on this project stated, as fact, that the detector has no
+response at the cells it misses. None of them measured a response.
+
+| entry | what it actually counted | the sentence it grew |
+|---|---|---|
+| `det_floor` 2026-08-25 | lowering the peak FLOOR 0.05 -> 0.01 buys +0.0002 of ceiling | "the detector produces no response for them at all" |
+| `gap2` 2026-08-26 | 79.8% of missed frames have no CANDIDATE within 5 um | "the heatmap response does not dip below threshold, it vanishes" |
+| two later entries | nothing -- they cited `gap2` | "79.8% of missed frames have NO heatmap response" |
+
+`gtpeak` finally read the heatmap: at 95.3% / 85.6% of missed cells the
+response is present (window max p50 **0.15**), and the nearest actual
+peak is ~6 um away on a neighbour. **Every one of the three
+measurements was correct. Every sentence attached to them was wrong**,
+and the wrong sentence is what got cited, for two weeks, as the reason
+a whole line was closed.
+
+The mechanism of the error is worth naming because it is not
+carelessness: a peak-based measurement and a value-based measurement
+answer different questions, and the peak-based one is the only one the
+pipeline can cheaply make. So the interpretation quietly substitutes
+for the measurement nobody ran.
+
+**The rule: an entry states what was literally counted, in the units it
+was counted in, and any interpretation stands in its own sentence with
+the word that marks it as one.** "79.8% of missed frames have no
+candidate within 5 um" is a fact. "So the response has vanished" is a
+hypothesis and has to look like one, or the next reader -- who will be
+a different session with no memory of the run -- will cite it as data.
+
+Corollary for reading the log: **when an entry explains WHY a number is
+what it is, check whether that run could have measured the why.** If it
+could not, the explanation is a hypothesis carried forward, and it is
+fair game to test rather than a settled result to build on.
+
+## An argmax is only valid while the stages that shaped the curve are unchanged (2026-09-08)
+
+Three constants on this project were closed by picking the best point
+of a curve, and all three curves were measured in a pipeline that no
+longer exists.
+
+| constant | closed by | what changed underneath | reopened |
+|---|---|---|---|
+| `GAP1_CAP_FRAC` span/gates | `gap2`, `gap3` | the repair budget bound in 24 of 32 datasets | 2026-08-27, `gap4` gained +0.002 at LB |
+| the patch's condition walk | `divgate2` | the per-frame cap refused 27% of proposals | 2026-09-08, `divbench7` -- and it did NOT pay |
+| **`DIV_W = 0.55`** | `ranker-fine`, 12 GT divisions, no gate | **the fork gate now removes 80% of forks** | **2026-09-08, `divbench6`: 0.35 wins, both folds** |
+
+`ranker-fine` was not careless. It measured the curve correctly, said
+in its own words that "0.45-0.65 are all defensible and 0.55 is simply
+the best measured", and picked the argmax. What made the low arms lose
+was over-forking -- which is the one failure mode the fork gate was
+later built to remove. **The verdict was right for the pipeline that
+measured it and wrong for the pipeline that inherited it.**
+
+The rule: **when a stage is ADDED that changes the cost of the failure
+a constant was chosen to avoid, every constant chosen against that
+failure is provisional again.** Write the dependency down at the time
+of the choice -- "0.55 beats 0.20 because 0.20 over-forks" -- so that a
+later reader can grep for what would invalidate it. An argmax with no
+recorded reason is an argmax that cannot be reopened on purpose, only
+by accident.
+
+Cheap and worth doing: when closing a constant, name the mechanism that
+makes the losing arms lose. It costs one sentence and it is what turns
+a table into something a future run can falsify.
 
 ## Find the binding constraint before sweeping anything behind it (2026-08-27)
 

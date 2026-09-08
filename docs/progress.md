@@ -1028,6 +1028,17 @@ one lineage, 155 runs over the 313 cells:
 | 12 | 1 | 12 | 3.8% |
 | 21 | 1 | 21 | 6.7% |
 
+**The run lengths are in REAL consecutive frames** -- checked when the user
+asked "这个标注是隔几帧有一个？", which is the question that would have voided
+this whole column. gtpeak ran at `COMP_STRIDE = 1`, and the GT itself is
+annotated on EVERY frame of its own range: 23 of the 24 measured movies have
+zero missing frames, the single exception being `44b6_87bba6c4`, which has no
+annotated cell at t=2. Several movies annotate only a sub-range (`3abfe10a`
+t=18-99, `0b24845f` 11-50, `33b596bf` 21-70, `c15fded2` 21-74, `e29f0176`
+30-80, `0db75fae` 0-88), which shortens what a run CAN be but does not stretch
+a frame. What is sparse in this data is SPACE, not time: 9.71% of 6bba's cells
+and 0.77% of 44b6's carry an annotation at all.
+
 **Only 99 cells (31.6%) are one-frame holes.** At `GAP_SPAN = 1` a bridge
 can only ever reach those; 68% are holes of two or more frames, longest 21.
 So "use gap_close to pick up the shoulder cells" has a hard ceiling of
@@ -1213,6 +1224,35 @@ stack -- which is the open question there, since "physically half outside the
 volume" and "the UNet degrades at its own z border" produce identical tables
 and only the second is fixable. On `44b6_a2bb48bb` the first sweep puts the
 missed cell at z=52 of 63.
+
+**v4 (2026-09-08): STOP DROPPING MARKERS -- the same bug a third time.** The
+user, on v3: "我是说你那个视频上的蓝圈… 这个标注是隔几帧有一个？". v3 drew a
+circle only while the cell was within one voxel of the displayed plane, so on
+a 64-plane sweep each cell was visible for about three planes and the circles
+blinked: 11 of 64 planes carried any blue at all on `44b6_a2bb48bb`, 17 of 64
+on `6bba_3a1849c2`. That is v1's bug in a different coat -- **a marker that
+vanishes cannot tell you whether the CELL left or the RENDERER did**, and both
+times the viewer read it as "the data is sparse".
+
+v4 draws EVERY marker and encodes distance from the displayed plane instead:
+alpha `clip(1 - |dz|/10, 0.16, 1)`, line width in three steps, solid within
+1.5 voxels and dashed beyond, marker size shrinking slightly with depth. The
+red miss marker follows the same rule, so it can be tracked across the whole
+sweep rather than appearing for three planes. Offered the alternative of
+simply widening the tolerance to +-2-3 planes; the user chose the encoding:
+"第二个吧，连贯一点其实我也能看出来细胞下去了又或者暗掉了".
+
+`tools/test_shoulderviz_depth.py` renders one synthetic frame through the
+kernel's own drawing code and asserts the thing an eye cannot check quickly:
+that all five markers reach the canvas (v3 would draw two), that alpha is
+monotone in |dz| and floored above zero, and that matplotlib honours per-point
+`linewidths` and RGBA `edgecolors` alongside a per-collection `linestyle` --
+which is not obvious and would have failed silently into a uniform style.
+
+**The other half of the answer is not a rendering choice at all**: GT annotates
+a median 9.71% of 6bba's cells and 0.77% of 44b6's, so a 44b6 crop showing
+fifty nuclei may legitimately carry one circle. In TIME the annotation is
+dense -- every frame, in 23 of the 24 measured movies.
 
 **Follow-up already pushed**: `shoulderfeat` (CPU, geffs only, no
 images) puts numbers on what the eyes suggested -- depth in z, time,

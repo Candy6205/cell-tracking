@@ -148,6 +148,13 @@ inference 94.2 s/dataset -> **~5.2 h for the ~199-volume hidden test**.
 Roughly 2.3x budget spare — enough for TTA or a wider candidate search.
 Corroborated by forum reports (visible->submission runtime ratio 40-50x).
 
+Update, the user 2026-09-02: the latest shipped pipeline (F4, ref
+55889500 family) takes **about 6 h** on the hidden test, and that figure
+is already generous -- it will not run over. So the spare against the
+12 h limit is ~6 h. For scale: watershed masks on the heatmap cost
+~80 s per 100-frame movie (`biohub-zh-masks`, 41 crops in 54 min GPU),
+i.e. ~4.4 h for 199 volumes -- it would fit, with ~1.5 h to spare.
+
 Residual risk: the notebook falls back to greedy if `pyscipopt` fails to
 import; the warning only appears in the rescore log. Confirm ILP ran before
 reading a score as the ILP number.

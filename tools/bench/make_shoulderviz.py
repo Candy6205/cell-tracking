@@ -26,10 +26,22 @@ otherwise, and it PRINTS which:
   <name>_zsweep<k>    the same crop at the miss frame, ONE z plane at a time
                       from the top of the stack to the bottom
 
-Only cells inside the displayed slab are circled -- v1 circled every GT node
-of the frame onto a slab fixed at Z//2, so cells at other depths appeared as
-rings on black and the user could not tell where anything was. That was a
-rendering bug, not a fact about the data.
+MARKERS ARE NEVER DROPPED, and that took three tries. v1 circled every GT node
+of the frame onto a slab pinned at Z//2, so cells at other depths drew rings
+on empty space -- "I cannot tell where the cells are". v3 fixed that by hiding
+anything more than one voxel off-plane, which is the same bug in a different
+coat: a marker that vanishes cannot tell you whether the CELL left or the
+RENDERER did. v4 draws every marker and puts the distance from the displayed
+plane into alpha, line width and dash, so a cell can be followed continuously
+as it leaves the slab. The user, 2026-09-08: "连贯一点其实我也能看出来细胞下去
+了又或者暗掉了".
+
+A second reason the blue circles look sparse is NOT a rendering choice and
+cannot be fixed: GT annotates a median 9.71% of 6bba's cells and 0.77% of
+44b6's, so a 44b6 crop holding fifty visible nuclei may carry one circle.
+In TIME the annotation is dense -- 23 of the 24 measured movies have GT on
+every frame of their range, the exception being 44b6_87bba6c4 which is
+missing t=2.
 
 The z sweep is v3 and it exists because of shoulderfeat: in 17 of 18 movies
 the shoulder cells sit nearer a z EDGE than that movie's own cells (sign test
@@ -60,7 +72,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt                              # noqa: E402
 import imageio.v2 as imageio                                 # noqa: E402
 
-SCRIPT_VERSION = "2026-09-08c-shoulderviz"
+SCRIPT_VERSION = "2026-09-08d-shoulderviz"
 print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
 
 CODE_ROOTS = [
@@ -143,16 +155,50 @@ def _lohi(a):
     return float(np.percentile(v, 2.0)), float(np.percentile(v, 99.7))
 
 
-def _frame(ax, m, lo, hi, pts, marks, roi, title):
-    """pts: (n,2) yx of GT in ROI pixels. marks: same, drawn thick red."""
+def _depth_style(dz, rgb, s_in, lw_in):
+    """(size, linewidth, rgba, is_near) for markers |dz| voxels off-plane.
+
+    v3 DROPPED every marker more than one voxel off the displayed plane, so
+    circles blinked in and out and the user could not follow a cell at all --
+    which is the same complaint as v1's, in a different disguise: a marker
+    that vanishes tells you nothing about whether the CELL went away or the
+    RENDERER did. So nothing is dropped any more. Distance from the plane is
+    drawn instead: bright, thick and solid in-plane; fading, thinner and
+    dashed as it goes away, with a floor so it never disappears entirely.
+    The user, 2026-09-08: "连贯一点其实我也能看出来细胞下去了又或者暗掉了".
+    """
+    d = np.abs(np.asarray(dz, float))
+    a = np.clip(1.0 - d / 10.0, 0.16, 1.0)
+    near = d <= 1.5
+    size = s_in * np.clip(1.0 - d / 26.0, 0.55, 1.0)
+    lw = np.where(near, lw_in, np.where(d <= 4.0, lw_in * 0.55, lw_in * 0.34))
+    rgba = np.tile(np.asarray(rgb + (1.0,), float), (len(d), 1))
+    rgba[:, 3] = a
+    return size, lw, rgba, near
+
+
+def _scat(ax, pts, dz, rgb, s_in, lw_in):
+    """Two draws: solid for what is near this plane, dashed for what is not.
+
+    matplotlib carries linestyle per collection, not per point, so the split
+    is the only way to say 'this one is off-plane' with the line itself.
+    """
+    if not len(pts):
+        return
+    size, lw, rgba, near = _depth_style(dz, rgb, s_in, lw_in)
+    for msk, ls in ((near, "solid"), (~near, (0, (2, 2)))):
+        if msk.any():
+            ax.scatter(pts[msk, 1], pts[msk, 0], s=size[msk],
+                       facecolors="none", edgecolors=rgba[msk],
+                       linewidths=lw[msk], linestyle=ls)
+
+
+def _frame(ax, m, lo, hi, pts, pdz, marks, mdz, roi, title):
+    """pts/marks: (n,2) yx in ROI pixels. pdz/mdz: voxels off the plane."""
     ax.clear()
     ax.imshow(m, cmap="gray", vmin=lo, vmax=hi, interpolation="nearest")
-    if len(pts):
-        ax.scatter(pts[:, 1], pts[:, 0], s=90, facecolors="none",
-                   edgecolors="#40c0ff", linewidths=0.8)
-    if len(marks):
-        ax.scatter(marks[:, 1], marks[:, 0], s=260, facecolors="none",
-                   edgecolors="#ff3030", linewidths=2.0)
+    _scat(ax, pts, pdz, (0.25, 0.75, 1.0), 90.0, 1.1)
+    _scat(ax, marks, mdz, (1.0, 0.19, 0.19), 260.0, 2.2)
     ax.set_title(title, fontsize=9, color="w")
     ax.set_axis_off()
 
@@ -187,18 +233,23 @@ def render(name, hits):
     # It is not there IN THIS SLICE. So only in-slab cells are circled, and
     # the title says how many of the frame's GT that is.
     zs0, zs1 = _slab(Z, zc, SLAB)
+    zmid = (zs0 + zs1 - 1) / 2.0
     fig, ax = plt.subplots(figsize=(6.4, 6.4), facecolor="k")
     fr = []
     for t in range(T):
         m = _mip(img, t, zc)
         allg = gbt.get(t, [])
-        g = np.asarray([[y_, x_] for z_, y_, x_ in allg
-                        if zs0 <= z_ < zs1], float)
-        k = np.asarray([[y_, x_] for z_, y_, x_, _a, _b in miss_bt.get(t, [])
-                        if zs0 <= z_ < zs1], float)
-        _frame(ax, m, lo, hi, g.reshape(-1, 2), k.reshape(-1, 2), None,
-               f"{name}  t={t}   z {zs0}-{zs1}   GT in slab {len(g)}/{len(allg)}"
-               f"   shoulder miss {len(k)}")
+        g = np.asarray([[y_, x_] for _z, y_, x_ in allg], float).reshape(-1, 2)
+        gd = np.asarray([z_ - zmid for z_, _y, _x in allg], float)
+        km = miss_bt.get(t, [])
+        k = np.asarray([[y_, x_] for _z, y_, x_, _a, _b in km],
+                       float).reshape(-1, 2)
+        kd = np.asarray([z_ - zmid for z_, _y, _x, _a, _b in km], float)
+        n_in = int((np.abs(gd) <= SLAB / 2.0).sum())
+        _frame(ax, m, lo, hi, g, gd, k, kd, None,
+               f"{name}  t={t}   slab z {zs0}-{zs1} of {Z}   GT {len(g)} "
+               f"({n_in} in slab)   shoulder miss {len(k)}"
+               f"\\nsolid = on this slab, dashed+faint = that many z away")
         fig.canvas.draw()
         fr.append(np.asarray(fig.canvas.buffer_rgba())[..., :3].copy())
     _save(str(OUT / f"{name}_overview"), fr, FPS)
@@ -221,19 +272,24 @@ def render(name, hits):
         clo, chi = _lohi(np.asarray(img[t, :, y0:y1, x0:x1]))
         fig, ax = plt.subplots(figsize=(5.2, 5.2), facecolor="k")
         fr = []
+        zmid2 = (zz0 + zz1 - 1) / 2.0
         for tt in range(max(0, t - ZOOM_DT), min(T, t + ZOOM_DT + 1)):
             m = _mip(img, tt, z_, slab=5, roi=roi)
-            g = np.asarray([[yy - y0, xx - x0] for zq, yy, xx in gbt.get(tt, [])
-                            if y0 <= yy < y1 and x0 <= xx < x1
-                            and zz0 <= zq < zz1], float)
-            mk = np.asarray([[yy - y0, xx - x0]
-                             for zq, yy, xx, _a, _b in miss_bt.get(tt, [])
-                             if y0 <= yy < y1 and x0 <= xx < x1
-                             and zz0 <= zq < zz1], float)
-            _frame(ax, m, clo, chi, g.reshape(-1, 2), mk.reshape(-1, 2), roi,
-                   f"{name} zoom{k}  t={tt}  z {zz0}-{zz1} of {Z}"
+            vis = [(zq, yy, xx) for zq, yy, xx in gbt.get(tt, [])
+                   if y0 <= yy < y1 and x0 <= xx < x1]
+            g = np.asarray([[yy - y0, xx - x0] for _z, yy, xx in vis],
+                           float).reshape(-1, 2)
+            gd = np.asarray([zq - zmid2 for zq, _y, _x in vis], float)
+            vm = [(zq, yy, xx) for zq, yy, xx, _a, _b in miss_bt.get(tt, [])
+                  if y0 <= yy < y1 and x0 <= xx < x1]
+            mk = np.asarray([[yy - y0, xx - x0] for _z, yy, xx in vm],
+                            float).reshape(-1, 2)
+            md = np.asarray([zq - zmid2 for zq, _y, _x in vm], float)
+            _frame(ax, m, clo, chi, g, gd, mk, md, roi,
+                   f"{name} zoom{k}  t={tt}  slab z {zz0}-{zz1} of {Z}"
                    + (f"   <- the miss (h={hg:.3f}, win={hw:.3f})"
-                      if tt == t else ""))
+                      if tt == t else "")
+                   + "\\nsolid = on this slab, dashed+faint = that many z away")
             fig.canvas.draw()
             fr.append(np.asarray(fig.canvas.buffer_rgba())[..., :3].copy())
         _save(str(OUT / f"{name}_zoom{k}"), fr, 3)
@@ -247,17 +303,22 @@ def render(name, hits):
         # growing when the planes run out.
         fig, ax = plt.subplots(figsize=(5.2, 5.2), facecolor="k")
         fr = []
+        vis = [(zc2, yy, xx) for zc2, yy, xx in gbt.get(t, [])
+               if y0 <= yy < y1 and x0 <= xx < x1]
+        gxy = np.asarray([[yy - y0, xx - x0] for _z, yy, xx in vis],
+                         float).reshape(-1, 2)
+        gz = np.asarray([zc2 for zc2, _y, _x in vis], float)
+        mxy = np.asarray([[y_ - y0, x_ - x0]], float)
         for zq in range(Z):
             m = np.asarray(img[t, zq, y0:y1, x0:x1])
-            g = np.asarray([[yy - y0, xx - x0] for zc2, yy, xx in gbt.get(t, [])
-                            if y0 <= yy < y1 and x0 <= xx < x1
-                            and abs(zc2 - zq) <= 1], float)
-            mk = (np.asarray([[y_ - y0, x_ - x0]], float)
-                  if abs(z_ - zq) <= 1 else np.zeros((0, 2)))
-            _frame(ax, m, clo, chi, g.reshape(-1, 2), mk.reshape(-1, 2), roi,
-                   f"{name} zsweep{k}  t={t}  z={zq}/{Z - 1}"
-                   + (f"   <- the missed cell is HERE (z={z_:.1f})"
-                      if abs(z_ - zq) <= 1 else ""))
+            _frame(ax, m, clo, chi, gxy, gz - zq, mxy,
+                   np.asarray([z_ - zq], float), roi,
+                   f"{name} zsweep{k}  t={t}  z={zq}/{Z - 1}   "
+                   f"the missed cell is at z={z_:.1f}"
+                   + ("   <- HERE" if abs(z_ - zq) <= 1.5 else
+                      f" ({z_ - zq:+.0f})")
+                   + f"\\n{len(gxy)} annotated cells here; solid = this "
+                     f"plane, faint dashed = that many z off")
             fig.canvas.draw()
             fr.append(np.asarray(fig.canvas.buffer_rgba())[..., :3].copy())
         _save(str(OUT / f"{name}_zsweep{k}"), fr, 5)
