@@ -681,7 +681,8 @@ for k, (arm, name) in enumerate(jobs, 1):
          skipped_time=skipped_time, datasets=counts), indent=1))
 
 written = sorted(OUT.glob("edgeprob_*.npz"))
-n_f4 = sum(1 for p in written if p.name.startswith("edgeprob_F4_"))
+n_f4 = sum(1 for p in written
+           if p.name.startswith("edgeprob_F4hp_"))
 n_base = len(written) - n_f4
 n_done = len(written)
 total_mb = sum(p.stat().st_size for p in written) / 2 ** 20

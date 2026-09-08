@@ -122,6 +122,22 @@ rep('''if complete:
 if complete and not NPF_BAD:
     print(f"EPHPCACHE OK ({n_f4} F4hp of {len(jobs)})",
           flush=True)''')
+# The label is `F4hp_`, so the file is `edgeprob_F4hp_<name>.npz`, which does
+# NOT start with `edgeprob_F4_`. Left alone, n_f4 comes out 0, all 24 outputs
+# are miscounted as base, and `complete` is False -- so the run of
+# 2026-09-08, which cached all 24 and passed n_per_frame 24/24 exactly,
+# signed off with
+#
+#     24 cached (24 base + 0 F4), 20.4 MB, 912s
+#     EPHPCACHE INCOMPLETE (24 base + 0 F4 of 24; 0 failed, 0 not attempted)
+#
+# That final line is a FALSE NEGATIVE and the cached outputs are good; this
+# fix is for the next run, not a reason to repeat that one. Same bug was
+# found and fixed in make_ep2hpcache.py.
+rep('''n_f4 = sum(1 for p in written if p.name.startswith("edgeprob_F4_"))''',
+    '''n_f4 = sum(1 for p in written
+           if p.name.startswith("edgeprob_F4hp_"))''')
+
 rep('EDGEPROB INCOMPLETE', 'EPHPCACHE INCOMPLETE')
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
