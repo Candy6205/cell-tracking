@@ -89,12 +89,24 @@ def load(p):
 
 
 def agg(rows):
-    """The bench's own weighting: edge counts, not a mean of per-movie J.
+    """`tracking_cellmot.metrics.summarise`, reimplemented from its source.
 
-    `_with_ratio` sums the edge TP/FP/FN across datasets and divides once,
-    so one large movie counts more than one small one. A plain mean of the
-    per-movie scores answers a different question and would not compare to
-    any recorded number.
+    TWO DIFFERENT aggregations, and mixing them up costs 0.0007 on the
+    anchor -- which is how the first draft of this file was caught:
+
+      * `edge_jaccard` and `division_jaccard` are MICRO-averaged: sum the
+        TP/FP/FN across datasets, divide once. One large movie counts more
+        than one small one.
+      * `adj_edge_jaccard` is NOT `edge_J * (1 - 0.1 * node_ratio)` on the
+        aggregate. The node penalty is applied PER SAMPLE, and the
+        per-sample adjusted values are weight-averaged by
+        `w_i = tp_i + fp_i + fn_i`. Recomputing it from an edge-weighted
+        mean node ratio reads 0.9126 where divbench9 records 0.9133 --
+        close enough to look right, wrong enough to swamp a delta of the
+        size this comparison exists to measure.
+
+    `score = adj_edge_jaccard + 0.1 * division_jaccard`. NaN rows drop out
+    of the adjusted average only, exactly as summarise does.
     """
     tp = sum(r["edge_tp"] for r in rows)
     fp = sum(r["edge_fp"] for r in rows)
@@ -104,13 +116,12 @@ def agg(rows):
     dfn = sum(r.get("division_fn", 0.0) for r in rows)
     ej = tp / max(1.0, tp + fp + fn)
     dj = dtp / max(1.0, dtp + dfp + dfn)
-    w = [r["edge_tp"] + r["edge_fp"] + r["edge_fn"] for r in rows]
+    adj_rows = [r for r in rows
+                if r["adj_edge_jaccard"] == r["adj_edge_jaccard"]]
+    w = [r["edge_tp"] + r["edge_fp"] + r["edge_fn"] for r in adj_rows]
     tw = sum(w)
-    good = [(r, wi) for r, wi in zip(rows, w)
-            if r.get("total_node_ratio") == r.get("total_node_ratio")]
-    ratio = (sum(r["total_node_ratio"] * wi for r, wi in good) / tw
-             if tw and good else float("nan"))
-    adj = ej * max(0.0, 1.0 - 0.1 * ratio) if ratio == ratio else ej
+    adj = (sum(wi * r["adj_edge_jaccard"] for wi, r in zip(w, adj_rows)) / tw
+           if tw > 0 else float("nan"))
     return dict(edge_jaccard=ej, adj=adj, div=dj, score=adj + 0.1 * dj)
 
 
@@ -126,26 +137,73 @@ for n in names:
     assert A[n]["_fold"] == B[n]["_fold"], f"{n}: folds differ between runs"
 
 print("\n=== 1. the F4 arm against divbench9's recorded aggregate ===")
+_all = agg(list(A.values()))
+print(f"  F4 over its own {len(A)} rows: edge_J {_all['edge_jaccard']:.4f}  "
+      f"adj_J {_all['adj']:.4f}  div_J {_all['div']:.4f}  "
+      f"score {_all['score']:.4f}")
+print( "  divbench9 REF over the 128:   edge_J 0.9104  adj_J 0.9133  "
+       "div_J 0.1337  score 0.9266")
+_want = dict(edge_jaccard=0.9104, adj=0.9133, div=0.1337, score=0.9266)
+if len(A) == 128:
+    _off = {k: round(_all[k] - v, 4) for k, v in _want.items()
+            if abs(_all[k] - v) >= 5e-5}
+    print("  ANCHOR EXACT" if not _off else
+          f"  !! ANCHOR DRIFT {_off} -- the harness moved, so nothing below "
+          f"is about hpara")
+else:
+    print(f"  (control has {len(A)} rows, not 128 -- anchor not checkable)")
 aF4 = agg([A[n] for n in names if n.startswith("6bba")])
-print(f"  F4-6bba adj_J {aF4['adj']:.4f}   (divbench9 +BIDIR F4-6bba 0.9261;"
-      f" a drift here means the harness moved, not hpara)")
+print(f"  paired 6bba subset adj_J {aF4['adj']:.4f}")
 
-print("\n=== 2. per-movie, F4HP minus F4 ===")
+# WHICH MOVIES ACTUALLY CHANGED. `hparabench` scores all 128 6bba movies
+# (SIX = every 6bba_ in ALL_TRAIN) but the hpara caches cover only the 24
+# EVALUATION movies, of which just 12 are 6bba -- the other 12 are 44b6 and
+# never enter this CSV. So ~116 of 128 rows are identical between the arms
+# BY CONSTRUCTION. They do not bias the paired delta, but they dilute the
+# aggregate by roughly 10x and they are not what the question is about, so
+# everything below is reported BOTH ways.
+_cols = [k for k in A[names[0]] if k != "_fold"]
+
+
+def _same(a, b):
+    for k in _cols:
+        x, y = a[k], b[k]
+        if x != x and y != y:          # both NaN: not a difference
+            continue
+        if x != y:
+            return False
+    return True
+
+
+CHANGED = [n for n in names if not _same(A[n], B[n])]
+print(f"\n  movies whose rows DIFFER between the arms: {len(CHANGED)} of "
+      f"{len(names)}" + (f"\n    {CHANGED}" if 0 < len(CHANGED) <= 14 else ""))
+if not CHANGED:
+    raise SystemExit(
+        "the two arms are identical on every paired movie -- the F4HP run "
+        "did not pick up the hpara caches. A table of zeros would read as a "
+        "null RESULT when what happened is a null RUN.")
+
+print("\n=== 2. per-movie, F4HP minus F4 (only the rows that differ) ===")
 print(f"  {'movie':<16} {'fold':>4} {'F4 score':>9} {'F4HP':>9} {'delta':>9}")
 d_one = {}
 for n in names:
     sa = agg([A[n]])["score"]
     sb = agg([B[n]])["score"]
     d_one[n] = sb - sa
-    print(f"  {n:<16} {A[n]['_fold']:>4} {sa:>9.4f} {sb:>9.4f} "
-          f"{sb - sa:>+9.4f}")
-up = sum(1 for v in d_one.values() if v > 0)
-dn = sum(1 for v in d_one.values() if v < 0)
-print(f"  up {up}, down {dn}, flat {len(names) - up - dn}"
+    if n in CHANGED:
+        print(f"  {n:<16} {A[n]['_fold']:>4} {sa:>9.4f} {sb:>9.4f} "
+              f"{sb - sa:>+9.4f}")
+up = sum(1 for n in CHANGED if d_one[n] > 0)
+dn = sum(1 for n in CHANGED if d_one[n] < 0)
+print(f"  up {up}, down {dn}, flat {len(CHANGED) - up - dn} of the "
+      f"{len(CHANGED)} that changed"
       f"   (sign test p = {2 * sum(math.comb(up + dn, k) for k in range(min(up, dn) + 1)) / 2 ** (up + dn):.4f})"
-      if up + dn else "  all flat")
+      if up + dn else "  every changed movie is flat on SCORE")
 
 print("\n=== 3. aggregates ===")
+print(f"  -- all {len(names)} paired movies: the PIPELINE-level number, what "
+      f"swapping hpara in where it is available does to the 6bba bench --")
 for lab, R in (("F4  (refine)", A), ("F4HP (hpara)", B)):
     a = agg([R[n] for n in names])
     print(f"  {lab:<14} edge_J {a['edge_jaccard']:.4f}  adj_J {a['adj']:.4f}  "
@@ -156,6 +214,21 @@ print(f"  {'delta':<14} edge_J {dB['edge_jaccard'] - dA['edge_jaccard']:+.4f}  "
       f"div_J {dB['div'] - dA['div']:+.4f}  "
       f"score {dB['score'] - dA['score']:+.4f}")
 
+
+print(f"\n  -- the {len(CHANGED)} movies hpara actually touched: does the "
+      f"placement help WHERE APPLIED --")
+for lab, R in (("F4  (refine)", A), ("F4HP (hpara)", B)):
+    a = agg([R[n] for n in CHANGED])
+    print(f"  {lab:<14} edge_J {a['edge_jaccard']:.4f}  adj_J {a['adj']:.4f}  "
+          f"div_J {a['div']:.4f}  score {a['score']:.4f}")
+_cA, _cB = agg([A[n] for n in CHANGED]), agg([B[n] for n in CHANGED])
+print(f"  {'delta':<14} edge_J {_cB['edge_jaccard'] - _cA['edge_jaccard']:+.4f}  "
+      f"adj_J {_cB['adj'] - _cA['adj']:+.4f}  "
+      f"div_J {_cB['div'] - _cA['div']:+.4f}  "
+      f"score {_cB['score'] - _cA['score']:+.4f}")
+print(f"\n  NOTE: the 44b6 half of the hpara caches (12 movies) is NOT in this\n"
+      f"  CSV -- `SIX` is 6bba only. Read 44b6 off the run's own aggregate in\n"
+      f"  the kernel log; there is no per-movie pairing for it here.")
 print(f"\n=== 4. PAIRED bootstrap over movies, {NDRAW} draws, same resample "
       f"for both arms ===")
 rng = np.random.default_rng(SEED)
@@ -175,7 +248,8 @@ def boot(sub):
 
 print(f"  {'group':<18} {'n':>3} {'mean d score':>13} {'90% interval':>22}  "
       f"excludes 0")
-groups = [("all", names),
+groups = [("all paired", names),
+          ("CHANGED only", CHANGED),
           ("6bba", [n for n in names if n.startswith("6bba")]),
           ("44b6", [n for n in names if n.startswith("44b6")]),
           ("fold 0", [n for n in names if A[n]["_fold"] == 0]),
