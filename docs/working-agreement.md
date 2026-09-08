@@ -202,6 +202,55 @@ The tell that you have done it again: the viewer proposes a mechanism for
 what they are seeing ("被z轴叠掉了", "标注是隔几帧一个") and the mechanism
 is about your tool rather than about the biology. Check the tool first.
 
+## When you CUT a kernel, re-read its completion block first (2026-09-09)
+
+Three false `INCOMPLETE`s in two days, all from the same cause and all on
+runs whose outputs were correct:
+
+| kernel | printed | actually |
+|---|---|---|
+| `ephpcache` (2026-09-08) | `EPHPCACHE INCOMPLETE ... NOT OK` | 24/24 cached, n_per_frame 24/24 exact |
+| `ep2hpcache` v1 | would have, same bug | — |
+| `ephpcache` (2026-09-09) | `EPHPCACHE INCOMPLETE ... NOT OK` | 140/140 cached, 0 real mismatches |
+
+The cause every time: **the completion and verification block was written
+for the ORIGINAL script's scope, and the cut changed the scope.** The three
+concrete forms:
+
+1. **A hard-coded label prefix.** `n_f4` counted files starting
+   `edgeprob_F4_`, but the cut renamed the label to `F4hp_`, so it counted
+   zero and called every output "base".
+2. **An arm that no longer exists.** `complete` required
+   `n_base == len(names)` -- 199 outputs a version with the base pass
+   removed never sets out to write.
+3. **A baseline that only covers the old scope.** The n_per_frame check
+   compares against shipped caches that exist for 24 movies; widening the
+   run to 140 made 116 movies uncheckable, and the no-baseline branch was
+   appending to the MISMATCH list.
+
+**The rule: a cut kernel's tail is not inherited, it is rewritten.** Before
+pushing a script cut from another, read its completion block and answer
+three questions in order:
+
+- what does it COUNT, and does the count's prefix/label still exist here?
+- what does it require to be COMPLETE, and does every arm in that
+  requirement still run?
+- what does it CHECK against, and does that baseline cover the new scope --
+  or is "no baseline" now an expected state that must be reported
+  separately from a failure?
+
+**Why this is worth a rule rather than three fixes.** The failure is
+asymmetric and expensive in the wrong direction: it never reports success on
+a broken run, only failure on a working one. That is the safe direction, but
+it costs a full re-read of the log every time to establish that the run was
+fine, and twice it nearly cost a re-run of an hour or more of GPU. And it
+scales with the practice this project relies on most -- almost every kernel
+here is cut from another.
+
+The corollary is already in this file under *Anything you omit will be read
+as a negative*: **a check that cannot run must say so as its own category,
+never as a failure.**
+
 ## An experiment kills a CLAIM, not a direction (2026-08-30)
 
 The user's standing correction, in their words: "从来没有真的死了的路，
