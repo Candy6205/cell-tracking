@@ -441,7 +441,7 @@ assert not missing, f"F4 datasets outside the base list: {missing}"
 
 # One job per (arm, dataset): the base pass first, then the F4 pass.
 jobs = [("F4", n) for n in names_f4]      # base dropped, see above
-assert len(jobs) == len(names_f4) == 24, (len(jobs), len(names_f4))
+assert len(jobs) == len(names_f4) >= 128, (len(jobs), len(names_f4))
 print(f"jobs: 0 base (dropped) + {len(names_f4)} F4hp = {len(jobs)}",
       flush=True)
 
