@@ -34,7 +34,19 @@ crops would shift by up to 0.8 um if it were re-run; it is NOT re-run here.
 So this arm measures what better COORDINATES do to the ranker, the ILP and
 the patches, with the head held at its refine-based value. It also forgoes
 hpara's +0.0008 recall, which came from NMS acting on better coordinates.
-Both approximations make the arm conservative.
+
+AND A THIRD, discovered when the control run demanded the 116 + 59 pool
+caches: **this bench RETRAINS the +BIDIR ranker in-run on the 175-movie
+pool**, whose fdet_F4_ caches are not re-cached here -- re-caching all 187
+movies is about four GPU hours against 35 minutes for the 24. So the ranker
+is trained on REFINE coordinates and applied to HPARA ones. That is a genuine
+train/test mismatch, and it is also exactly the practical question ("can the
+placement be swapped in without retraining anything?"). A positive result is
+therefore trustworthy and a negative one is NOT decisive: it would leave open
+that a ranker trained on hpara coordinates does better, which costs the four
+hours to settle.
+
+All three approximations push the same way: they make the arm conservative.
 
 OUTPUT: hparabench_<DET_SRC>.csv, one row per movie with the per-sample
 metrics, so the two runs can be paired offline (24 movies, same order, same

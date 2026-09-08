@@ -18,7 +18,11 @@
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
     "faustine649/biohub-poolsize",
-    "faustine649/biohub-fusecache"
+    "faustine649/biohub-fusecache",
+    "faustine649/biohub-fuse6bba",
+    "faustine649/biohub-fuse44b6",
+    "faustine649/biohub-ep6bba",
+    "faustine649/biohub-ep44b6"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
