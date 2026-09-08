@@ -1347,7 +1347,10 @@ def _npz_prefix(prefix):
 # Dataset names begin with their domain tag (6bba_, 44b6_, ...), never
 # "F4_", so the prefix split below is unambiguous.
 _EP_ALL = _walk_files(_npz_prefix("edgeprob_"))
-EDGEPROB = {k: v for k, v in _EP_ALL.items() if not k.startswith("F4_")}
+EDGEPROB = {k: v for k, v in _EP_ALL.items()
+            if not k.startswith("F4_") and not k.startswith("F4hp_")}
+EDGEPROB_F4HP = {k[len("F4hp_"):]: v for k, v in _EP_ALL.items()
+                 if k.startswith("F4hp_")}
 EDGEPROB_F4 = {k[len("F4_"):]: v for k, v in _EP_ALL.items()
                if k.startswith("F4_")}
 del _EP_ALL
@@ -1387,7 +1390,10 @@ if not COUNTS.get("reverse", False):
 
 # ---- the SECOND head's probabilities: biohub-edgeprob2 v1's output ------
 _EP2_ALL = _walk_files(_npz_prefix("edgeprob2_"))
-EDGEPROB2 = {k: v for k, v in _EP2_ALL.items() if not k.startswith("F4_")}
+EDGEPROB2 = {k: v for k, v in _EP2_ALL.items()
+             if not k.startswith("F4_") and not k.startswith("F4hp_")}
+EDGEPROB2_F4HP = {k[len("F4hp_"):]: v for k, v in _EP2_ALL.items()
+                  if k.startswith("F4hp_")}
 EDGEPROB2_F4 = {k[len("F4_"):]: v for k, v in _EP2_ALL.items()
                 if k.startswith("F4_")}
 del _EP2_ALL
@@ -1589,6 +1595,19 @@ PKL_NAME = {"+BIDIR": "edge_ranker_ep175v3_bidir.pkl",
 GROUPS = (("6bba", HOLDOUT_6BBA), ("44b6", SET_44B6))
 DET_ARMS = ["F4"] + (["BASE"] if SCORE_BASE_ARM else [])
 DOMAINS = [f"{a}-{g}" for a in DET_ARMS for g, _ in GROUPS]
+if DET_SRC == "F4HP":
+    for _nm, _base, _hp in (("edgeprob", EDGEPROB_F4, EDGEPROB_F4HP),
+                            ("edgeprob2", EDGEPROB2_F4, EDGEPROB2_F4HP)):
+        _ov = sorted(set(_base) & set(_hp))
+        assert len(_ov) == 24, (
+            f"{_nm}: {len(_ov)} of 24 eval movies have an F4hp cache -- "
+            f"attach biohub-ephpcache and biohub-ep2hpcache. Running "
+            f"without them scores hpara COORDINATES against a head that "
+            f"read the refine ones, and the (t,i,j) join fails outright.")
+        _base.update(_hp)
+        print(f"  {_nm}: {len(_ov)} eval entries switched to the hpara head",
+              flush=True)
+
 EP_OF = {"BASE": EDGEPROB, "F4": EDGEPROB_F4}
 EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}
 

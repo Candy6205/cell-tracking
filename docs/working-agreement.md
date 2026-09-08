@@ -86,9 +86,22 @@ wrong if it does not read that file first:
    therefore needs the pool's caches too. The real list also turned out
    to include two sources nobody would guess (`biohub-zh-detect`,
    `biohub-edgeprob-rank2`) and to exclude two that seemed obviously
-   required (`fuse44b6`, `ep44b6`). **`kernel_sources` appears to cap at
-   10**, so a new source means dropping an old one — another reason to
-   start from the exact list rather than a plausible one.
+   required (`fuse44b6`, `ep44b6`).
+
+   Two things about `kernel_sources`, the second learned by getting the
+   first wrong: there is **no cap at 10** (12 pushed fine; divbench9
+   simply happened to use 10), but **a kernel can only be a source once
+   it has completed a run and has output**. Pushing a chain of kernels
+   means pushing and WAITING for each one before the next can name it —
+   the push does not fail, it prints
+
+   ```
+   The following are not valid kernel sources and could not be added
+   to the kernel: ['faustine649/biohub-<not-yet-run>']
+   ```
+
+   and then succeeds *without that source*, so the run starts and dies
+   later on a missing file. Read that line; it scrolls past easily.
 5. **Reading a bench kernel's log is slow**, because `kernels output`
    downloads the whole working directory and these kernels leave a
    cloned repo and a wheelhouse in it; the `.log` arrives LAST. Budget

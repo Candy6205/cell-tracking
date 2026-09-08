@@ -1,14 +1,33 @@
 {
-  "id": "faustine649/biohub-nanwhere",
-  "title": "Biohub nanwhere",
-  "code_file": "nanwhere.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
   "enable_gpu": false,
-  "enable_internet": false,
-  "dataset_sources": ["faustine649/cell-tracking"],
-  "kernel_sources": [],
-  "competition_sources": ["biohub-cell-tracking-during-development"],
-  "model_sources": []
+  "enable_internet": true,
+  "dataset_sources": [
+    "pilkwang/biohub-tracking-support-pack-50ep-v1",
+    "faustine649/biohub-dctrain-175-weights",
+    "faustine649/cell-tracking"
+  ],
+  "competition_sources": [
+    "biohub-cell-tracking-during-development"
+  ],
+  "model_sources": [],
+  "id": "faustine649/biohub-hparabench",
+  "title": "Biohub hparabench",
+  "code_file": "hparabench.py",
+  "kernel_sources": [
+    "faustine649/biohub-edge-ranker",
+    "faustine649/biohub-cache-train",
+    "faustine649/biohub-poolsize",
+    "faustine649/biohub-fusecache",
+    "faustine649/biohub-edgeprob",
+    "faustine649/biohub-edgeprob2",
+    "faustine649/biohub-edgeprob-rank2",
+    "faustine649/biohub-fuse6bba",
+    "faustine649/biohub-ep6bba",
+    "faustine649/biohub-hparacache",
+    "faustine649/biohub-ephpcache",
+    "faustine649/biohub-ep2hpcache"
+  ]
 }

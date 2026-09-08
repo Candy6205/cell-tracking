@@ -109,6 +109,47 @@ if DET_SRC == "F4HP":
         f"a mismatch here would silently score some eval movies on refine "
         f"coordinates and call it the hpara arm")''')
 
+# ---- and the two heads, overridden the same way ---------------------------
+rep('''EP_OF = {"BASE": EDGEPROB, "F4": EDGEPROB_F4}
+EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}''',
+    '''if DET_SRC == "F4HP":
+    for _nm, _base, _hp in (("edgeprob", EDGEPROB_F4, EDGEPROB_F4HP),
+                            ("edgeprob2", EDGEPROB2_F4, EDGEPROB2_F4HP)):
+        _ov = sorted(set(_base) & set(_hp))
+        assert len(_ov) == 24, (
+            f"{_nm}: {len(_ov)} of 24 eval movies have an F4hp cache -- "
+            f"attach biohub-ephpcache and biohub-ep2hpcache. Running "
+            f"without them scores hpara COORDINATES against a head that "
+            f"read the refine ones, and the (t,i,j) join fails outright.")
+        _base.update(_hp)
+        print(f"  {_nm}: {len(_ov)} eval entries switched to the hpara head",
+              flush=True)
+
+EP_OF = {"BASE": EDGEPROB, "F4": EDGEPROB_F4}
+EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}''')
+
+# ---- both heads must follow the coordinates -------------------------------
+# The harness joins each head's cached rows to its candidate pairs by
+# (t, i, j), and the pairs are GATED ON DISTANCE (GATE_UM = 10.0). hpara moves
+# every point by a median 0.43 um, so pairs cross that line in both directions
+# and the cached pair set is not the harness's. v2 died on
+# "44b6_0b24845f t=0: 40 of 990 harness pairs have no edgeprob row".
+# ephpcache / ep2hpcache re-run BOTH heads on the hpara primaries; doing only
+# the first would move the failure one line down, since both go through
+# `_load_head`. This also REMOVES the "head frozen at its refine value"
+# approximation the original design carried.
+rep('''EDGEPROB = {k: v for k, v in _EP_ALL.items() if not k.startswith("F4_")}''',
+    '''EDGEPROB = {k: v for k, v in _EP_ALL.items()
+            if not k.startswith("F4_") and not k.startswith("F4hp_")}
+EDGEPROB_F4HP = {k[len("F4hp_"):]: v for k, v in _EP_ALL.items()
+                 if k.startswith("F4hp_")}''')
+
+rep('''EDGEPROB2 = {k: v for k, v in _EP2_ALL.items() if not k.startswith("F4_")}''',
+    '''EDGEPROB2 = {k: v for k, v in _EP2_ALL.items()
+             if not k.startswith("F4_") and not k.startswith("F4hp_")}
+EDGEPROB2_F4HP = {k[len("F4hp_"):]: v for k, v in _EP2_ALL.items()
+                  if k.startswith("F4hp_")}''')
+
 # ---- the anchors move on purpose in the HP run ----------------------------
 rep('''ANCHOR_TOL = 0.0005''',
     '''if DET_SRC == "F4HP":
