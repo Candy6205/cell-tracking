@@ -961,7 +961,16 @@ plus a label-shuffle control) rather than a local number.
 Two lines opened out of refinecmp and shoulderfeat, on the user's ordering:
 "那个hpara换成流水线臂可以先做，因为z边缘那个岔路我没有听懂".
 
-**1. `hparacache` (GPU, ~35 min) + `hparabench` / `hparabench_ref` (CPU).**
+**`hparacache` LANDED (2026-09-08, 35.9 min T4): the anchor is perfect.**
+24 of 24 movies, **every frame of every movie reproduced the shipped
+`fdet_F4_` cache exactly** -- so the heatmap pass is bit-identical and the
+only thing that differs between the arms is where the detection was put. The
+hpara displacement is |hpara - refine| p50 **0.43 um**, p90 0.75, max ~1.34,
+uniform across all 24 movies (per-movie p50 spans 0.427-0.488). That is well
+inside both the 4.0 um NMS radius and the 7 um match radius, which is why
+holding NMS on the refine coordinates costs so little.
+
+**1. `hparacache` (GPU, 35.9 min) + `hparabench` / `hparabench_ref` (CPU).**
 `fdet_F4_<name>.npz` stores only final coordinates and scores, so `hpara`
 -- which needs the heatmap -- cannot be recomputed from it. Only the 24 bench
 movies are re-cached, at fuse6bba's 82 s/movie.
