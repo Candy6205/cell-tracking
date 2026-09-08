@@ -1364,7 +1364,7 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
-### ⭐⭐⭐⭐ divradius (2026-09-09, 30 s of laptop CPU, BOTH gate anchors EXACT): the last OPEN row of the public-notebook comparison closes, and the "named, fixable defect" at `DIV_PARENT_UM` 12 vs `GATE_UM` 10 gets a CEILING -- +0.0022 score at perfect play, which is inside this holdout's noise
+### ⭐⭐⭐⭐ divradius + divradius2 (2026-09-09, laptop CPU, BOTH gate anchors EXACT): the last OPEN row of the public-notebook comparison closes -- their parent radius costs −0.0042 score, 90% [−0.0079, −0.0006]. The first pass ALSO produced a free +0.0009 candidate that turned out to be an artifact of freezing the gate, and the "named, fixable defect" at `DIV_PARENT_UM` 12 vs `GATE_UM` 10 gets a ceiling of +0.0022
 
 My own entry a few hours ago claimed all six differences from the public
 0.946 notebook were closed. **That was wrong: the comparison table's own
@@ -1430,32 +1430,92 @@ where a lost TP moves to FN, that is the wrong direction twice over.
 missing.** Suppose the missing features were supplied and the gate then
 played that band perfectly -- every one of the 7 true forks kept, all 9
 surviving false ones cut. That is 46 / 30 / 79, div_J 0.3020, **+0.0215
-div_J = +0.0022 score.** `accdiag` puts this holdout's own noise at
-0.002-0.003. **The whole defect is worth, at perfect play, about one noise
-width** -- so widening the ranker's pair gate to populate fork features
-(distinct from widening it for the LINKER, which `gate-sweep`, `gate2` and
-`zgate` all closed) does not pay for its bench run. The defect is real and
-the record was right to name it; it is just small.
+div_J = +0.0022 score, exactly, on these 128 movies.**
 
-#### `DIV_SISTER_UM` 12.0, recorded as a candidate rather than a change
+⚠ The first draft of this paragraph called that "about one noise width" and
+cited `accdiag` for a floor of 0.002-0.003. **Both halves were wrong.**
+`accdiag` measured no such thing, and there is no floor: eight `random_state`
+values give the identical 46 / 39 / 79, so repeat-run noise here is **zero**.
++0.0022 is a real ceiling, not a number lost in noise. What it is competing
+against is the COST -- a re-cache of the edge head at a wider pair gate for
+128 movies plus a bench run -- for a change whose best possible outcome is
++0.0022 and whose realistic one is a fraction of that, since the gate would
+have to play the band perfectly. That is the reason to defer it, and it is a
+cost argument, not a significance one. (Distinct from widening the gate for
+the LINKER, which `gate-sweep`, `gate2` and `zgate` all closed.)
 
-It is monotone, it costs **zero** true forks at every step down to 12, and
-it is worth +0.0009 score. Why it works is visible in the separation:
+#### ⚠ `DIV_SISTER_UM` 12.0 WAS AN ARTIFACT OF FREEZING THE GATE. It does not survive `divradius2`
+
+The first draft of this entry offered `DIV_SISTER_UM` 15.0 -> 12.0 as a free
++0.0009 score at zero true-fork cost. **It is not free and it is not
++0.0009.** The user, reading this entry: *"你这不还是每个参数分开调"*.
+
+The defect was structural, not arithmetic. `divradius` trained the gate ONCE,
+on the fork population a run at 12.0 / 15.0 produces, and every arm then
+merely FILTERED that population. But the radius changes what the gate should
+be fitted on -- which is precisely how divbench9 handled its `DIV_W` arms
+(*"each gate is trained OUT OF FOLD on that arm's own counted forks -- the arm
+changes the fork population"*). `tools/divradius2.py` retrains per cell:
+
+| `DIV_SISTER_UM` 12.0 | div_J vs shipped | 90% interval |
+|---|---|---|
+| gate FROZEN on the 12.0/15.0 population (the first draft) | **+0.0088** | not computed |
+| gate RETRAINED on the arm's own forks | **−0.0005** | [−0.0116, +0.0102] |
+
+**The whole gain was the frozen gate.** Fewer far-sister forks in training
+changes what the gate learns, and once it is allowed to relearn, the FPs the
+radius was removing come back through the threshold.
+
+#### The cross, which is what should have been run first
+
+Gate retrained in every cell, `div_J`:
+
+| parent \ sister | 15.0 | 13.0 | 12.0 | 11.0 |
+|---|---|---|---|---|
+| **12.0 (SHIPS)** | **0.2805** | 0.2771 | 0.2805 | 0.2622 |
+| 11.0 | 0.2593 | 0.2531 | 0.2437 | 0.2437 |
+| 10.0 | 0.2378 | 0.2378 | 0.2407 | 0.2422 |
+| 9.0 | 0.2390 | 0.2390 | 0.2468 | 0.2357 |
+
+**And there IS an interaction, in the shape the marginals hid.** In the top
+row the sister radius does nothing from 15 down to 12; from the second row
+down every cell has already fallen 0.02-0.04 and the sister column barely
+moves inside it. **The parent cut has already taken the forks the sister cut
+would have taken.** Sweeping sister alone reads "mildly useful", sweeping
+parent alone reads "mildly bad", and only the square shows the parent radius
+dominating both.
+
+Paired bootstrap over the 128 movies, the same resample for every cell, on
+the arms that matter:
+
+| arm | d div_J | 90% interval | d score | P(>0) |
+|---|---|---|---|---|
+| sister 12.0 alone | −0.0005 | [−0.0116, +0.0102] | −0.00005 | 0.425 |
+| parent 11.0 | −0.0214 | [−0.0478, +0.0044] | −0.00214 | 0.086 |
+| parent 10.0 (= `GATE_UM`) | −0.0430 | [−0.0799, −0.0092] | −0.00430 | 0.021 |
+| **theirs, 9.0 / 13.0** | **−0.0417** | **[−0.0790, −0.0056]** | **−0.00417** | **0.029** |
+
+Their parent radius stays rejected, and now with an interval instead of a
+bare point estimate. Everything else here is a null.
+
+**Why the paired form is not optional.** The shipped cell's own ABSOLUTE
+bootstrap spread is div_J [0.2145, 0.3486] -- a width of 0.134, because 128
+movies carry only 125 GT divisions between them. Unpaired, nothing on this
+axis could ever be measured. Paired, the movie draw cancels and the deltas
+above are 0.03-0.08 wide.
+
+**What the separation still says, and it is why the sister cut looked free:**
 
 | | TP p50 | TP p90 | FP p50 | FP p90 |
 |---|---|---|---|---|
 | `d_pq` | 6.10 | 10.73 | 6.00 | 9.79 |
 | `d_s` | 8.88 | **10.43** | 7.12 | **11.17** |
 
-**True daughters are further apart than false pairs, but their spread is
-TIGHTER** -- TP p90 10.43 against FP p90 11.17. A cut at 12 sits above every
-true fork's sister distance and inside the false tail. At 11 it starts
-biting: −3 TP, and by 10 it is −0.0022.
-
-+0.0009 is a third of the noise floor. **It does not justify a submission on
-its own**, and this project's rule is to submit a mechanism, not a local
-number. It is written down here so it can ride along with the next change to
-this stage that has a mechanism of its own.
+True daughters ARE further apart than false pairs while spreading TIGHTER
+(TP p90 10.43 against FP p90 11.17), so a cut at 12 really does sit above
+every true fork and inside the false tail. That much is a fact about the
+data. It is just not worth anything once the gate is allowed to see the
+population it is judging.
 
 #### Two more free nulls off the same table, before anyone spends a run on them
 
@@ -1595,11 +1655,47 @@ worse on **12 of 12** and tta8 on 10 of 12. Movie-level paired bootstrap,
 not rescue it -- tta8 is indistinguishable from tta4, so this is not "not
 enough views".
 
-**THE TESTED CLAIM, narrowly.** With our ranker fixed, D4-averaging the
-U-Net features before the edge head makes the resulting forward, reverse and
-product probabilities LESS able to separate true children from gated
-non-children on 6bba. The ~20 GPU hours to re-cache all three edge-probability
-datasets under TTA are refused on that.
+**THE TESTED CLAIM, narrowly.** D4-averaging the U-Net features before the
+edge head makes the head's own forward, reverse and product probabilities
+LESS able to separate true children from gated non-children on 6bba. **That
+is the whole of what was measured.** The ranker never ran in this
+measurement; the ILP never ran; no graph was scored.
+
+**And "the probabilities got pushed down" is the wrong description of what
+happened.** AUC is invariant to any monotone transform, so a uniform squash
+would leave it EXACTLY unchanged. It moved, which means the ORDER moved:
+Spearman between the noTTA and tta4 columns runs 0.85-0.97 per movie, and
+**10.6% of randomly drawn pairs swap order**. The fall in median `p_fwd` is a
+side effect; the reordering is the event.
+
+⚠ **WHAT DOES NOT FOLLOW, and the first draft of this entry asserted it
+anyway** -- *"the ~20 GPU hours are refused on that"*. The user:
+*"边概率头变了和它不值之间的关联是？"*. There is no measured link. The chain
+would have to be `head AUC down -> the ranker's three probability columns get
+worse -> its edge ordering gets worse -> the ILP picks worse edges -> score
+down`, and **not one of those steps was run.** This project's own
+working-agreement says why that matters: *"An offline AUC is not a score. On
+2026-08-24 edge AUC anti-predicted the pipeline three times running. Measure
+adj_J."*
+
+**What the decision actually rests on**, stated as what it is:
+
+1. Their claimed MECHANISM is "the edge features get better". Here they get
+   worse -- not flat, worse, on 12 of 12 movies with P(>0) = 0.000. So the
+   reason they give for the +0.005 does not reproduce on our features. That
+   part is measured, not inferred.
+2. Everything downstream is a COST argument: ~20 GPU hours to re-cache three
+   edge-probability datasets, against a mechanism whose one measurable
+   precondition already failed.
+
+That is a cost judgement, not a demonstration that TTA would lose score.
+**The honest test is cheap and CPU-only** -- the 36 TTA probability caches
+already exist, and the ranker, ILP and scorer all run on CPU -- but it would
+score only the 12 movies that carry them, and hparabench round 1 showed a
+12-movie score comparison has an interval of about ±0.005. It would very
+likely return "cannot tell". That would be an honest "cannot tell" rather
+than this paragraph's inference, which is the difference worth keeping in
+mind if this line is ever reopened.
 
 **Why it can lose rather than merely fail to help.** TTA is only free when
 the network is equivariant under the transforms being averaged. Averaging
@@ -1719,11 +1815,23 @@ consistent with the leaderboard record for the reverse move (6 -> 4 scored
 broken -- the log shows it proposing 236 components and rescuing 114 of
 them, 503 nodes -- it simply does not pay.
 
-**HOW TO READ SIX ROWS INSIDE ±0.0006.** accdiag put this holdout's own
-noise at 0.002-0.003. Every row here is smaller than that, so the honest
-statement is **"no detectable effect", not "zero"** -- the distinction this
-session got wrong once already, reading an interval that spanned both −0.005
-and +0.0015 as "nothing is broken". What IS established is comparative and
+**HOW TO READ SIX ROWS INSIDE ±0.0006.** ⚠ CORRECTED 2026-09-09, and the
+original text got this backwards. It said "accdiag put this holdout's own
+noise at 0.002-0.003" and used that to call every row here "no detectable
+effect". **`accdiag` never measured any such thing** -- it measured how often
+the acceleration column is computable -- and there IS no noise floor of that
+size, because **this pipeline is deterministic**: eight `random_state` values
+through the gate give the identical 46 / 39 / 79, and the local
+reproduction of divbench3 and divbench8 hits both recorded rows exactly.
+
+Repeat-run noise is **zero**. So `s6r`'s +0.0002 is not "inside the noise",
+it is an exact property of these 128 movies. What a bootstrap interval
+measures is something else entirely -- **whether the SIGN would survive a
+different draw of movies** -- and that is a transfer question, not a
+measurement-error one. Conflating them dismisses real, reproducible
+differences, and it collides with this project's own submission rule: local
+positive + LB positive is a real gain, however small. What IS established is
+comparative and
 survives the noise floor: whatever the radius does, it does the same thing
 at both budgets.
 
