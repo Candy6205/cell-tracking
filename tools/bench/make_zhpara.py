@@ -231,20 +231,24 @@ for name in BOTH:
     apply_config(None, None)
     NGT[name] = int(len(gt_arr))
     done.append(name)
-    # v1 held every crop's GT graph and both prediction graphs for the whole
-    # run. Zebrahub crops reach 50,494 nodes; nine of them was enough to be
-    # killed.
-    del gtg, _r, gt_arr, gt_e, _dd
-    for _d in (pathlib.Path(f"/kaggle/working/ps_zh_{t}")
-               for t, _ in ARM_SRC):
-        for _g in _d.glob("*.geff"):
-            shutil.rmtree(_g, ignore_errors=True)
-    _checkpoint()
     print(f"  [{len(done)}/{len(BOTH)}] {name}: T={T} nodes={sum(n_ref):,} "
           f"gt={len(gt_arr):,} moved p50 {np.percentile(_dd, 50):.3f} um  "
           f"adj_J REF {_adj_of(ZROWS['REF'][name]):.4f} -> HP "
           f"{_adj_of(ZROWS['HP'][name]):.4f}  ({time.time() - t0:.0f}s)",
           flush=True)
+    # THE FREES GO AFTER THE PRINT, which reads gt_arr and _dd. v2 put them
+    # before it and died on the first crop with `NameError: gt_arr` -- 20
+    # minutes of CPU for something no syntax check can catch.
+    #
+    # v1 held every crop's GT graph and both prediction graphs for the whole
+    # run; zebrahub crops reach 50,494 nodes and nine of them was enough to
+    # be OOM-killed. The geff directories go too: they are written under
+    # /kaggle/working and nothing reads them once the metric has run.
+    del gtg, _r, gt_arr, gt_e, _dd, n_ref, n_hp
+    for _tag, _ in ARM_SRC:
+        for _g in pathlib.Path(f"/kaggle/working/ps_zh_{_tag}").glob("*.geff"):
+            shutil.rmtree(_g, ignore_errors=True)
+    _checkpoint()
     gc.collect()
 
 print(f"\n  {len(done)} of {len(BOTH)} crops scored in "
