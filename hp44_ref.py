@@ -2521,7 +2521,23 @@ def walk_lost(name, scores, pfun=None, steal_rows=None):
 # The production ranker on the 12 movies it was held out of. Both arms run
 # byte-identical code; the only difference is which detection cache
 # `load_dets(name, "F4")` opens, which DET_SRC decided at the top.
-ANCHOR_44B6_ADJ = 0.8515        # divbench9 ANCHOR_SOFT ("+BIDIR", "F4", "44b6")
+# THE ANCHOR IS A DELTA, and v1 took the wrong end of it. divbench9's
+# ANCHOR_SOFT carries ("+BIDIR", "F4", "44b6") = 0.8515, and v1 asserted
+# that. It missed by −0.0131, which is not a random amount: `ilpsweep`
+# (2026-09-05) recorded its soft anchors 0.9261 / 0.8515 at REF =
+# (disappearance 1.5, floor **0.10**), and measured the move to floor 0.48 --
+# what ships since ref 56030644 -- as **6bba +0.0000, 44b6 −0.0131**. This
+# bench runs PROD_FLOOR = 0.48. 0.8515 − 0.0131 = 0.8384, and 0.8384 is
+# exactly what the control produced.
+#
+# So the miss was the anchor being stale by one shipped change, and the run
+# reproduced a recorded DELTA across two harnesses and four days to four
+# decimal places -- a stronger check than the level it replaces. The 6bba
+# side is consistent: F48 is +0.0000 there, which is why 0.9261 holds at
+# both floors and hid the problem.
+ANCHOR_44B6_ADJ = 0.8384        # 0.8515 (ilpsweep REF, floor 0.10)
+ANCHOR_44B6_BASE = 0.8515       #   + ilpsweep's own F48 delta −0.0131
+ANCHOR_44B6_F48 = -0.0131
 ANCHOR_44B6_DIV = 0.0000
 ANCHOR_44B6_TOL = 0.0005
 
@@ -2536,9 +2552,12 @@ print("  Stage B's two fold rankers each train on ALL 71 44b6 movies, so a "
       "44b6 row through them is in-sample -- which is why divbench9's 44b6 "
       "anchors are soft and why it never scored the domain. D175 held these "
       "12 out, so this arm is clean.", flush=True)
-print(f"  ANCHOR (DET_SRC=F4 only): adj_J {ANCHOR_44B6_ADJ:.4f}, div_J "
-      f"{ANCHOR_44B6_DIV:.4f}. For F4HP it is printed and expected to move; "
-      f"the move is the measurement.", flush=True)
+print(f"  ANCHOR (DET_SRC=F4 only): adj_J {ANCHOR_44B6_ADJ:.4f} = "
+      f"ilpsweep's floor-0.10 REF {ANCHOR_44B6_BASE:.4f} plus its own "
+      f"measured F48 delta {ANCHOR_44B6_F48:+.4f}, because this bench runs "
+      f"floor {PROD_FLOOR}. div_J {ANCHOR_44B6_DIV:.4f}. For F4HP it is "
+      f"printed and expected to move; the move is the measurement.",
+      flush=True)
 
 ROWS44_OUT = []
 PER44 = {}
