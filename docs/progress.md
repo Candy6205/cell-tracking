@@ -1364,6 +1364,113 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ eprank3 / eprank3-ref RESULT (2026-09-09, 102.2 min + ~100 min CPU, the control reproduces ALL THREE recorded anchors exactly): RETRAINING THE PRODUCTION RANKER ON THE COORDINATES IT IS DEPLOYED ON MAKES IT WORSE -- adj_J −0.0011 on 6bba and −0.0022 on 44b6, 10 of 12 and 9 of 12 datasets down or flat. Branch 3 of the pre-registration fired: the BASE pool was acting as augmentation
+
+The user: *"你去把重训落地"*. It is landed --
+`edge_ranker_ep175v4_bidir_f4.pkl` exists -- and the first read says do not
+ship it.
+
+#### The control is exact, and there is a free internal control too
+
+`eprank3_ref` (POOL_ARM=BASE) reproduces every recorded number for this
+harness, so cutting the three head-2 arms and adding the `ep2_path is None`
+guard moved nothing:
+
+    ANCHOR_D187  F4-6bba   adj_J 0.9216   want 0.9216 HARD -> OK (+0.0000)
+    +BIDIR       F4-6bba   adj_J 0.9261   want 0.9261 soft -> OK (-0.0000)
+    +BIDIR       F4-44b6   adj_J 0.8515   want 0.8515 soft -> OK (+0.0000)
+
+and it re-read `HEAD1` 0.9245 / 0.8453 and `HEAD12` 0.9238 / 0.8438 as well.
+
+**The free control**: `ANCHOR_D187`, `HEAD1` and `HEAD12` use no retrained
+ranker, so they must be BYTE-IDENTICAL between the two arms. They are, on
+all 24 datasets. The only thing that moved is `+BIDIR`, which is the only
+thing that was retrained. `ANCHOR_D187`'s hard anchor also holds in the F4
+arm, so the harness is the recorded one on both sides.
+
+#### The measurement
+
+| | BASE pool (ships) | F4 pool (retrained) | delta |
+|---|---|---|---|
+| D175 training rows | 217,688 (0.497 pos) | 216,209 (0.501 pos) | −1,479 |
+| `+BIDIR` val AUC | 0.9926 | 0.9926 | **0.0000** |
+| edge AUC F4-6bba | 0.9929 | 0.9929 | **0.0000** |
+| edge AUC F4-44b6 | 0.9871 | 0.9872 | +0.0001 |
+| **stage B adj_J F4-6bba** | **0.9261** | **0.9250** | **−0.0011** |
+| stage B div_J F4-6bba | 0.1515 | 0.1316 | −0.0199 |
+| stage B score F4-6bba | 0.9412 | 0.9381 | −0.0031 |
+| **stage B adj_J F4-44b6** | **0.8515** | **0.8493** | **−0.0022** |
+
+**The AUC is FLAT and the score is DOWN** -- the same shape hparabench round
+2 found for hpara, with the sign reversed (there: AUC flat, score up). So the
+damage is not in the ranker's ability to order edges; it is downstream, where
+the ILP's floor, the disappearance cost and the fork patch read that
+probability.
+
+Per dataset, `+BIDIR` only:
+
+| | weighted adj_J (what is scored) | unweighted mean | 90% interval | up |
+|---|---|---|---|---|
+| F4-6bba | **−0.0011** | −0.00129 | [−0.00303, +0.00031] | **2/12** |
+| F4-44b6 | **−0.0022** | +0.00214 | [−0.00725, +0.01596] | **3/12** |
+
+⚠ **44b6's unweighted mean disagrees in SIGN with its weighted one, and one
+movie is why.** `44b6_0b24845f` reads 0.9167 -> 0.9961, **+0.0794**, against
+a median move of −0.0002. That dataset is already on record as unstable --
+`edgeprob_rank2` measured it at 0.9167 / 0.9937 / 0.9979 / 0.8148 across four
+linker arms, a ±0.18 swing. Set it aside and the per-dataset picture agrees
+with the weighted one.
+
+#### The mechanism, stated the way the arms allow
+
+`HEAD1` is identical in both arms, so the gap between `+BIDIR` and `HEAD1` is
+exactly what the 18 coordinate columns are worth on top of the head:
+
+| ranker's gain over the head alone | BASE pool | F4 pool |
+|---|---|---|
+| F4-6bba | +0.0016 | **+0.0005** |
+| F4-44b6 | +0.0062 | **+0.0040** |
+
+**Training on the deployment coordinates makes the coordinate features
+contribute LESS, on both domains.** That is what the pre-registered third
+branch predicted: BASE primaries are the same scene measured slightly more
+noisily, so fitting on them is augmentation, and removing the mismatch
+removes the regularisation with it.
+
+Also on record from the same run, and relevant to the parallel-blend
+question: the `+BIDIR` permutation drop is **h_fused +0.1765** against
+p_fwd +0.0019 and p_rev +0.0020. The ranker leans hard on the head's fused
+column. That weakens the reading of `HEAD1`'s 6/6 per-movie split as "two
+near-equal, disagreeing predictors" -- it is more likely one signal at two
+calibrations. It does not make the ranker a wrapper around the head, though:
+the 18 columns alone (`ANCHOR_D187`, no head) still read AUC 0.9894 and
+adj_J 0.9216.
+
+#### ⚠ What this does NOT settle
+
+**This is a 12-movie evaluation, and this record established the day before
+that a 12-movie holdout can disagree in SIGN with the 128 that contain it**
+(hparabench round 2: adj_J −0.0012 on the 12 against +0.0013 on the 128).
+`F4-6bba` IS that holdout. Both intervals here include zero. `rkpool` /
+`rkpool_ref` -- 128 movies, out of fold, paired bootstrap -- is the decisive
+test and is running.
+
+What can be said now: the weighted metric is negative on **both** domains,
+2/12 and 3/12 datasets up, the harness is proven identical on both sides, and
+nothing about the direction is carried by a single dataset except the one
+44b6 outlier that is already on record as unstable.
+
+**Consequence for the TTA line, stated before its data lands.** The
+augmentation reading, if it survives `rkpool`, applies to `ttacache2` too:
+retraining the ranker on tta4 features is the same move -- fit on the exact
+features you will deploy -- and would be expected to lose for the same
+reason. The caches are nearly built and the arm will still be run, because a
+mechanism inferred from one experiment is a hypothesis, not a result. But the
+prior on "retraining rescues TTA" is now worse than it was when the user
+proposed it, and saying so before the number arrives is the point of writing
+it here.
+
+
 ### ⭐⭐⭐⭐⭐ zhpara v3 (2026-09-09, ~3.8 h CPU, killed at crop 39 of 41 with 38 crops of PAIRED data saved, all three anchors EXACT): hpara is POSITIVE on zebrahub too -- score +0.0011, 90% [+0.0005, +0.0017], P(>0) = 0.998. TWO of three domains positive, one null, none negative
 
 The third domain, and the only one with **dense** ground truth: zebrahub
@@ -1421,7 +1528,14 @@ the first candidate of the night to meet it.
 2. **zebrahub's div_J interval includes zero** (P = 0.922). The edge half is
    what clears here; the division half is directionally right and not
    significant.
-3. **44b6's "null" is a property of its 12-movie draw**, which carries 2 GT
+3. **⚠ ZEBRAHUB IS A DIFFERENT PIPELINE, and the kernel says so itself.**
+   `zhpara` runs dcmerge's solver: **no edge head and no fork gate.** So
+   +0.0011 answers "does better placement help the LINKER", not "does it help
+   the shipped submission" -- `hparabench` answers the second. That is
+   exactly what the three-domain rule asks a third domain for (does the
+   effect generalise across instruments and GT regimes), and it is NOT a
+   number that can be added to a submission's expected gain.
+4. **44b6's "null" is a property of its 12-movie draw**, which carries 2 GT
    divisions and scored div_J 0.0000 in both arms. `hpara44` (GPU) +
    `ephp44` are running/queued to give all 71 movies hpara coordinates, so
    that domain can be re-read on 26 GT divisions instead of 2. `divbench5` v2
