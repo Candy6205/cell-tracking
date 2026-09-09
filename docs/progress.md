@@ -1432,7 +1432,7 @@ is the only one with DENSE ground truth, so `N_gt` is every cell rather than
 the 0.77-9.71% an annotator labelled.
 
 
-### ⭐⭐⭐⭐ eprank3 / eprank3-ref RESULT (2026-09-09, 102.2 min + ~100 min CPU, the control reproduces ALL THREE recorded anchors exactly): RETRAINING THE PRODUCTION RANKER ON THE COORDINATES IT IS DEPLOYED ON MAKES IT WORSE -- adj_J −0.0011 on 6bba and −0.0022 on 44b6, 10 of 12 and 9 of 12 datasets down or flat. Branch 3 of the pre-registration fired: the BASE pool was acting as augmentation
+### ⭐⭐⭐⭐ eprank3 / eprank3-ref RESULT (2026-09-09, 102.2 min + ~100 min CPU, the control reproduces ALL THREE recorded anchors exactly): RETRAINING THE PRODUCTION RANKER ON THE COORDINATES IT IS DEPLOYED ON MAKES IT WORSE -- adj_J −0.0011 on 6bba and −0.0022 on 44b6, 10 of 12 and 9 of 12 datasets down or flat. the direction is real on both domains but the MECHANISM I first gave (branch 3, BASE-as-augmentation) is RETRACTED by this run's own flat AUC, and the measurement froze the floor the way divradius froze the gate
 
 The user: *"你去把重训落地"*. It is landed --
 `edge_ranker_ep175v4_bidir_f4.pkl` exists -- and the first read says do not
@@ -1500,10 +1500,76 @@ exactly what the 18 coordinate columns are worth on top of the head:
 | F4-44b6 | +0.0062 | **+0.0040** |
 
 **Training on the deployment coordinates makes the coordinate features
-contribute LESS, on both domains.** That is what the pre-registered third
-branch predicted: BASE primaries are the same scene measured slightly more
-noisily, so fitting on them is augmentation, and removing the mismatch
-removes the regularisation with it.
+contribute LESS, on both domains.**
+
+⚠ **RETRACTED, same night, by this run's own AUC.** The first version of
+this paragraph read that as the pre-registered third branch -- BASE primaries
+are the same scene measured more noisily, so fitting on them is augmentation
+and removing the mismatch removes the regularisation. **The data does not
+support that, and it does not support plain overfitting either.** Both
+stories are about GENERALISATION, which is what edge AUC measures, and the
+AUC is flat in five independent readings:
+
+| | BASE pool | F4 pool |
+|---|---|---|
+| fold0 held-out AUC (rkpool, 128 movies) | 0.9935 | 0.9935 |
+| fold1 held-out AUC (rkpool, 128 movies) | 0.9917 | 0.9918 |
+| val AUC on its own primaries (eprank3) | 0.9926 | 0.9926 |
+| F4-6bba (eprank3) | 0.9929 | 0.9929 |
+| F4-44b6 (eprank3) | 0.9871 | 0.9872 |
+
+**The retrained ranker orders edges exactly as well.** Whatever it lost is
+not ranking ability, so neither overfitting nor lost regularisation can be
+the account.
+
+**What DID move are the threshold-sensitive outputs**, and that is a
+different shape:
+
+| 6bba | BASE | F4 | relative |
+|---|---|---|---|
+| `edge_J` | 0.9242 | 0.9230 | −0.13% |
+| `div_J` | 0.1515 | 0.1316 | **−13%** |
+| `node_r` | −0.0199 | −0.0203 | fewer nodes kept |
+| `node_r` 44b6 | −0.1113 | −0.1120 | fewer nodes kept |
+
+Two thirds of the 6bba score loss is divisions (0.1 x −0.0199 = −0.0020 of
+−0.0031), and divisions are the most threshold-sensitive thing in the
+pipeline: the safe-division patch and the capacity-2 ILP both accept on
+probability VALUES. The ILP does not read the ranking; it reads the value
+against `PROD_FLOOR` 0.48 and `ILP_DISAPP` 1.5.
+
+⚠ **And the simplest version of the calibration story is measured and
+FALSE.** Both pkls were unpickled and their intercepts compared:
+
+    BASE pool   baseline logit -0.012710  -> p 0.496823
+    F4 pool     baseline logit +0.003145  -> p 0.500786
+
+0.016 logit apart, which is exactly the training base-rate difference
+(0.497 -> 0.501 positive) and therefore class balance rather than anything
+learned -- **and it points the wrong way**, since a higher intercept raises
+probabilities while what was observed is FEWER nodes surviving. So it is not
+a simple offset. If calibration is the mechanism it is a change in the trees'
+shape, which cannot be read off the pkls and needs both models' probabilities
+on the same rows.
+
+⚠ **THE MEASUREMENT IS ALSO CONFOUNDED, and by my own hand.**
+`PROD_FLOOR = 0.48` and `ILP_DISAPP = 1.5` were tuned against the
+BASE-trained ranker's calibration. This run changed the ranker's training
+distribution and then scored it at constants belonging to the other one --
+**the identical error the user corrected three experiments earlier**, where
+`divradius` froze the fork gate and read +0.0088 for a sister radius that
+became −0.0005 once the gate was retrained per cell. The lesson went into the
+record and then straight back out of it. So −0.0011 / −0.0022 currently
+admits two readings that this run cannot separate: a real loss, or a real
+ranker measured at the wrong operating point.
+
+**`rkfloor` settles it and is cheap**: both v4 pkls already exist, so nothing
+is retrained; it needs features for the 24 evaluation movies only, crosses
+floor x pkl, and prints each ranker's probability QUANTILES on the same
+gated rows -- the calibration measurement that cannot be made from the pkls.
+If the loss is the operating point, the F4 ranker has its own optimum floor
+and shrinks or reverses there; if it is real, no floor recovers it. Anchor:
+the BASE pkl at floor 0.48 must read 0.9261 / 0.8515.
 
 Also on record from the same run, and relevant to the parallel-blend
 question: the `+BIDIR` permutation drop is **h_fused +0.1765** against
@@ -1709,6 +1775,14 @@ reused from round 2's CSV.
    coordinates slightly noisier than the deployment ones regularises. That
    would be a finding in its own right and would argue AGAINST retraining for
    TTA.
+   ⚠ **This branch's DIRECTION fired on eprank3 and its EXPLANATION did
+   not.** Augmentation is a claim about generalisation and the held-out AUC is
+   flat in five readings, so the pre-registration offered no branch for what
+   actually happened -- same ranking, different downstream behaviour, at
+   constants tuned for the other calibration. Pre-registering three branches
+   does not make them exhaustive, and this is the second time tonight the
+   outcome fell outside the table (hparabench round 2's "AUC flat, score UP"
+   was the first).
 
 #### Not run, and not previously rejected: the head and the ranker as PEERS
 
