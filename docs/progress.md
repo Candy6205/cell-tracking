@@ -1603,6 +1603,34 @@ drops **18% of the TPs and 42% of the FPs** (9 of 50 against 104 of 249), and
 the forks it *adds* are better than the ones it removes: +11 TP / +80 FP in,
 −9 TP / −104 FP out. Net +2 TP, −24 FP -- the whole division gain, decomposed.
 
+**4. The join is EXACT, not merely plausible.** The fork table also carries
+the official head's probabilities (`pf_c1`, `pf_q`), and the head is the same
+cached file in both arms, so on a correct join those columns must be
+identical. They are: **max |d| = 0.000e+00** over 3,898 and 3,621 matched
+forks. Two independent checks now hold on a key built from geometry alone.
+
+**5. And so the ranker's own probabilities can be compared, fork by fork.**
+rkpool read the held-out AUC as flat, so anything that moved should be
+calibration. It is not that simple:
+
+| | BASE | F4 | d |
+|---|---|---|---|
+| `p_c1` (mother -> first daughter), TP | 0.8525 | 0.8575 | **+0.0050** |
+| `p_c1`, FP | 0.8604 | 0.8581 | **−0.0024** |
+| `p_q` (the edge that MAKES it a fork), TP | 0.4591 | 0.4442 | −0.0149 |
+| `p_q`, FP | 0.2602 | 0.2505 | −0.0097 |
+
+On the primary edge the signs are **opposite** -- true forks up, false ones
+down -- which is separation, not calibration. On the fork-making edge both
+fall, which is a downward shift of the scale, and that is the same direction
+as "652 fewer forks offered". So the retrain does a little of each, on
+different edges.
+
+⚠ **Read row 5 as conditioned.** These 4,049 forks are by construction the
+ones BOTH arms offered; the 2,955 dropped and 2,303 added are absent, and
+they are where the division gain actually lives. The table says what happened
+to the forks that survived, not why the others did not.
+
 ##### ⚠ AND THE THING I SAID COLLAPSED IS NOT THE THING THAT COLLAPSED
 
 Written above: "the joint gate is worth +0.0037 on the old ranker and +0.0004

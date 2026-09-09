@@ -54,6 +54,13 @@ def load(path):
         key=np.array([f"{r[0]}|{r[6]}|{r[7]}|{r[8]}" for r in R]),
         lab=np.array([int(r[4]) for r in R]),
         X=np.array([[float(v) for v in r[5:25]] for r in R]),
+        # columns 10/11 are the RANKER's probability on the two fork edges;
+        # 12/13/14 are the HEAD's (pf_c1, pf_q, pr_q). The head is the same
+        # cached file in both arms, so its columns are a free control.
+        p_c1=np.array([float(r[10]) for r in R]),
+        p_q=np.array([float(r[11]) for r in R]),
+        pf_c1=np.array([float(r[12]) for r in R]),
+        pf_q=np.array([float(r[13]) for r in R]),
     )
 
 
@@ -180,6 +187,46 @@ tp2, fp2, fn2, dj2 = cells(A["lab"], (pA > CUT) & kept)
 print(f"  ...then the gate on top        {tp2}/{fp2}/{fn2}  div_J {dj2:.4f}")
 tp3, fp3, fn3, dj3 = cells(A["lab"], pA > CUT)
 print(f"  the gate alone                 {tp3}/{fp3}/{fn3}  div_J {dj3:.4f}")
+print(f"\n=== WHAT THE RETRAIN DID TO THE PROBABILITIES THEMSELVES ===")
+print(f"  On the {len(both)} forks present in both arms, the same three "
+      f"physical points\n  carry a ranker probability from each arm. rkpool "
+      f"read the held-out AUC as\n  FLAT (0.99256 -> 0.99267), so if anything "
+      f"moved it is calibration, and this\n  is the direct look at it.")
+iA = {k: i for i, k in enumerate(A["key"])}
+iH = {k: i for i, k in enumerate(H["key"])}
+mk = [k for k in A["key"] if k in iH]
+ia = np.array([iA[k] for k in mk])
+ih = np.array([iH[k] for k in mk])
+mlab = A["lab"][ia]
+
+# The control first: the head is the same cached file in both arms.
+for nm in ("pf_c1", "pf_q"):
+    da = A[nm][ia] - H[nm][ih]
+    da = da[np.isfinite(da)]
+    print(f"  CONTROL {nm:<6} (the HEAD, same cache both arms): "
+          f"max |d| {np.abs(da).max():.3e} over {len(da)} forks "
+          f"{'-- identical, the join is sound' if np.abs(da).max() < 1e-9 else '<-- NOT IDENTICAL, the join is wrong'}")
+
+print(f"\n  {'':<26}{'BASE mean':>12}{'F4 mean':>12}{'d':>10}"
+      f"{'higher in F4':>14}")
+for nm in ("p_c1", "p_q"):
+    for tag, m in (("all matched forks", np.ones(len(mk), bool)),
+                   ("  TP (real division)", mlab == 2),
+                   ("  FP (counted, wrong)", mlab == 1)):
+        a, h = A[nm][ia][m], H[nm][ih][m]
+        ok = np.isfinite(a) & np.isfinite(h)
+        a, h = a[ok], h[ok]
+        if not len(a):
+            continue
+        print(f"  {nm} {tag:<20}{a.mean():>12.4f}{h.mean():>12.4f}"
+              f"{h.mean() - a.mean():>+10.4f}"
+              f"{f'{(h > a).mean() * 100:.0f}%':>14}")
+
+print(f"\n  Reading: a shift of the SAME sign in TP and FP is calibration -- "
+      f"the whole\n  scale moved and the floor now cuts somewhere else. "
+      f"Opposite signs (TP up,\n  FP down) is real separation, which the flat "
+      f"held-out AUC argues against.")
+
 print(f"\n  ⚠ the middle two rows are an ARITHMETIC overlay, not a run: "
       f"removing a fork\n    from the BASE arm's table is not the same as "
       f"re-solving the ILP without it,\n    and the F4 arm's real answer is "
