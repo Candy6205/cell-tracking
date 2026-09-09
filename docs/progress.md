@@ -1364,6 +1364,145 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐⭐ rkfloor (2026-09-09, 103.3 min CPU, all FOUR anchors exact): eprank3's TWO negative numbers have TWO DIFFERENT causes. 44b6's was the FLOOR -- it turns positive at 0.30/0.48/0.60. 6bba's was the POPULATION -- the same 12 movies at the same floor 0.48 read −0.0019 while the 128 containing them read +0.0009. Neither was the retrain
+
+The question the rkpool entry left open, closed. `rkfloor` crosses
+floor x pkl on one movie set: nothing is retrained, both v4 pkls are loaded
+from disk, and the only thing that varies is what the ILP is offered.
+
+    0.10 / v4_BASE / F4-6bba  0.9261  ANCHOR want 0.9261 -> OK
+    0.48 / v4_BASE / F4-6bba  0.9261  ANCHOR want 0.9261 -> OK
+    0.10 / v4_BASE / F4-44b6  0.8515  ANCHOR want 0.8515 -> OK
+    0.48 / v4_BASE / F4-44b6  0.8384  ANCHOR want 0.8384 -> OK
+
+#### The cross
+
+| floor | 44b6, BASE | 44b6, F4 | d | 6bba, BASE | 6bba, F4 | d |
+|---|---|---|---|---|---|---|
+| 0.10 | 0.8515 | 0.8493 | **−0.0022** | 0.9261 | 0.9250 | −0.0011 |
+| 0.30 | 0.8390 | 0.8447 | **+0.0057** | 0.9266 | 0.9248 | −0.0018 |
+| 0.48 | 0.8384 | 0.8396 | **+0.0011** | 0.9261 | 0.9242 | −0.0019 |
+| 0.60 | 0.8319 | 0.8329 | **+0.0010** | 0.9241 | 0.9234 | −0.0007 |
+
+**On 44b6 the floor flips the sign.** eprank3's −0.0022 is the 0.10 cell,
+top-left, and it is the only negative one in that column. At the floor that
+actually ships the retrain is positive on 44b6.
+
+**On 6bba the floor does not.** All four cells are negative, so re-tuning the
+floor does not rescue the retrain *on these 12 movies*. Which sets up the
+comparison that matters:
+
+| same domain, same floor 0.48, same pkls | F4 − BASE |
+|---|---|
+| 12-movie holdout (`rkfloor`) | **−0.0019** |
+| the 128 that contain them (`rkpool`) | **+0.0009** [+0.00003, +0.00167] |
+
+**The 12-movie holdout disagrees in sign with the 128 containing it, at an
+identical operating point.** That is the third time this record has caught
+that specific failure (hparabench round 2, eprank3, now this), and it is the
+whole of eprank3's 6bba result. Both of eprank3's negatives are now
+accounted for, by two different causes, and neither is the retrain.
+
+#### What the calibration actually looks like
+
+Printed on the same gated rows, which is the comparison the two pkls could
+not make on their own:
+
+| domain | ranker | p5 | p25 | p50 | p75 | p95 | >= 0.48 |
+|---|---|---|---|---|---|---|---|
+| F4-6bba | v4_BASE | 0.0009 | 0.0036 | 0.0953 | 0.9562 | 0.9970 | 43.60% |
+| F4-6bba | v4_F4 | 0.0004 | 0.0032 | 0.0927 | 0.9602 | 0.9970 | 43.46% |
+| F4-44b6 | v4_BASE | 0.0010 | 0.0033 | 0.0263 | 0.8362 | 0.9877 | 32.49% |
+| F4-44b6 | v4_F4 | 0.0004 | 0.0020 | 0.0246 | 0.8381 | 0.9850 | 32.24% |
+
+The retrained ranker is **sharper, not shifted**: lower in the bottom tail,
+higher at p75, and the share clearing the shipped floor moves by **0.14 and
+0.25 percentage points**. That is the whole row-level effect. rkpool measured
+a **9.3%** drop in forks offered from it, so the ILP compounds a quarter-point
+change at the row level into a tenth of the fork population.
+
+#### ⚠ The floor argmax is NOT actionable and this run says so itself
+
+Read as a sweep, both rankers prefer **0.10** on 44b6 and BASE prefers 0.30 on
+6bba -- none of them 0.48. That is the pre-registration's third branch firing,
+and it must not be acted on. `submit-f48` put floor 0.48 on the leaderboard
+*because it won there* (+0.001, −1.43% bytes) while reading **+0.0000 /
+−0.0131 locally**. Local and LB already disagree about this exact knob, so a
+12-movie local argmax is the weakest possible evidence about it. These cells
+answer "does re-tuning the floor rescue the retrain" -- no on 6bba, not needed
+on 44b6 -- and nothing else.
+
+### ⭐⭐⭐⭐ hp44full / hp44full-ref (2026-09-09, two CPU kernels, the control reproduces all 71 movies' recorded REF exactly): 44b6's hpara null is STILL a null with all 71 movies and all 26 GT divisions -- but it moved from −0.0002 to **+0.0013**, its interval now contains 6bba's +0.0031, and the division channel finally moved at all. The three-domain ledger is unchanged in verdict and much better supported
+
+The user: *"思考，把44b6全跑一遍不行吗，你这分裂全挂0"*. Correct, and it is
+done. The seeded 12-movie draw carried **2** of this domain's 26 GT
+divisions, so its division channel could not move. All 71 carry all 26.
+
+#### The control is exact
+
+    ANCHOR_D187  F4-44b6(12)  adj_J 0.8353  want 0.8353 HARD (divsteal) -> OK
+    ANCHOR71     REF over all 71: 6/61/20  div_J 0.0690  adj_J 0.8868
+                 score 0.8937   want 6/61/20 0.0690 0.8868 0.8937 -> OK
+
+and in the treatment arm both are reported as `[expected]` misses, because
+hpara re-places the very movies they are built on.
+
+#### The measurement, 71 movies, paired bootstrap
+
+| | F4 (ships) | F4HP (hpara) | delta | 90% interval | P(>0) |
+|---|---|---|---|---|---|
+| divisions tp/fp/fn | 6/61/20 | **9/79/17** | +3/+18/−3 | | |
+| division_jaccard | 0.0690 | 0.0857 | **+0.0174** | [−0.0109, +0.0497] | 0.823 |
+| adj_edge_jaccard | 0.8868 | 0.8863 | −0.0005 | [−0.0033, +0.0025] | 0.393 |
+| edge_jaccard | 0.8733 | 0.8731 | −0.0002 | [−0.0030, +0.0027] | 0.447 |
+| **score** | 0.8937 | **0.8948** | **+0.0013** | [−0.0027, +0.0057] | 0.688 |
+
+32/71 movies up on adj_J. The eight largest movers carry 40% of the absolute
+movement over 71 movies, against rkpool's 27% over 128 -- this domain is the
+noisier one per movie, as it has been throughout.
+
+#### The ledger, with 44b6 replaced
+
+| domain | Δ score | 90% interval | P(>0) | sample |
+|---|---|---|---|---|
+| 6bba | **+0.0031** | [+0.0014, +0.0049] | 0.998 | 128 movies |
+| zebrahub | **+0.0011** | [+0.0005, +0.0017] | 0.998 | 38 crops, dense GT |
+| **44b6, was** | −0.0002 | [−0.0064, +0.0051] | 0.509 | 12 movies, **2 GT divisions** |
+| **44b6, now** | **+0.0013** | **[−0.0027, +0.0057]** | 0.688 | **71 movies, 26 divisions** |
+
+The verdict does not change -- **two positive with intervals excluding zero,
+one null, none negative** -- but three things about it improve:
+
+1. **The null's point estimate flipped sign**, −0.0002 to +0.0013, and now
+   points the same way as the other two.
+2. **Its interval contains 6bba's +0.0031** comfortably. So 44b6 is
+   *consistent with* the effect measured elsewhere; it is not evidence
+   against it. Same on the edge channel alone -- 44b6's adj_J interval
+   [−0.0033, +0.0025] contains 6bba's adj_J +0.0013 [+0.0004, +0.0022].
+3. **The division channel moved for the first time**, +0.0174 against 6bba's
+   +0.0182 -- the point estimates nearly coincide. On 12 movies with 2 GT
+   divisions this number did not exist.
+
+⚠ **I pre-registered branch 2 as "still null on 71 -> the three-domain rule
+BLOCKS hpara". That branch mis-stated the project's own rule.** The rule as
+recorded is *"the sign must agree"* and the ledger's own reading of it was
+*"two positive, one null, none negative -- the rule is met"*. A null has never
+blocked anything here, and I wrote a branch that would have blocked hpara on
+an outcome the rule permits. The numbers are what they are; the branch was
+wrong before they arrived.
+
+#### The ceiling this domain has
+
+The division interval is [−0.0109, +0.0497] on **all 71 movies**. It cannot
+be narrowed by running more of them, because **26 ground-truth divisions is
+all that exist** in this domain. Any future 44b6 division claim inherits that
+width. Worth writing down once, since three separate experiments have now
+been designed as if more 44b6 movies would settle a division question.
+
+The zebrahub arm's caveat stands unchanged: it runs dcmerge's solver, so it
+answers "does placement help the LINKER", not the shipped submission. And its
+own missing 3 crops were shown not to bias it (`tools/zhsize.py`, this night).
+
 ### ⭐⭐⭐⭐ zhpara4 (2026-09-09, ~6 min to the kill): THE BOX IS 32.9 GB WITH 31.7 GB FREE AND THE LOG SAYS `Killed`, SO BOTH RIVALS ARE DEAD -- AND SO IS MY OWN HYPOTHESIS. A crop needing a **20.95 GB** dense matrix SCORED; the one that kills needs **17.7 GB**. Separately: the three lost crops do NOT bias the zebrahub hpara verdict
 
 Two of the three things this run was built to settle came back clean, and the
@@ -1545,6 +1684,12 @@ crosses floor x pkl on one movie set and is the separator; it is running.
 Until it reports, the defensible statement is the one the bigger, correctly
 floored experiment makes: **at the operating point that ships, on the whole
 scored population, the retrain gains.**
+
+⭐ **rkfloor REPORTED, and it is BOTH -- one cause each.** On 44b6 the floor
+flips the sign (−0.0022 at 0.10, **+0.0011** at 0.48). On 6bba it does not,
+and the 12-movie holdout reads −0.0019 at the same floor 0.48 where the 128
+containing it read **+0.0009** -- so 6bba's negative was the POPULATION. See
+the rkfloor entry above. Neither of eprank3's two negatives was the retrain.
 
 #### ⚠ AND YET IT CANNOT BE SHIPPED AS A FILE SWAP
 
@@ -2045,12 +2190,18 @@ better. Two instruments, two GT regimes, one mechanism.
 | domain | Δ score | 90% interval | P(>0) | sample |
 |---|---|---|---|---|
 | 6bba | **+0.0031** | [+0.0014, +0.0049] | 0.998 | 128 movies |
-| 44b6 | −0.0002 | [−0.0064, +0.0051] | 0.509 | 12 movies, **2 GT divisions** |
+| ~~44b6~~ | ~~−0.0002~~ | ~~[−0.0064, +0.0051]~~ | ~~0.509~~ | ~~12 movies, **2 GT divisions**~~ |
+| **44b6 (SUPERSEDED 2026-09-09 by hp44full)** | **+0.0013** | [−0.0027, +0.0057] | 0.688 | **71 movies, 26 GT divisions** |
 | zebrahub | **+0.0011** | [+0.0005, +0.0017] | 0.998 | 38 crops, dense GT |
 
 **Two positive with intervals excluding zero, one null, none negative.** The
 record's rule -- three domains, or it does not count -- is met, and this is
 the first candidate of the night to meet it.
+
+⭐ **Still true on all 71 44b6 movies, and better supported.** The null's point
+estimate flipped to +0.0013, its interval now CONTAINS 6bba's +0.0031, and the
+division channel moved for the first time (+0.0174 against 6bba's +0.0182).
+See the hp44full entry above.
 
 #### Three limits kept in view
 
