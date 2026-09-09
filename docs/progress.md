@@ -1478,10 +1478,19 @@ deployed.
 Why: the joint gate is worth +0.0037 on the old ranker and **+0.0004** on
 the new one, while DIV_W 0.35 goes the other way -- worth +0.0002 (interval
 crossing zero) on the old ranker and **+0.0041 [+0.0003, +0.0079]** on the
-new one. Additivity moves from 75% of the independent sum to 250%. The
-retrain removes 652 forks, which is most of what the joint gate was there to
-remove, and having removed them by a different route it leaves DIV_W 0.35
-room the old configuration did not have.
+new one. Additivity moves from 75% of the independent sum to 250%. ⚠ **The obvious mechanism is measured and it is TOO SMALL.** I
+wrote "the retrain removes the forks the gate was there to remove" and then
+checked it: the retrain drops **652 of 7,004** forks (9.3%) and **24 of the
+249** division FPs, while the gate at p > 0.03 drops **over 5,600** forks and
+**210** FPs. A tenth is not an absorption.
+
+What the gate's own quantiles DO show is a cleaner fork population -- every
+decile of its probability rises (50% 0.0028 -> 0.0036, 80% 0.0275 -> 0.0463,
+90% 0.2558 -> 0.3923) and its pooled out-of-fold AUC rises 0.8798 -> 0.8995.
+**Why that collapses the joint gate's marginal value while raising DIV_W's is
+not established.** Both runs wrote `forks_f4_v4.csv`; joining them per fork --
+which forks the retrain never offers, against which ones the gate removes --
+is the cheap measurement that would settle it, and it has not been done.
 
 ⚠ Two reasons this row is weaker than the ungated one, and both are real:
 
@@ -1521,6 +1530,12 @@ checked once at the end, all 128 movies were scored and `rkpool_F4.csv` was
 written before it fired -- nothing was lost. `tools/klog.py --fetch` (new)
 pulled the 14 kB CSV out of the output in seconds instead of pulling the
 whole working directory.
+
+**The artifact the user asked for is verified, not just claimed.**
+`edge_ranker_ep175v4_bidir_f4.pkl`, 348,720 bytes, pulled out of
+`biohub-eprank3`'s output and sitting in `bench_csv/`. That is the retrain,
+landed -- trained on all 175 pool movies' F4 rows, the single-pkl form of
+what rkpool measured out of fold.
 
 ### ⭐⭐⭐ THE ZEBRAHUB KILL, DIAGNOSED (2026-09-09, zhpara v3 / zhpara2 / zhpara3): it dies **inside `compute_metric`** on `ZSNS001_z2y2x7`, at 2.1 GB RSS on a box with about 30 GB — so it is not a gradual leak, and the leading candidate is a single quadratic allocation. Four kills, and this is the first one that left any evidence at all
 
