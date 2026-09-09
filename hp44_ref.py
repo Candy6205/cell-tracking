@@ -1,0 +1,2617 @@
+"""edgeprob_rank2.py -- v3 of edgeprob_rank.py: the SECOND-SEED head joins,
+and the heads are also tried WITHOUT a ranker.
+
+SCRIPT_VERSION 2026-09-03b-edgeprob-rank2
+
+v2 (biohub-edgeprob-rank v2, 2026-09-03) settled that +BIDIR -- the 18
+columns plus the official head's p_fwd / p_rev / h_fused, D175 pool --
+scores F4-6bba 0.9261 / F4-44b6 0.8515 adj_J against the shipped D187
+ranker's 0.9216 / 0.8353, and it shipped as ref 55974245 = LB 0.932.
+This kernel asks two further questions on the same harness:
+
+  1. Does a SECOND, independently trained copy of the same head
+     (pilkwang/biohub-temporal-unet3d-seed314159-v1, the "secondary"
+     model the public 0.948 notebook fuses; cached over our primaries by
+     biohub-edgeprob2 exactly as biohub-edgeprob cached the first) add
+     anything on top of the first? Arms +BIDIR2 (second head alone),
+     +BOTH (both heads' three columns each), +AVG (the two heads
+     averaged: p_avg_fwd, p_avg_rev, h_avg), all against +BIDIR.
+  2. The user's question (2026-09-03): why use the head only as a
+     FEATURE? Arms HEAD1 (h_fused of the first head fed straight to the
+     ILP as the edge probability, no ranker) and HEAD12 (h_avg of both
+     heads, likewise). Same ILP, same floor 0.10, same post-link patches.
+     The 2026-08-22 chimera lost 0.011 with the official head as the
+     linker on xl detections, single direction, single seed; this is
+     the bidirectional, two-seed version of that test.
+
+Reference arm for every paired delta: +BIDIR (what ships). BASE18 is
+not retrained here (v2 recorded it). ANCHOR_D187 stays as the hard
+anchor of the harness (F4-6bba 0.9216); +BIDIR's v2 numbers are soft
+anchors of the retraining (0.9261 / 0.8515, div_J 0.1515 / 0.0000).
+
+Joined layout: 23 harness columns, then head 1's p_fwd p_rev l_fwd l_rev
+h_fused (23..27), head 2's the same (28..32), then p_avg_fwd p_avg_rev
+h_avg (33..35): 36 columns. Both caches must agree on n_per_frame and on
+the exact (t, i, j) key set, asserted per dataset.
+
+Attach, in addition to v2's sources: kernel faustine649/biohub-edgeprob2.
+Expected ~3.5 h CPU: features ~35 min, stage B 7 arms x 24 datasets.
+
+--- v2's docstring follows ---
+edgeprob_rank.py -- does the OFFICIAL edge head's probability add anything
+to OUR edge ranker? v2: D175 pool, evaluated on the F4 arm (what ships).
+
+SCRIPT_VERSION 2026-09-03a-edgeprob-rank
+
+THE QUESTION. The pipeline links xl detections with an 18-column geometric
+ranker (HistGradientBoosting) and never sees the end-to-end-trained edge
+head (progress.md 2026-08-24, "the edge ranker never sees edge_prob").
+`edgeprob_cache.py` (kernel faustine649/biohub-edgeprob, GPU) re-ran the
+official head over OUR primaries and dumped, per dataset, its softmax
+probability for every candidate pair the CPU ranker considers, forward
+(t -> t+1) and on the reversed movie (t+1 -> t). This CPU kernel joins
+those numbers onto the ranker's rows and asks, with the pipeline's own
+verdict, whether they help.
+
+WHAT v1 SETTLED (biohub-edgeprob-rank v1, 2026-09-02, D32 pool, BASE
+primaries, 116.5 min): +BIDIR (18 + p_fwd + p_rev + h_fused) was the best
+of four arms, +0.0046 6bba / +0.0106 44b6 adj_J over BASE18, same sign in
+both clean groups; +PFWD moved less and +ALL added nothing over +BIDIR.
+Those two arms are dropped here. v2 asks the question that decides a
+submission: the same gain, from a ranker trained on the FULL pool, on the
+F4 primaries that ship.
+
+ARMS (edge ranker columns; everything else identical):
+
+  BASE18    the 18 shipped columns, retrained on D175
+  +BIDIR    18 + p_fwd + p_rev + h_fused, trained on D175
+
+  h_fused = harmonic mean of p_fwd and p_rev (the public 0.948 notebook's
+  forward/reverse fusion); p_fwd alone where p_rev is NaN.
+
+  ANCHOR_D187  the shipped D187 pkl, loaded not trained -- proves the
+               harness (F4-6bba adj_J must read 0.9216). Not a judged arm.
+
+TRAINING POOL = D175: all 199 train movies minus HOLDOUT_6BBA (12) minus
+the seeded 44b6 draw (12) -- dctrain's split (biohub-dctrain-175-weights,
+split_manifest.json; cross-checked when that dataset happens to be
+mounted, not required). The pool size is asserted to be 175. Both
+evaluation groups are therefore OUTSIDE the pool of every trained arm.
+⚠ ANCHOR_D187 is the exception: the D187 ranker trained on all 71 44b6
+movies, so its 44b6 row is in-sample and its 44b6 anchor is soft; the
+two trained arms are clean there.
+
+GT labelling exactly as poolsize.py labels edges: a primary is matched to
+its nearest GT node within MATCH_UM 5 um; a candidate pair (i, j) is kept
+only when i matched a GT node THAT HAS CHILDREN in the GT (sparse
+annotation: a matched parent with no recorded child says nothing, and is
+dropped rather than counted as a negative); label 1 when j matched one of
+those children, else 0. Same hyperparameters as the shipped ranker
+(poolsize.py:935): HistGradientBoostingClassifier(max_iter=300,
+random_state=0), a 10% seeded validation split for the edge AUC, then a
+refit on 100% of the pool. Pool features come from the BASE (detcache)
+primaries joined with biohub-edgeprob's BASE edgeprob_<name>.npz, which
+is what the head was cached on for all 199.
+
+EVALUATION on the F4 ARM (ep05 DeepCenter as a fourth equal-weight
+heatmap, ref 55889500, what ships at 0.925): primaries from
+fdet_F4_<name>.npz (biohub-fusecache), joined with edgeprob_F4_<name>.npz
+(biohub-edgeprob v3, the head over those same F4 primaries). Two groups,
+12 datasets each, full harness (solve_one -> patch_final -> the official
+scorer), one line per dataset:
+
+  6bba   the 12-dataset holdout every recorded number comes from;
+  44b6   12 drawn by random.Random(20260827).sample from the 44b6 OUTSIDE
+         the D32 pool (dctrain.py:158-163 verbatim, the user's standing
+         rule) -- dctrain's excluded 12.
+
+SCORE_BASE_ARM (default False) additionally scores the same three rankers
+on the BASE primaries (detcache + edgeprob_<name>.npz), which doubles
+stage B; its anchors are v1's (ANCHOR_D187 BASE-6bba 0.9293 hard).
+
+No zebrahub arm: biohub-edgeprob scored competition movies only.
+
+ANCHORS (hard, asserted after everything has printed so a miss cannot
+waste the run's tables -- poolsize lost a summary to a late KeyError):
+
+  ANCHOR_D187 F4-6bba adj_J 0.9216 / div_J 0.0606  (f4diag 2026-09-01,
+              rankwhy, edgewhy: the D187 pkl on the F4 caches with this
+              exact machinery). adj_J is HARD (tolerance 0.0005); div_J
+              is printed and warned.
+  Soft (printed, warned, not asserted): ANCHOR_D187 F4-44b6 0.8353 /
+  div_J 0.0000 -- in-sample for D187, and it depends on the 44b6 draw
+  matching dctrain's manifest.
+  With SCORE_BASE_ARM: ANCHOR_D187 BASE-6bba 0.9293 hard, BASE-44b6
+  0.8185 soft (v1 reproduced both).
+  BASE18 has no anchor in v2: no recorded number exists for a D175
+  ranker on this harness.
+
+OUTPUT. edge_ranker_ep175_bidir.pkl (and _base18) with keys `model`,
+`cols`, `pool`, `extra_cols`, `feature_names`, `n_features`, `h_fused`,
+`version`, so a submission kernel can load it; the exact column layout
+the model expects is printed under "RANKER LAYOUT".
+
+ASSEMBLY. The harness is rankwhy.py's (2026-09-02b, itself dcpool.py's
+verbatim: loader, 18-column pair_features, pass1_tracks and the
+23-column pair_features that overrides it, _gap_close, _short_filter,
+_linefit, _add_safe_divisions, score_dir, solve_edges) with the shipped
+post-link constants as its defaults (SHORT_MIN 4, GAP1_CAP_FRAC 0.02,
+GAP_NEED_CAND False = cap20, ref 55817630). Cut by line content:
+preamble (support pack wheels, repo clone, imports), constants, the
+detcache walk, `_logit` .. `solve_edges`, and the acceleration block
+that holds `warn_once` / `pass1_tracks` / the 23-column pair_features.
+That slice is byte-identical to v1's. rankwhy's `solve_one` is re-typed
+below with the model and its columns as parameters and the features
+precomputed, so the arms share one feature pass per dataset;
+`patch_final` is rankwhy's verbatim; `load_dets(name, arm)` is rankwhy's
+(BASE reads detcache_, F4 reads fdet_F4_).
+
+THE JOIN. edgeprob_<name>.npz / edgeprob_F4_<name>.npz rows are (t, i, j)
+into seeds_of order of the matching primaries. Before any index is
+trusted, `n_per_frame` must equal this harness's own primaries per frame
+for that det arm; then every harness pair must find its row (a miss is a
+hard error, never a silent 0) and the row counts must agree, so the two
+pair sets are proven identical.
+
+MEMORY. 199 pool datasets are reduced to labelled rows as they are
+computed; full features stay in memory only for the 24 F4 evaluation
+sets (and the 24 BASE ones when SCORE_BASE_ARM is on).
+
+Kaggle: CPU (enable_gpu false), enable_internet true (the scorer is
+cloned), one line per dataset, budget guard at BUDGET_S. Expected ~95
+min: features ~28 min (v1: 7.0 min for 56 sets), stage B ~66 min (v1:
+109 min for 5 arms x 24; here 3 x 24). Prints `EDGEPROB-RANK OK` only
+when every arm scored every dataset and the hard anchors held.
+
+Attach (kernel-metadata.json): dataset_sources
+pilkwang/biohub-tracking-support-pack-50ep-v1 and faustine649/cell-tracking
+(optionally faustine649/biohub-dctrain-175-weights for the manifest
+cross-check); kernel_sources faustine649/biohub-edgeprob (v3: 199 BASE +
+24 F4 caches), faustine649/biohub-edge-ranker, faustine649/biohub-cache-train
+(the 199 detcaches), faustine649/biohub-poolsize (the two pkls),
+faustine649/biohub-fusecache (fdet_F4_ caches);
+competition_sources biohub-cell-tracking-during-development (GT + scorer).
+Push with `py kag.py kernels push -p .` (the connector drops sources).
+"""
+
+from __future__ import annotations
+
+import gc
+import json
+import os
+import pathlib
+import pickle
+import random
+import subprocess
+import sys
+import time
+from collections import defaultdict
+
+SCRIPT_VERSION = "2026-09-09a-hp44"
+print("SCRIPT_VERSION", SCRIPT_VERSION, flush=True)
+
+HOLDOUT_6BBA = [
+    "6bba_268e1230", "6bba_2312ac41", "6bba_283bf9f1", "6bba_3a1849c2",
+    "6bba_3abfe10a", "6bba_5c824876", "6bba_61dd1e0d", "6bba_7af54fde",
+    "6bba_7b5d3b2c", "6bba_afb141ff", "6bba_aeee7805", "6bba_c27cba08",
+]
+HOLDOUT = HOLDOUT_6BBA
+ILP_DISAPP = 1.5
+ILP_FLOOR = 0.10                            # candidates fed to the ILP
+GATE_UM = 10.0
+MATCH_UM = 5.0
+DIV_W = 0.55
+
+SEED_44B6 = 20260827    # dctrain.py:158 -- random, seeded, outside D32
+N_44B6 = 12
+N_POOL32 = 32
+N_POOL175 = 175         # dctrain's pool: 199 - 12 (6bba) - 12 (44b6)
+
+# Score the BASE primaries too (v1's arm)? Doubles stage B (~+66 min).
+SCORE_BASE_ARM = False
+
+# WHICH detection cache the "F4" path reads. "F4" is divbench9 verbatim and
+# carries the hard anchor; "F4HP" swaps in hparacache's hpara placement of the
+# SAME detections and is expected to move the anchors -- that movement is the
+# measurement. See the module docstring of make_hparabench.py.
+DET_SRC = "F4"
+assert DET_SRC in ("F4", "F4HP"), DET_SRC
+print(f"DET_SRC = {DET_SRC}", flush=True)
+
+# Recorded anchors, see the docstring. Keys: (arm, det_arm, group).
+ANCHOR_HARD = {("ANCHOR_D187", "F4", "6bba"): 0.9216}
+ANCHOR_SOFT = {("ANCHOR_D187", "F4", "44b6"): 0.8353,
+               ("+BIDIR", "F4", "6bba"): 0.9261,     # v2, retrained here
+               ("+BIDIR", "F4", "44b6"): 0.8515}
+ANCHOR_DIV = {("ANCHOR_D187", "F4", "6bba"): 0.0606,     # printed, warned
+              ("ANCHOR_D187", "F4", "44b6"): 0.0000,
+              ("+BIDIR", "F4", "6bba"): 0.1515,
+              ("+BIDIR", "F4", "44b6"): 0.0000}
+if SCORE_BASE_ARM:
+    ANCHOR_HARD[("ANCHOR_D187", "BASE", "6bba")] = 0.9293
+    ANCHOR_SOFT[("ANCHOR_D187", "BASE", "44b6")] = 0.8185
+if DET_SRC == "F4HP":
+    # The whole point of the run is that these numbers move. Asserting them
+    # would abort the measurement; dropping them silently would hide a
+    # harness change, so they are demoted to SOFT and still printed.
+    ANCHOR_SOFT.update(ANCHOR_HARD)
+    ANCHOR_HARD = {}
+    print("  DET_SRC=F4HP: the F4 anchors are demoted to soft. A large move "
+          "in ANCHOR_D187-6bba (0.9216) is the measurement; a move of more "
+          "than a couple of points is more likely a broken join -- check "
+          "the JOIN counters before believing it.", flush=True)
+ANCHOR_TOL = 0.0005
+
+BUDGET_S = 10.0 * 3600  # Kaggle kills a CPU kernel at 12 h; stop cleanly first
+
+
+# ---- [assembled from rankwhy.py: A preamble] ----
+# chimera-style environment: pack wheels (pyscipopt for the ILP) + the
+# real tracking_cellmot from a fresh clone (scoring), --no-deps so pip
+# cannot half-upgrade numpy (toolchain trap).
+r = subprocess.run(["git", "clone", "--depth", "1",
+                    "https://github.com/royerlab/"
+                    "kaggle-cell-tracking-competition.git",
+                    "/kaggle/working/repo"], capture_output=True, text=True)
+print(f"git clone exit {r.returncode}", flush=True)
+
+import shutil                                                  # noqa: E402
+PACK = pathlib.Path("/kaggle/input/datasets/pilkwang/"
+                    "biohub-tracking-support-pack-50ep-v1")
+if not PACK.exists():
+    PACK = pathlib.Path("/kaggle/input/biohub-tracking-support-pack-50ep-v1")
+assert PACK.exists(), "support pack not attached"
+KEEP_OUT = {"numpy", "scipy", "torch", "pandas", "pyarrow", "numba",
+            "llvmlite", "matplotlib", "pillow", "networkx", "scikit-learn",
+            "scikit-image", "setuptools", "wheel", "pip"}
+WH = pathlib.Path("/kaggle/working/wheelhouse")
+shutil.rmtree(WH, ignore_errors=True)
+WH.mkdir(parents=True)
+for w in sorted(PACK.rglob("*.whl")):
+    if w.name.split("-")[0].replace("_", "-").lower() not in KEEP_OUT:
+        shutil.copy(w, WH / w.name)
+r = subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                    "--no-index", "--no-deps"]
+                   + [str(w) for w in sorted(WH.glob("*.whl"))],
+                   capture_output=True, text=True)
+print(f"pip wheels exit {r.returncode}", flush=True)
+r = subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                    "--no-deps", "-e", "/kaggle/working/repo"],
+                   capture_output=True, text=True)
+print(f"pip -e repo exit {r.returncode}", flush=True)
+for p in (PACK / "repo" / "src", PACK / "repo" / "scripts"):
+    sys.path.insert(0, str(p))
+sys.path.insert(0, "/kaggle/working/repo/src")
+
+import numpy as np                                             # noqa: E402
+from scipy.optimize import linear_sum_assignment               # noqa: E402
+from scipy.spatial import cKDTree                              # noqa: E402
+import tracksdata as td                                        # noqa: E402
+import predict_unet_transformer as PIPE                         # noqa: E402
+from tracking_cellmot.io import open_dataset                   # noqa: E402
+from tracking_cellmot.metrics import (                         # noqa: E402
+    evaluate as compute_metric, node_recall, per_sample_metrics, summarise)
+from sklearn.ensemble import HistGradientBoostingClassifier    # noqa: E402
+from sklearn.metrics import roc_auc_score                      # noqa: E402
+
+CODE_ROOTS = [
+    "/kaggle/input/datasets/faustine649/cell-tracking/cell tracking",
+    "/kaggle/input/datasets/faustine649/cell-tracking",
+    "/kaggle/input/cell-tracking/cell tracking",
+    "/kaggle/input/cell-tracking",
+]
+code = next((c for c in CODE_ROOTS
+             if pathlib.Path(c, "division_recovery.py").exists()), None)
+assert code is not None
+sys.path.insert(0, code)
+import division_recovery as dr                                 # noqa: E402
+from viz_cells import (find_root, geff_path, read_geff,        # noqa: E402
+                       list_datasets)
+
+# ---- [assembled from rankwhy.py: B constants] ----
+SCALE = np.array([1.625, 0.40625, 0.40625])
+UNET_THRESH = 0.15
+CAND_THR = 0.05
+SHORT_MIN = 4            # SHIPPED value (short-sweep, submitted); no sweep here
+LINEFIT_WEIGHT = 0.8     # REBOUND per configuration
+LINEFIT_WINDOW = 2       # REBOUND per configuration
+MAX_LINK_UM = 10.0
+TIGHT_UM = 6.0
+LINK_SIM_W = 2.0
+GAP1_GATE_UM = 9.0       # REBOUND per configuration
+GAP1_SNAP_UM = 3.2       # REBOUND per configuration
+GAP1_MIN_CAND_SCORE = 0.10   # REBOUND per configuration
+GAP1_CAP_FRAC = 0.02     # SHIPPED (cap20, ref 55817630)
+# Shipped behaviour: bridge ONE missing frame, and only onto a real
+# candidate from the repair band. Both are swept below; BASE must
+# reproduce the recorded anchor with these values, which is what
+# proves the rewritten _gap_close did not change behaviour.
+GAP_SPAN = 1
+GAP_NEED_CAND = False    # SHIPPED (nocand, ref 55817630)
+# ---- the gates. Each is OFF at its neutral value, so BASE is unchanged.
+# GAP_VEL_COS  minimum cosine between the incoming velocity at the gap's
+#              start and the outgoing velocity at its end. -1.0 accepts
+#              anything, which is the shipped behaviour.
+# GAP_MIN_LEN  minimum node count of BOTH fragments being joined. 0 is off.
+# GAP_CLEAR_UM a bridge is refused if a PRIMARY node already sits this
+#              close to the interpolated position. 0.0 is off.
+# GAP_LEN_MODE decides WHICH bridges GAP_MIN_LEN is allowed to judge.
+#   "always"     every bridge. gap3's len4/len8 arms, and the reason
+#                they delete bridges a real detected peak was backing.
+#   "if_nocand"  only bridges with no candidate behind them. The user's
+#                design: the candidate IS the evidence, the length
+#                requirement is only the fallback for when there is none.
+GAP_LEN_MODE = "always"
+# ---- the second detector ------------------------------------------------
+# None is OFF, and BASE is then byte-identical to cap20.
+DC_TAU = None
+DC_MERGE_UM = 4.0          # same separation our own NMS enforces
+DC_ADD_SCORE = 0.12        # repair band only: >= MIN_CAND 0.10, < THRESH 0.15
+_DC_STATS = [0, 0, 0]      # frames, xl pool points, DC points ADDED to pool
+from collections import defaultdict as _dd
+_SNAP_STATS = _dd(lambda: [0, 0, 0])   # DC_TAU -> [midpoint, xl snap, DC snap]
+_CAND_IS_DC = None         # per-frame bool arrays, set by the arm loop
+GAP_VEL_COS = -1.0
+GAP_MIN_LEN = 0
+GAP_CLEAR_UM = 0.0    # REBOUND per configuration
+DIV_PARENT_UM = 12.0
+DIV_SISTER_UM = 15.0
+DIV_CHILD_UM = 10.0
+DIV_DIVERGE_UM = 2.25
+DIV_W_SISTER = 0.15
+DIV_FRAME_CAP = 0.0076
+DIV_GLOBAL_CAP = 0.00375
+
+# ---- [assembled from rankwhy.py: C detcaches] ----
+# ---- detection caches from the v2 kernel output -------------------------
+BASE = pathlib.Path("/kaggle/input")
+CACHES = {}
+stack = [BASE]
+while stack:
+    d = stack.pop()
+    if d.name.endswith((".zarr", ".geff")) \
+            or "cell-tracking-during-development" in d.name:
+        continue
+    for f in d.glob("detcache_*.npz"):
+        CACHES[f.stem[len("detcache_"):]] = f
+    if len(d.parts) - len(BASE.parts) < 4:
+        stack += [p for p in d.iterdir() if p.is_dir()]
+print(f"detection caches found: {len(CACHES)}", flush=True)
+assert len(CACHES) >= 40, "attach biohub-edge-ranker as kernel source"
+
+# ---- [assembled from rankwhy.py: D plumbing] ----
+def _logit(s):
+    s = np.clip(s, 1e-4, 1 - 1e-4)
+    return np.log(s / (1 - s))
+
+
+def seeds_of(dets_t):
+    coords, scores = dets_t
+    coords = np.asarray(coords, float).reshape(-1, 3)
+    scores = np.asarray(scores, float).reshape(-1)
+    m = scores >= UNET_THRESH
+    return coords[m], scores[m]
+
+
+def _link_sim(prev_xyz, curr_xyz, prev_vel, prev_sc, curr_sc):
+    if len(prev_xyz) == 0 or len(curr_xyz) == 0:
+        return []
+    P = prev_xyz * SCALE[None, :]
+    C = curr_xyz * SCALE[None, :]
+    pred = P + (0.5 * prev_vel if prev_vel is not None else 0.0)
+    N, M = len(P), len(C)
+    BIG = 1e9
+    sim = LINK_SIM_W * np.abs(_logit(prev_sc)[:, None] - _logit(curr_sc)[None])
+
+    def _hun(pi, ci, gate):
+        if len(pi) == 0 or len(ci) == 0:
+            return []
+        Draw = np.sqrt(((P[pi][:, None] - C[ci][None]) ** 2).sum(2))
+        D = np.sqrt(((pred[pi][:, None] - C[ci][None]) ** 2).sum(2))
+        cost = np.where(Draw > gate, BIG, D) + \
+            np.where(Draw > gate, 0.0, sim[np.ix_(pi, ci)])
+        ri, rc = linear_sum_assignment(cost)
+        return [(int(pi[r]), int(ci[c]))
+                for r, c in zip(ri, rc) if cost[r, c] < BIG]
+
+    links = _hun(np.arange(N), np.arange(M), min(TIGHT_UM, MAX_LINK_UM))
+    up = {p for p, _ in links}
+    uc = {c for _, c in links}
+    fp = np.array([i for i in range(N) if i not in up], int)
+    fc = np.array([j for j in range(M) if j not in uc], int)
+    return links + _hun(fp, fc, MAX_LINK_UM)
+
+
+def pass1_velocities(dets):
+    T = len(dets)
+    vels = [np.zeros((len(seeds_of(dets[t])[0]), 3)) for t in range(T)]
+    for t in range(T - 1):
+        P, ps = seeds_of(dets[t])
+        C, cs = seeds_of(dets[t + 1])
+        if len(P) == 0 or len(C) == 0:
+            continue
+        for pi, ci in _link_sim(P, C, vels[t] if len(vels[t]) else None,
+                                ps, cs):
+            vels[t + 1][ci] = (C[ci] - P[pi]) * SCALE
+    return vels
+
+
+def pair_features(dets, vels, T):
+    out = []
+    for t in range(T - 1):
+        P, ps = seeds_of(dets[t])
+        C, cs = seeds_of(dets[t + 1])
+        if len(P) == 0 or len(C) == 0:
+            out.append(([], np.zeros((0, 18), np.float32), P, C))
+            continue
+        Pu = P * SCALE[None, :]
+        Cu = C * SCALE[None, :]
+        tree_p = cKDTree(Pu)
+        tree_c = cKDTree(Cu)
+        # gate query only: shrink z by GATE_Z/GATE_XY so a ball of
+        # radius GATE_XY in this space IS the ellipsoid we want. The
+        # distance FEATURE below stays physical and unchanged.
+        _an = GATE_Z / GATE_XY
+        _Sq = np.array([SCALE[0] / _an, SCALE[1], SCALE[2]])
+        Pq = P * _Sq[None, :]
+        Cq = C * _Sq[None, :]
+        tree_q = cKDTree(Cq)
+        dens_p = np.array([len(tree_p.query_ball_point(x, 7.0)) - 1
+                           for x in Pu])
+        dens_c = np.array([len(tree_c.query_ball_point(x, 7.0)) - 1
+                           for x in Cu])
+        pred = Pu + vels[t]
+        pairs = []
+        rows = []
+        cand_of_i = defaultdict(list)
+        cand_of_j = defaultdict(list)
+        raw = {}
+        for i, x in enumerate(Pu):
+            for j in tree_q.query_ball_point(Pq[i], GATE_XY):
+                d = float(np.linalg.norm(Cu[j] - x))
+                raw[(i, j)] = d
+                cand_of_i[i].append((d, j))
+                cand_of_j[j].append((d, i))
+        for i in cand_of_i:
+            cand_of_i[i].sort()
+        for (i, j), d in raw.items():
+            delta = Cu[j] - Pu[i]
+            md = float(np.linalg.norm(Cu[j] - pred[i]))
+            rank = next(k for k, (_, jj) in enumerate(cand_of_i[i])
+                        if jj == j)
+            rows.append([d, delta[0], abs(delta[0]),
+                         float(np.linalg.norm(delta[1:])), md, d - md,
+                         ps[i], cs[j],
+                         abs(float(_logit(np.array([ps[i]]))[0]
+                                   - _logit(np.array([cs[j]]))[0])),
+                         dens_p[i], dens_c[j], len(P), len(C),
+                         rank, len(cand_of_i[i]), len(cand_of_j[j]),
+                         float(np.linalg.norm(vels[t][i])), t / max(1, T)])
+            pairs.append((i, j))
+        out.append((pairs, np.asarray(rows, np.float32), P, C))
+    return out
+
+
+root = find_root(None)
+
+GATE_XY = 10.0
+GATE_Z = 10.0
+# ---- graph plumbing (xl pipeline tail) ---------------------------------
+def _dist_um(a, b):
+    d = (np.asarray(a, float) - np.asarray(b, float)) * SCALE
+    return float(np.sqrt((d * d).sum()))
+
+
+def _short_filter(nodes, edges):
+    parent = {nid: nid for nid in nodes}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    out_count = defaultdict(int)
+    for a, b in edges:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+        out_count[a] += 1
+    comps = defaultdict(list)
+    for nid in nodes:
+        comps[find(nid)].append(nid)
+    keep = set()
+    for members in comps.values():
+        if len(members) >= SHORT_MIN or \
+                any(out_count[n] >= 2 for n in members):
+            keep.update(members)
+    nodes2 = {nid: n for nid, n in nodes.items() if nid in keep}
+    edges2 = [(a, b) for a, b in edges if a in nodes2 and b in nodes2]
+    return nodes2, edges2
+
+
+def _linefit(nodes, edges):
+    pred = defaultdict(list)
+    succ = defaultdict(list)
+    for a, b in edges:
+        if int(nodes[b]["t"]) == int(nodes[a]["t"]) + 1:
+            succ[a].append(b)
+            pred[b].append(a)
+    orig = {k: v["xyz"].copy() for k, v in nodes.items()}
+    updates = {}
+    for nid in nodes:
+        neigh = [(0, nid)]
+        cur = nid
+        for step in range(1, LINEFIT_WINDOW + 1):
+            ps = pred.get(cur, [])
+            if len(ps) != 1:
+                break
+            cur = ps[0]
+            neigh.append((-step, cur))
+        cur = nid
+        for step in range(1, LINEFIT_WINDOW + 1):
+            ss = succ.get(cur, [])
+            if len(ss) != 1:
+                break
+            cur = ss[0]
+            neigh.append((step, cur))
+        if len(neigh) < 3:
+            continue
+        dt = np.array([a for a, _ in neigh], float)
+        xyz = np.stack([orig[n] for _, n in neigh])
+        fit = np.array([np.polyval(np.polyfit(dt, xyz[:, ax], 1), 0.0)
+                        for ax in range(3)])
+        if np.isfinite(fit).all():
+            updates[nid] = (1 - LINEFIT_WEIGHT) * orig[nid] + \
+                LINEFIT_WEIGHT * fit
+    for nid, xyz in updates.items():
+        nodes[nid]["xyz"] = xyz
+
+
+_PRIM_TREES = {}
+
+# made / allowed / demand-seen / times the cap bound, keyed by the arm's
+# own constants so no tag has to be plumbed through the sweep loop.
+# gap3 printed none of this, which is why it could not tell "len8 picks
+# better bridges" apart from "len8 shrinks demand below the budget".
+_GAP_LOG = defaultdict(lambda: [0, 0, 0, 0])
+
+
+def _prim_tree(t, by_t, nodes):
+    """KD-tree of the PRIMARY nodes at frame t, in micrometres. Cached
+    per call of _gap_close -- the caller clears it."""
+    if t in _PRIM_TREES:
+        return _PRIM_TREES[t]
+    ids = by_t.get(t, [])
+    tr = None
+    if ids:
+        tr = cKDTree(np.asarray([nodes[g]["xyz"] for g in ids], float)
+                     * SCALE)
+    _PRIM_TREES[t] = tr
+    return tr
+
+
+def _frag_len(nid, link, back, cap=12):
+    """How many nodes the fragment containing `nid` runs for, walking
+    backward through `pred` or forward through `succ`. Capped so a very
+    long track costs nothing to measure."""
+    n = 1
+    cur = nid
+    while n < cap:
+        nxt = link.get(cur)
+        if nxt is None:
+            break
+        cur = nxt
+        n += 1
+    return n
+
+
+def _gap_close(nodes, edges, cand, cand_sc, cand_trees, next_id):
+    """Bridge a track break by inserting up to GAP_SPAN nodes.
+
+    Rewritten from the version that only ever bridged ONE missing frame
+    (`ends` at t joined to `starts` at t+2). Two behaviours are now
+    parameters, because flicker.py showed both matter and neither had
+    ever been tested:
+
+      GAP_SPAN        how many consecutive missing frames to bridge.
+                      1 reproduces the shipped behaviour exactly.
+      GAP_NEED_CAND   whether every inserted node must land on a real
+                      candidate from the repair band. The shipped code
+                      required it. At the missed frames 79.8% have NO
+                      candidate within 5 um, so requiring it caps the
+                      repair at about a fifth of dropouts, and a
+                      two-frame bridge needing one at both frames would
+                      fire on roughly 4%.
+
+    With GAP_SPAN=1 and GAP_NEED_CAND=True this must be byte-identical
+    in behaviour to the original -- that is the BASE arm's job to prove.
+    """
+    T = len(cand)
+    _PRIM_TREES.clear()
+    succ = {}
+    pred = {}
+    for a, b in edges:
+        succ[a] = b
+        pred[b] = a
+    by_t = defaultdict(list)
+    for nid, n in nodes.items():
+        by_t[n["t"]].append(nid)
+    cand_used = [np.zeros(len(c), bool) for c in cand]
+    max_gaps = max(1, int(GAP1_CAP_FRAC * len(nodes)))
+    n_added = 0
+    n_demand = 0
+    BIG = 1e9
+    # Shortest gaps first. A cell missing one frame should be repaired by
+    # the confident one-frame rule before a longer, weaker bridge is
+    # allowed to consume the same endpoint.
+    for span in range(1, GAP_SPAN + 1):
+        step = span + 1
+        for t in range(T - step):
+            if n_added >= max_gaps:
+                break
+            ends = [g for g in by_t.get(t, [])
+                    if g not in succ and g in pred]
+            starts = [g for g in by_t.get(t + step, [])
+                      if g not in pred and g in succ]
+            if not ends or not starts:
+                continue
+            P = np.asarray([nodes[g]["xyz"] for g in ends], float) * SCALE
+            C = np.asarray([nodes[g]["xyz"] for g in starts],
+                           float) * SCALE
+            D = np.sqrt(((P[:, None] - C[None]) ** 2).sum(2))
+            # A longer bridge should be allowed proportionally more total
+            # travel, otherwise a 2-frame bridge held to a 1-frame budget
+            # would essentially never fire and the run would be testing
+            # the gate rather than the span.
+            #
+            # ⚠ v1 WROTE `D = D / float(step)` AND THAT BROKE THE BASE
+            # ARM. `step` is `span + 1`, so at span 1 -- the shipped
+            # configuration -- it divided by 2 and silently doubled
+            # GAP1_GATE_UM from 9 to 18 um. BASE then reproduced
+            # biohub-poolsize's D187 row at adj_J 0.9253 / div_J 0.1282
+            # against the recorded 0.9254 / 0.1316, which is exactly the
+            # kind of small drift a must-reproduce anchor exists to
+            # catch. The SHORT_MIN deltas survived it because the same
+            # loosened gate sat under both halves and cancelled in the
+            # difference; the GAP arms did not, because they compare
+            # different spans and therefore different gates.
+            #
+            # Normalise by SPAN, not step: span 1 divides by 1 and is
+            # byte-identical to the shipped code.
+            D = D / float(span)
+            cost = np.where(D > GAP1_GATE_UM, BIG, D)
+            ri, ci = linear_sum_assignment(cost)
+            for r_, c_ in zip(ri, ci):
+                if n_added >= max_gaps or cost[r_, c_] >= BIG:
+                    continue
+                ge, gs = ends[r_], starts[c_]
+                if ge in succ or gs in pred:
+                    continue
+                a_xyz = nodes[ge]["xyz"]
+                b_xyz = nodes[gs]["xyz"]
+                n_demand += 1
+
+                # ---- the gates ---------------------------------------
+                # Each is skipped at its neutral value so BASE is
+                # byte-identical to the shipped behaviour.
+                if GAP_VEL_COS > -1.0:
+                    pa, sb = pred.get(ge), succ.get(gs)
+                    if pa is None or sb is None:
+                        continue
+                    v_in = (a_xyz - nodes[pa]["xyz"]) * SCALE
+                    v_out = (nodes[sb]["xyz"] - b_xyz) * SCALE
+                    na, nb = np.linalg.norm(v_in), np.linalg.norm(v_out)
+                    if na < 1e-6 or nb < 1e-6:
+                        # a stationary endpoint carries no direction, so
+                        # this gate cannot judge it. Let it through
+                        # rather than silently rejecting every still cell.
+                        pass
+                    elif float(v_in @ v_out) / (na * nb) < GAP_VEL_COS:
+                        continue
+                if GAP_CLEAR_UM > 0.0:
+                    blocked = False
+                    for k in range(1, step):
+                        frac = k / float(step)
+                        m_ = ((1.0 - frac) * a_xyz + frac * b_xyz) * SCALE
+                        tr_ = _prim_tree(t + k, by_t, nodes)
+                        if tr_ is not None and \
+                                tr_.query(m_)[0] <= GAP_CLEAR_UM:
+                            blocked = True
+                            break
+                    if blocked:
+                        continue
+
+                # resolve every inserted position BEFORE mutating, so a
+                # bridge that fails halfway leaves nothing behind
+                picks = []
+                for k in range(1, step):
+                    frac = k / float(step)
+                    mid = (1.0 - frac) * a_xyz + frac * b_xyz
+                    tt = t + k
+                    tree = cand_trees[tt]
+                    hit = None
+                    if tree is not None:
+                        dist, idx = tree.query(mid * SCALE)
+                        if dist <= GAP1_SNAP_UM \
+                                and not cand_used[tt][idx] \
+                                and cand_sc[tt][idx] >= GAP1_MIN_CAND_SCORE:
+                            hit = idx
+                    picks.append((tt, hit, mid))
+                n_missing = sum(1 for _, _h, _ in picks if _h is None)
+
+                # ---- the candidate requirement -----------------------
+                if GAP_NEED_CAND and n_missing:
+                    continue
+
+                # ---- the length gate, moved to AFTER the lookup ------
+                # gap3 ran this BEFORE resolving the candidate, which
+                # cannot express "only when there is no candidate". The
+                # lookup has no side effects (cand_used is marked in the
+                # insert loop below, not above), so a bridge rejected
+                # here leaves nothing behind and "always" reproduces
+                # gap3 exactly. The three anchor arms test that.
+                if GAP_MIN_LEN > 0 and (GAP_LEN_MODE == "always"
+                                        or n_missing):
+                    if _frag_len(ge, pred, back=True) < GAP_MIN_LEN or \
+                            _frag_len(gs, succ, back=False) < GAP_MIN_LEN:
+                        continue
+                prev = ge
+                for tt, hit, mid in picks:
+                    _sn = _SNAP_STATS[DC_TAU]
+                    if hit is None:
+                        use = np.asarray(mid, float)
+                        _sn[0] += 1
+                    else:
+                        use = np.asarray(cand[tt][hit], float)
+                        cand_used[tt][hit] = True
+                        if _CAND_IS_DC is not None \
+                                and bool(_CAND_IS_DC[tt][hit]):
+                            _sn[2] += 1
+                        else:
+                            _sn[1] += 1
+                    ng = next_id
+                    next_id += 1
+                    nodes[ng] = {"t": tt, "xyz": use}
+                    edges.append((prev, ng))
+                    succ[prev] = ng
+                    pred[ng] = prev
+                    prev = ng
+                edges.append((prev, gs))
+                succ[prev] = gs
+                pred[gs] = prev
+                n_added += 1
+    _r = _GAP_LOG[(GAP_NEED_CAND, GAP_SPAN, round(GAP1_GATE_UM, 2),
+                   round(GAP1_CAP_FRAC, 5))]
+    _r[0] += n_added
+    _r[1] += max_gaps
+    _r[2] += n_demand
+    # ⚠ n_demand stops accumulating once the cap binds, because the
+    # frame loop breaks there. So demand-seen UNDERSTATES true demand
+    # for any capped arm -- read the cap20 arms for the real figure.
+    _r[3] += 1 if n_added >= max_gaps else 0
+    return next_id
+
+
+STEAL_LOG = {}          # (p, q) -> dict, one per stolen daughter
+# a defaultdict, not a dict: stage B clears it per arm so the counters can be
+# attributed, and a cleared plain dict makes the next += a KeyError
+PATCH_CAPS = defaultdict(int)
+
+
+def _add_safe_divisions(nodes, edges, pfun=None, steal=None):
+    """The orphan-fork patch, VERBATIM, plus an optional second pass that
+    takes a daughter the ILP already gave to somebody else.
+
+    `steal` is None (REF: exactly divbench3) or a float margin: the mother's
+    ranker probability for the edge she would make must beat the current
+    parent's by more than that. -inf runs it unconditionally.
+
+    The orphan pass runs first and to completion, so REF behaviour is
+    untouched by construction; the steal pass only sees mothers and
+    daughters the orphan pass did not use, shares the per-frame cap, and has
+    its own global cap of the same size.
+    """
+    succ = defaultdict(list)
+    pred = defaultdict(list)
+    for a, b in edges:
+        succ[a].append(b)
+        pred[b].append(a)
+    by_t = defaultdict(list)
+    for nid, n in nodes.items():
+        by_t[n["t"]].append(nid)
+    orphan_tree = {}
+    orphan_ids = {}
+    for t, ids in by_t.items():
+        orph = [g for g in ids if not pred.get(g)]
+        orphan_ids[t] = orph
+        if orph:
+            orphan_tree[t] = cKDTree(
+                np.asarray([nodes[g]["xyz"] for g in orph], float) * SCALE)
+    proposals = []
+    for p, n in nodes.items():
+        ch = succ.get(p, [])
+        if len(ch) != 1:
+            continue
+        c1 = ch[0]
+        t = n["t"]
+        if nodes[c1]["t"] != t + 1 or len(pred.get(p, [])) != 1:
+            continue
+        if _dist_um(n["xyz"], nodes[c1]["xyz"]) > DIV_CHILD_UM:
+            continue
+        tree = orphan_tree.get(t + 1)
+        if tree is None:
+            continue
+        for idx in tree.query_ball_point(n["xyz"] * SCALE, r=DIV_PARENT_UM):
+            q = orphan_ids[t + 1][idx]
+            if q == c1:
+                continue
+            d_pq = _dist_um(n["xyz"], nodes[q]["xyz"])
+            d_s = _dist_um(nodes[c1]["xyz"], nodes[q]["xyz"])
+            if d_s > DIV_SISTER_UM:
+                continue
+            d_q, q_idx = tree.query(nodes[c1]["xyz"] * SCALE)
+            if orphan_ids[t + 1][q_idx] != q or d_q > DIV_SISTER_UM:
+                continue
+            c1n, qn = succ.get(c1, []), succ.get(q, [])
+            if len(c1n) != 1 or len(qn) != 1:
+                continue
+            dv_ = _dist_um(nodes[c1n[0]]["xyz"], nodes[qn[0]]["xyz"]) - d_s
+            if dv_ < DIV_DIVERGE_UM:
+                continue
+            proposals.append((d_pq + DIV_W_SISTER * d_s, t, p, q, c1, d_pq, d_s, dv_))
+    proposals.sort()
+    used_p = set()
+    used_q = set()
+    per_frame = defaultdict(int)
+    n_frame = {t: len(ids) for t, ids in by_t.items()}
+    max_global = max(1, int(DIV_GLOBAL_CAP * len(nodes)))
+    added = 0
+    for score, t, p, q, c1, d_pq, d_s, dv_ in proposals:
+        if added >= max_global:
+            PATCH_CAPS["orphan_global"] += 1
+            break
+        if p in used_p or q in used_q:
+            continue
+        if per_frame[t] >= max(1, int(DIV_FRAME_CAP * n_frame[t])):
+            PATCH_CAPS["orphan_frame"] += 1
+            continue
+        FORK_LOG[(p, q)] = dict(c1=c1, d_pq=d_pq, d_s=d_s, dv=dv_,
+                                n_orph=len(orphan_ids.get(t + 1, [])), steal=0)
+        edges.append((p, q))
+        succ[p].append(q)
+        pred[q].append(p)
+        used_p.add(p)
+        used_q.add(q)
+        per_frame[t] += 1
+        added += 1
+    PATCH_CAPS["orphan_added"] += added
+    if steal is None:
+        return added, 0
+
+    # ---- second pass: the daughter the ILP already placed -----------------
+    steal_ids, steal_tree, parent_of = {}, {}, {}
+    for t, ids in by_t.items():
+        cand = []
+        for g in ids:
+            pr = pred.get(g, [])
+            if len(pr) != 1 or g in used_q:
+                continue
+            r = pr[0]
+            if len(succ.get(r, [])) != 1:      # r already forks: leave it alone
+                continue
+            cand.append(g)
+            parent_of[g] = r
+        steal_ids[t] = cand
+        if cand:
+            steal_tree[t] = cKDTree(
+                np.asarray([nodes[g]["xyz"] for g in cand], float) * SCALE)
+    sprop = []
+    for p, n in nodes.items():
+        ch = succ.get(p, [])
+        if len(ch) != 1 or p in used_p:
+            continue
+        c1 = ch[0]
+        t = n["t"]
+        if nodes[c1]["t"] != t + 1 or len(pred.get(p, [])) != 1:
+            continue
+        if _dist_um(n["xyz"], nodes[c1]["xyz"]) > DIV_CHILD_UM:
+            continue
+        tree = steal_tree.get(t + 1)
+        if tree is None:
+            continue
+        for idx in tree.query_ball_point(n["xyz"] * SCALE, r=DIV_PARENT_UM):
+            q = steal_ids[t + 1][idx]
+            if q == c1 or parent_of.get(q) == p:
+                continue
+            d_pq = _dist_um(n["xyz"], nodes[q]["xyz"])
+            d_s = _dist_um(nodes[c1]["xyz"], nodes[q]["xyz"])
+            if d_s > DIV_SISTER_UM:
+                continue
+            # c1 is itself stealable, and it is its own nearest neighbour:
+            # ask for the nearest stealable node that is not c1
+            kk = min(2, len(steal_ids[t + 1]))
+            dd, ii = tree.query(nodes[c1]["xyz"] * SCALE, k=kk)
+            near, d_q = None, np.inf
+            for d_, i_ in zip(np.atleast_1d(dd), np.atleast_1d(ii)):
+                g_ = steal_ids[t + 1][int(i_)]
+                if g_ != c1:
+                    near, d_q = g_, float(d_)
+                    break
+            if near != q or d_q > DIV_SISTER_UM:
+                continue
+            c1n, qn = succ.get(c1, []), succ.get(q, [])
+            if len(c1n) != 1 or len(qn) != 1:
+                continue
+            dv_ = _dist_um(nodes[c1n[0]]["xyz"], nodes[qn[0]]["xyz"]) - d_s
+            if dv_ < DIV_DIVERGE_UM:
+                continue
+            sprop.append((d_pq + DIV_W_SISTER * d_s, t, p, q, c1, d_pq, d_s, dv_))
+    sprop.sort()
+    PATCH_CAPS["steal_proposals"] += len(sprop)
+    stolen = 0
+    max_steal = max(1, int(DIV_GLOBAL_CAP * len(nodes)))
+    for score, t, p, q, c1, d_pq, d_s, dv_ in sprop:
+        if stolen >= max_steal:
+            PATCH_CAPS["steal_global"] += 1
+            break
+        if p in used_p or q in used_q:
+            continue
+        r = parent_of.get(q)
+        if r is None or len(succ.get(r, [])) != 1 or succ[r][0] != q:
+            continue
+        p_pq = pfun(p, q) if pfun else float("nan")
+        p_rq = pfun(r, q) if pfun else float("nan")
+        have = bool(np.isfinite(p_pq) and np.isfinite(p_rq))
+        if not have:
+            PATCH_CAPS["steal_no_prob"] += 1
+        if steal > float("-inf"):
+            # a margin rule needs both numbers; the pair gate is GATE_UM 10 um
+            # and the patch reaches 12, so some proposals simply have none
+            if not have:
+                continue
+            if p_pq - p_rq <= steal:
+                PATCH_CAPS["steal_margin"] += 1
+                continue
+        if per_frame[t] >= max(1, int(DIV_FRAME_CAP * n_frame[t])):
+            PATCH_CAPS["steal_frame"] += 1
+            continue
+        FORK_LOG[(p, q)] = dict(c1=c1, d_pq=d_pq, d_s=d_s, dv=dv_,
+                                n_orph=len(steal_ids.get(t + 1, [])), steal=1)
+        STEAL_LOG[(p, q)] = dict(r=r, p_pq=float(p_pq), p_rq=float(p_rq),
+                                 d_rq=_dist_um(nodes[r]["xyz"], nodes[q]["xyz"]))
+        edges.remove((r, q))
+        edges.append((p, q))
+        succ[r].remove(q)
+        pred[q] = [p]
+        succ[p].append(q)
+        used_p.add(p)
+        used_q.add(q)
+        per_frame[t] += 1
+        stolen += 1
+    PATCH_CAPS["steal_added"] += stolen
+    return added, stolen
+def _adj_of(row):
+    """adj_edge_jaccard for ONE dataset row.
+
+    `summarise` builds that column; nothing on record says
+    `per_sample_metrics` also puts it on the row. Use the key when it is
+    there and reconstruct it from the definition when it is not, rather
+    than letting a KeyError kill a print block that runs after four
+    hours of compute.
+    """
+    v = row.get("adj_edge_jaccard")
+    if v is not None and v == v:
+        return float(v)
+    j = float(row.get("edge_jaccard", float("nan")))
+    r = float(row.get("total_node_ratio", 0.0) or 0.0)
+    return max(0.0, j * (1.0 - 0.1 * r))
+
+
+def _with_ratio(rows):
+    """summarise(), plus the node-count column it does not aggregate.
+
+    adj_J = edge_J * (1 - 0.1 * total_node_ratio), and `summarise` drops
+    the middle term, so a sweep reading only adj_J cannot say whether a
+    change improved the EDGES or merely the NODE COUNT. Weighted by
+    tp+fp+fn, the same weights adj_edge_jaccard uses.
+
+    Purely ADDITIVE: summarise's own keys are untouched. Lifted from
+    thr5, where it was unit-tested.
+    """
+    out = dict(summarise(rows))
+    good = [r for r in rows
+            if r.get("total_node_ratio") == r.get("total_node_ratio")
+            and r["edge_tp"] == r["edge_tp"]]
+    w = [r["edge_tp"] + r["edge_fp"] + r["edge_fn"] for r in good]
+    tw = sum(w)
+    out["total_node_ratio"] = (
+        sum(r["total_node_ratio"] * wi for r, wi in zip(good, w)) / tw
+        if tw else float("nan"))
+    return out
+
+
+def score_dir(pred_dir):
+    rows = []
+    per = {}
+    for gp in sorted(pathlib.Path(pred_dir).glob("*.geff")):
+        name = gp.stem
+# load_image=False: the metric reads dset.tracks and dset.scale only.
+# Loading the image is what demanded a GPU (io.py:199 pins it); see
+# cpu-probe. Skipping it is what lets this whole line run on CPU.
+        dset = open_dataset(root / "train" / name, require_tracks=True,
+                              load_image=False)
+        res_ = td.graph.IndexedRXGraph.from_geff(str(gp))
+        g = res_[0] if isinstance(res_, tuple) else res_
+        er = compute_metric(g, dset.tracks, scale=dset.scale)
+        rec = (node_recall(g, dset.tracks)
+               if g.num_edges() > 0 and g.num_nodes() > 0 else 0.0)
+        gt = read_geff(geff_path(root, "train", name))
+        est = gt["extra"].get("estimated_number_of_nodes")
+        row = per_sample_metrics(er, float(est) if est else
+                                 float("nan"), rec)
+        rows.append(row)
+        per[name] = row
+    # per-dataset rows come back too: a weighted mean can hide one
+    # dataset carrying an entire delta, which is exactly what this run
+    # exists to check.
+    return _with_ratio(rows), per
+
+
+def _bucket_by_source(coords, cand_edges):
+    tcol = coords[:, 0].astype(int)
+    by_t = defaultdict(list)
+    for e in cand_edges:
+        by_t[int(tcol[e[0]])].append(e)
+    return by_t
+
+
+def solve_edges(coords, cand_edges, T, div_w, window_size):
+    """Solve the ILP in overlapping time windows. Returns global edge pairs.
+
+    Window k covers frames [a, b] and k+1 covers [b, c]: they SHARE ONE
+    FRAME but never share an EDGE, since k owns a->a+1 .. (b-1)->b and
+    k+1 owns b->b+1 .. So the merged edge set cannot conflict and needs no
+    reconciliation. Same scheme as ultrack's window_size/overlap_size.
+
+    Measured on the 12-dataset holdout: window 25 scores 0.9382 against
+    the global solve's 0.9368, at 2.08x the linking speed.
+    """
+    tcol = coords[:, 0].astype(int)
+    by_t = _bucket_by_source(coords, cand_edges)
+    if window_size is None:
+        bounds = [(0, T - 1)]
+    else:
+        bounds, a = [], 0
+        while a < T - 1:
+            b = min(a + window_size, T - 1)
+            bounds.append((a, b))
+            a = b
+    out = []
+    dropped = 0
+    for (a, b) in bounds:
+        keep_n = np.where((tcol >= a) & (tcol <= b))[0]
+        if len(keep_n) == 0:
+            continue
+        local_of_g = {int(g): i for i, g in enumerate(keep_n)}
+        sub_coords = coords[keep_n]
+        sub_edges = []
+        for t in range(a, b):
+            for (s, tg, p, d) in by_t.get(t, ()):
+                ls, lt = local_of_g.get(int(s)), local_of_g.get(int(tg))
+                if ls is not None and lt is not None:
+                    sub_edges.append((ls, lt, p, d))
+        if not sub_edges:
+            continue
+        graph = PIPE.build_graph(sub_coords, sub_edges)
+        if graph.num_edges() == 0:
+            continue
+        solver = td.solvers.ILPSolver(
+            edge_weight=-1.0 * td.EdgeAttr("edge_prob"),
+            appearance_weight=0.0,
+            disappearance_weight=ILP_DISAPP,
+            division_weight=div_w)
+        with PIPE.suppress_output():
+            graph = solver.solve(graph)
+        na = graph.node_attrs(attr_keys=["node_id", "t", "z", "y", "x"])
+        # Map solved nodes back BY COORDINATE, never by node_id: node_id is
+        # not a stable handle across the solve (progress.md 02f7c8b).
+        key_of_g = {}
+        for g, c in zip(keep_n, sub_coords):
+            key_of_g[(int(c[0]), int(c[1]), int(c[2]), int(c[3]))] = int(g)
+        cols = {k: na[k].to_list() for k in ("node_id", "t", "z", "y", "x")}
+        g_of_nid = {}
+        for k in range(len(cols["node_id"])):
+            key = (int(cols["t"][k]), int(round(float(cols["z"][k]))),
+                   int(round(float(cols["y"][k]))),
+                   int(round(float(cols["x"][k]))))
+            gg = key_of_g.get(key)
+            if gg is not None:
+                g_of_nid[int(cols["node_id"][k])] = gg
+        if graph.num_edges() == 0:
+            continue
+        ea = graph.edge_attrs(attr_keys=["source_id", "target_id"])
+        for s_, t_ in zip(ea["source_id"].to_list(),
+                          ea["target_id"].to_list()):
+            gs, gt = g_of_nid.get(int(s_)), g_of_nid.get(int(t_))
+            if gs is None or gt is None:
+                dropped += 1
+                continue
+            out.append((gs, gt))
+    if dropped:
+        print(f"    WARN {dropped} solved edges unmatched by coordinate "
+              f"-- this movie is a LOWER BOUND", flush=True)
+    return out
+
+# ---- [assembled from rankwhy.py: E accel/pair_features] ----
+# ---- acceleration lookahead --------------------------------------------
+# Togashi's stack item 4 (public-solutions-recon.md:313): "Acceleration
+# lookahead in motion prediction (bonus for consistent acceleration), not
+# just velocity." Never transplanted -- the recon lists items 1 and 5 as
+# taken and leaves 2, 3, 4, 6.
+#
+# It is the same shape of gap div_kinematics just proved real on the
+# division side: the model gets ONE temporal number. `pair_features` has
+# `md`, the residual against a CONSTANT-VELOCITY extrapolation, where the
+# velocity itself comes from a single previous transition. A cell that is
+# turning or speeding up breaks that model, and nothing in the 18 columns
+# can say so.
+#
+# Acceleration needs THREE positions, so it cannot exist in the two frames
+# the official edge head sees, nor in a one-step velocity. That is the
+# whole point.
+
+NFEAT_BASE = 18
+N_ACC = 5
+NFEAT_ACC = NFEAT_BASE + N_ACC
+EPS = 1e-9
+
+_WARN_COUNT = defaultdict(int)
+
+
+def warn_once(key, msg):
+    """Rule 1: a fallback that does not announce itself produces a
+    plausible wrong number."""
+    if _WARN_COUNT[key] == 0:
+        print(f"  WARN {msg}", flush=True)
+    _WARN_COUNT[key] += 1
+
+
+def warning_summary():
+    if not _WARN_COUNT:
+        print("  no degradations fired", flush=True)
+        return
+    print("  degradation summary:", flush=True)
+    for k_, n_ in sorted(_WARN_COUNT.items()):
+        print(f"    {k_}: {n_}", flush=True)
+
+
+def pass1_tracks(dets):
+    """Velocities AND the backward link map from one greedy pass.
+    pass1_velocities discards the links; acceleration needs them."""
+    T = len(dets)
+    seeds = [seeds_of(dets[t]) for t in range(T)]
+    vels = [np.zeros((len(seeds[t][0]), 3)) for t in range(T)]
+    prev_of = [np.full(len(seeds[t][0]), -1, np.int32) for t in range(T)]
+    for t in range(T - 1):
+        P, ps = seeds[t]
+        C, cs = seeds[t + 1]
+        if len(P) == 0 or len(C) == 0:
+            continue
+        for pi, ci in _link_sim(P, C, vels[t] if len(vels[t]) else None,
+                                ps, cs):
+            vels[t + 1][ci] = (C[ci] - P[pi]) * SCALE
+            prev_of[t + 1][ci] = pi
+    return seeds, vels, prev_of
+
+
+def accel_of(seeds, prev_of, t, i):
+    """(acceleration vector um/frame^2, steps available).
+
+    Needs THREE positions: t, t-1, t-2. With fewer, acceleration is
+    undefined -- return zero and say how many steps there were, so the
+    model can split on the count instead of reading 0 as 'not
+    accelerating'."""
+    if t < 2:
+        return np.zeros(3), 0
+    i1 = int(prev_of[t][i]) if i < len(prev_of[t]) else -1
+    if i1 < 0:
+        warn_once("accel_no_parent",
+                  "a cell had no backward link, so acceleration is "
+                  "undefined -> all 5 columns are 0 and acc_hist says 0; "
+                  "that is NOT a measurement of constant velocity")
+        return np.zeros(3), 0
+    i2 = int(prev_of[t - 1][i1]) if i1 < len(prev_of[t - 1]) else -1
+    if i2 < 0:
+        warn_once("accel_one_step",
+                  "a cell had only ONE backward step, so acceleration "
+                  "needs a third position it does not have -> 0 with "
+                  "acc_hist 1")
+        return np.zeros(3), 1
+    P0, _ = seeds[t]
+    P1, _ = seeds[t - 1]
+    P2, _ = seeds[t - 2]
+    if i >= len(P0) or i1 >= len(P1) or i2 >= len(P2):
+        return np.zeros(3), 0
+    p0 = P0[i] * SCALE
+    p1 = P1[i1] * SCALE
+    p2 = P2[i2] * SCALE
+    return (p0 - p1) - (p1 - p2), 2
+
+
+def pair_features(dets, vels, T):
+    """The 18 base columns EXACTLY as the transplant computes them, then 5
+    acceleration columns. `vels` is accepted and ignored -- this rebuilds
+    the pass so it can keep the link map the acceleration needs."""
+    seeds, vels_own, prev_of = pass1_tracks(dets)
+    out = []
+    for t in range(T - 1):
+        P, ps = seeds[t]
+        C, cs = seeds[t + 1]
+        if len(P) == 0 or len(C) == 0:
+            out.append(([], np.zeros((0, NFEAT_ACC), np.float32), P, C))
+            continue
+        Pu = P * SCALE[None, :]
+        Cu = C * SCALE[None, :]
+        tree_p = cKDTree(Pu)
+        tree_c = cKDTree(Cu)
+        dens_p = np.array([len(tree_p.query_ball_point(x, 7.0)) - 1
+                           for x in Pu])
+        dens_c = np.array([len(tree_c.query_ball_point(x, 7.0)) - 1
+                           for x in Cu])
+        pred = Pu + vels_own[t]
+        acc = np.zeros((len(P), 3))
+        acc_n = np.zeros(len(P))
+        for i in range(len(P)):
+            a, n = accel_of(seeds, prev_of, t, i)
+            acc[i] = a
+            acc_n[i] = n
+        # constant velocity plus half the acceleration -- the standard
+        # second-order step, and what "lookahead" means here
+        pred_acc = pred + 0.5 * acc
+        pairs, rows = [], []
+        cand_of_i = defaultdict(list)
+        cand_of_j = defaultdict(list)
+        raw = {}
+        for i, x in enumerate(Pu):
+            for j in tree_c.query_ball_point(x, GATE_UM):
+                d = float(np.linalg.norm(Cu[j] - x))
+                raw[(i, j)] = d
+                cand_of_i[i].append((d, j))
+                cand_of_j[j].append((d, i))
+        for i in cand_of_i:
+            cand_of_i[i].sort()
+        for (i, j), d in raw.items():
+            delta = Cu[j] - Pu[i]
+            md = float(np.linalg.norm(Cu[j] - pred[i]))
+            md_a = float(np.linalg.norm(Cu[j] - pred_acc[i]))
+            rank = next(k for k, (_, jj) in enumerate(cand_of_i[i])
+                        if jj == j)
+            v = vels_own[t][i]
+            na = float(np.linalg.norm(acc[i]))
+            nv = float(np.linalg.norm(v))
+            acc_cos = (float(np.dot(v, acc[i])) / (nv * na)
+                       if nv > EPS and na > EPS else 0.0)
+            rows.append([d, delta[0], abs(delta[0]),
+                         float(np.linalg.norm(delta[1:])), md, d - md,
+                         ps[i], cs[j],
+                         abs(float(_logit(np.array([ps[i]]))[0]
+                                   - _logit(np.array([cs[j]]))[0])),
+                         dens_p[i], dens_c[j], len(P), len(C),
+                         rank, len(cand_of_i[i]), len(cand_of_j[j]),
+                         nv, t / max(1, T),
+                         # ---- acceleration lookahead ----
+                         na, acc_cos, md_a, md - md_a, acc_n[i]])
+            pairs.append((i, j))
+        out.append((pairs, np.asarray(rows, np.float32), P, C))
+    return out
+
+
+
+# ======================================================================
+# edgeprob_rank: everything below is NEW. Everything above is rankwhy.py's
+# harness cut by line content (docstring, ASSEMBLY) -- byte-identical to v1.
+# ======================================================================
+
+from sklearn.ensemble import HistGradientBoostingClassifier    # noqa: E402
+from sklearn.metrics import roc_auc_score                      # noqa: E402
+
+
+def _walk_files(match):
+    """edgeprob_cache.py's bounded search of /kaggle/input: prunes the
+    competition tree (millions of zarr chunks; a blind walk appears to
+    hang -- toolchain trap 5) and every .zarr / .geff directory."""
+    hits = {}
+    for root_, dirs, fnames in os.walk("/kaggle/input"):
+        dirs[:] = [d for d in dirs
+                   if "cell-tracking-during-development" not in d
+                   and not d.endswith(".zarr") and not d.endswith(".geff")]
+        for fn in fnames:
+            key = match(fn)
+            if key is not None:
+                hits.setdefault(key, pathlib.Path(root_) / fn)
+    return hits
+
+
+def _npz_prefix(prefix):
+    return lambda fn: (fn[len(prefix):-len(".npz")]
+                       if fn.startswith(prefix) and fn.endswith(".npz")
+                       else None)
+
+
+# ---- the official head's probabilities: biohub-edgeprob v3's output -----
+# edgeprob_<name>.npz        the head over the BASE (detcache) primaries,
+#                            all 199 train movies;
+# edgeprob_F4_<name>.npz     the head over the F4 (fdet_F4_) primaries,
+#                            the 24 evaluation sets.
+# Dataset names begin with their domain tag (6bba_, 44b6_, ...), never
+# "F4_", so the prefix split below is unambiguous.
+_EP_ALL = _walk_files(_npz_prefix("edgeprob_"))
+EDGEPROB = {k: v for k, v in _EP_ALL.items()
+            if not k.startswith("F4_") and not k.startswith("F4hp_")}
+EDGEPROB_F4HP = {k[len("F4hp_"):]: v for k, v in _EP_ALL.items()
+                 if k.startswith("F4hp_")}
+EDGEPROB_F4 = {k[len("F4_"):]: v for k, v in _EP_ALL.items()
+               if k.startswith("F4_")}
+del _EP_ALL
+assert EDGEPROB, ("no edgeprob_*.npz under /kaggle/input -- attach "
+                  "faustine649/biohub-edgeprob (v3) as a kernel source")
+assert EDGEPROB_F4, ("no edgeprob_F4_*.npz under /kaggle/input -- "
+                     "biohub-edgeprob v3 (the F4 pass) is not attached, or "
+                     "an older version is")
+_cj = _walk_files(lambda fn: fn if fn == "edgeprob_counts.json" else None)
+assert _cj, ("edgeprob_counts.json not found -- biohub-edgeprob's output is "
+             "incomplete (the json is written last) or not attached")
+COUNTS = json.loads(next(iter(_cj.values())).read_text())
+print(f"edgeprob caches mounted: {len(EDGEPROB)} BASE + {len(EDGEPROB_F4)} "
+      f"F4 (biohub-edgeprob script_version {COUNTS.get('script_version')})",
+      flush=True)
+assert float(COUNTS["unet_thresh"]) == UNET_THRESH, (
+    f"biohub-edgeprob used UNET_THRESH {COUNTS['unet_thresh']}, this "
+    f"harness {UNET_THRESH}: (t, i, j) would index different primaries")
+assert float(COUNTS["gate_um"]) == GATE_UM, (
+    f"biohub-edgeprob gated at {COUNTS['gate_um']} um, this harness at "
+    f"{GATE_UM}: the pair sets would differ")
+assert np.allclose(np.asarray(COUNTS["scale"], float), SCALE), (
+    f"biohub-edgeprob SCALE {COUNTS['scale']} != {SCALE.tolist()}")
+if COUNTS.get("failed"):
+    raise SystemExit(f"[degraded] biohub-edgeprob reported "
+                     f"{len(COUNTS['failed'])} failed dataset(s): "
+                     f"{COUNTS['failed']} -- rerun it before ranking")
+if COUNTS.get("skipped_time"):
+    raise SystemExit(f"[degraded] biohub-edgeprob stopped on budget with "
+                     f"{COUNTS['skipped_time']} datasets not attempted -- "
+                     f"rerun it before ranking")
+if not COUNTS.get("reverse", False):
+    warn_once("no_reverse",
+              "biohub-edgeprob ran with REVERSE False -> p_rev and l_rev "
+              "are NaN, h_fused falls back to p_fwd, and the +BIDIR arm "
+              "measures only p_fwd")
+
+# ---- the SECOND head's probabilities: biohub-edgeprob2 v1's output ------
+_EP2_ALL = _walk_files(_npz_prefix("edgeprob2_"))
+EDGEPROB2 = {k: v for k, v in _EP2_ALL.items()
+             if not k.startswith("F4_") and not k.startswith("F4hp_")}
+EDGEPROB2_F4HP = {k[len("F4hp_"):]: v for k, v in _EP2_ALL.items()
+                  if k.startswith("F4hp_")}
+EDGEPROB2_F4 = {k[len("F4_"):]: v for k, v in _EP2_ALL.items()
+                if k.startswith("F4_")}
+del _EP2_ALL
+assert EDGEPROB2, ("no edgeprob2_*.npz under /kaggle/input -- attach "
+                   "faustine649/biohub-edgeprob2 as a kernel source")
+assert EDGEPROB2_F4, "no edgeprob2_F4_*.npz -- biohub-edgeprob2 is incomplete"
+_cj2 = _walk_files(lambda fn: fn if fn == "edgeprob2_counts.json" else None)
+assert _cj2, "edgeprob2_counts.json not found -- biohub-edgeprob2 incomplete"
+COUNTS2 = json.loads(next(iter(_cj2.values())).read_text())
+print(f"edgeprob2 caches mounted: {len(EDGEPROB2)} BASE + {len(EDGEPROB2_F4)} "
+      f"F4 (head {COUNTS2.get('head')}, sha256 "
+      f"{str(COUNTS2.get('weights_sha256'))[:12]}, script_version "
+      f"{COUNTS2.get('script_version')})", flush=True)
+for _k in ("unet_thresh", "gate_um"):
+    assert float(COUNTS2[_k]) == float(COUNTS[_k]), (
+        f"biohub-edgeprob2 {_k} {COUNTS2[_k]} != biohub-edgeprob {COUNTS[_k]}")
+assert np.allclose(np.asarray(COUNTS2["scale"], float), SCALE)
+if COUNTS2.get("failed") or COUNTS2.get("skipped_time"):
+    raise SystemExit(f"[degraded] biohub-edgeprob2 incomplete: failed "
+                     f"{COUNTS2.get('failed')}, skipped "
+                     f"{COUNTS2.get('skipped_time')} -- rerun it")
+assert COUNTS2.get("reverse", False), "biohub-edgeprob2 ran without REVERSE"
+
+# ---- the F4 primaries: biohub-fusecache's output ------------------------
+FDET_F4 = _walk_files(_npz_prefix("fdet_F4_"))
+print(f"fdet_F4 caches: {len(FDET_F4)}", flush=True)
+assert len(FDET_F4) >= 24, "attach biohub-fusecache for the F4 detections"
+FDET_F4HP = _walk_files(_npz_prefix("fdet_F4hp_"))
+print(f"fdet_F4hp caches: {len(FDET_F4HP)}", flush=True)
+if DET_SRC == "F4HP":
+    assert len(FDET_F4HP) >= 140, (
+        f"DET_SRC is F4HP but only {len(FDET_F4HP)} fdet_F4hp_*.npz are "
+        f"attached -- hparacache v3 caches 140 (128 6bba + 12 44b6). Round 1"
+        f" ran on 24 and could only move 12 of the 128 scored movies.")
+    # OVERRIDE, not replace. hparacache v3 covers 140 movies (all 128 6bba
+    # + the 12 44b6 of the eval draw); the rest of the 187-movie pool stays
+    # on refine. v1 assigned FDET_F4 = FDET_F4HP and died on 116 missing
+    # 6bba pool caches.
+    #
+    # ROUND 1 SCORED 128 MOVIES AND ONLY 12 OF THEM CHANGED, which diluted
+    # every aggregate by about 10x. The check that matters is therefore
+    # COVERAGE OF THE SCORED SET, not a count: every 6bba movie the bench
+    # scores must be on hpara coordinates, or the arm is a blend of the two
+    # placements reported as one.
+    _both = sorted(set(FDET_F4) & set(FDET_F4HP))
+    _hp6 = sorted(n for n in FDET_F4HP if n.startswith("6bba_"))
+    FDET_F4 = {**FDET_F4, **FDET_F4HP}
+    print(f"  hpara caches override {len(_both)} of {len(FDET_F4)} F4 "
+          f"entries ({len(_hp6)} of them 6bba); the rest of the pool stays "
+          f"on refine", flush=True)
+    assert len(_hp6) >= 128, (
+        f"only {len(_hp6)} 6bba movies carry an fdet_F4hp cache -- the bench "
+        f"scores 128, so {128 - len(_hp6)} of them would silently run on "
+        f"refine coordinates inside the arm called hpara")
+
+
+# ---- the two shipped rankers, loaded not trained ------------------------
+def _load_pkl(fname, lo, hi):
+    hit = _walk_files(lambda fn: fn if fn == fname else None)
+    assert hit, (f"{fname} not found -- attach faustine649/biohub-poolsize "
+                 f"as a kernel source")
+    pk = next(iter(hit.values()))
+    with open(pk, "rb") as f:
+        blob = pickle.load(f)
+    pool = blob.get("pool") if isinstance(blob, dict) else None
+    assert pool is not None and lo <= len(pool) <= hi, (
+        f"{pk}: pool {0 if pool is None else len(pool)} outside [{lo}, {hi}]")
+    print(f"  ranker {fname}: pool {len(pool)} ({pk})", flush=True)
+    return blob["model"], list(blob["cols"]), sorted(set(pool))
+
+
+# D187: the anchor arm. D32: loaded ONLY for its pool, which defines the
+# 44b6 draw (dctrain drew from the 44b6 outside D32's pool); it is not
+# scored in v2.
+MODEL_D187, MCOLS_D187, POOL187 = _load_pkl("edge_ranker_d187.pkl", 100, 199)
+_MODEL_D32, MCOLS_D32, POOL32 = _load_pkl("edge_ranker_d32.pkl", 1, 99)
+del _MODEL_D32
+assert len(POOL32) == N_POOL32, (
+    f"edge_ranker_d32.pkl's pool has {len(POOL32)} datasets, expected "
+    f"{N_POOL32}")
+assert MCOLS_D32 == list(range(NFEAT_BASE)), (
+    f"edge_ranker_d32.pkl cols {MCOLS_D32}: expected the 18 base columns")
+assert not set(POOL32) & set(HOLDOUT_6BBA), "D32 pool overlaps the holdout"
+assert not set(POOL187) & set(HOLDOUT_6BBA), "D187 pool overlaps the holdout"
+
+# ---- the split: 175 pool + 12 + 12 -------------------------------------
+ALL_TRAIN = sorted(p.name[:-len(".zarr")]
+                   for p in (root / "train").glob("*.zarr"))
+assert len(ALL_TRAIN) == 199, f"expected 199 train movies, found {len(ALL_TRAIN)}"
+assert all(n in ALL_TRAIN for n in HOLDOUT_6BBA + POOL32), \
+    "a holdout / pool name is not in train/"
+# dctrain.py:158-163 verbatim, so this draw equals dctrain's excluded 12.
+eligible_44b6 = sorted(n for n in ALL_TRAIN
+                       if n.startswith("44b6_") and n not in set(POOL32))
+assert len(eligible_44b6) >= N_44B6, \
+    f"only {len(eligible_44b6)} 44b6 datasets outside D32's pool"
+SET_44B6 = sorted(random.Random(SEED_44B6).sample(eligible_44b6, N_44B6))
+EXCLUDED = set(HOLDOUT_6BBA) | set(SET_44B6)
+POOL175 = sorted(n for n in ALL_TRAIN if n not in EXCLUDED)
+assert len(POOL175) == N_POOL175, (
+    f"pool is {len(POOL175)}, expected {N_POOL175} (dctrain.py's split)")
+assert not (set(POOL175) & EXCLUDED), "pool overlaps an evaluation group"
+
+# The edgeprob kernel recorded the sets it scored; when it did, they must
+# be THESE (v3 may or may not carry the keys; the per-dataset presence
+# checks below are what actually guard the join).
+for _key, _want, _what in (("set_44b6", SET_44B6, "44b6 draw"),
+                           ("pool32", POOL32, "D32 pool"),
+                           ("holdout_6bba", sorted(HOLDOUT_6BBA),
+                            "6bba holdout")):
+    if _key in COUNTS:
+        assert sorted(COUNTS[_key]) == _want, (
+            f"biohub-edgeprob's {_what} differs from this kernel's -- its "
+            f"seed or pool changed; do not join across different draws")
+    else:
+        print(f"  edgeprob_counts.json has no '{_key}' -> {_what} not "
+              f"cross-checked against biohub-edgeprob", flush=True)
+
+# Optional cross-check against dctrain's split_manifest.json when its
+# weights happen to be mounted. NOT required -- do not attach a source for
+# it. Its "all" is dctrain's train+val = the 175 pool.
+_man = _walk_files(lambda fn: fn if fn == "split_manifest.json" else None)
+if _man:
+    _seen = set(json.loads(next(iter(_man.values())).read_text())["all"])
+    assert _seen == set(POOL175), (
+        f"D175 pool differs from split_manifest.json's 'all' "
+        f"({len(_seen)} names): only-here {sorted(set(POOL175) - _seen)[:6]} "
+        f"only-there {sorted(_seen - set(POOL175))[:6]} -- the draw no "
+        f"longer reproduces dctrain's; the 44b6 soft anchors do not apply")
+    print("  D175 pool cross-checked against split_manifest.json: identical "
+          "(the 44b6 soft anchors apply)", flush=True)
+else:
+    print("  split_manifest.json not mounted -> D175 pool NOT cross-checked "
+          "against dctrain's (compare the printed names by hand before "
+          "reading the 44b6 soft anchors)", flush=True)
+
+NAMES_EVAL = HOLDOUT_6BBA + SET_44B6
+assert len(NAMES_EVAL) == len(set(NAMES_EVAL)) == 24, "groups overlap"
+assert len(set(NAMES_EVAL) | set(POOL175)) == 199
+print(f"6bba holdout ({len(HOLDOUT_6BBA)}): {' '.join(HOLDOUT_6BBA)}", flush=True)
+print(f"44b6 seed={SEED_44B6} from {len(eligible_44b6)} outside-D32 "
+      f"({len(SET_44B6)}): {' '.join(SET_44B6)}", flush=True)
+print(f"D175 pool ({len(POOL175)}): {' '.join(POOL175)}", flush=True)
+_ov = sorted(set(POOL187) & set(NAMES_EVAL))
+print(f"  ANCHOR_D187's pool overlaps the evaluation sets on {len(_ov)} "
+      f"datasets ({sum(n.startswith('44b6_') for n in _ov)} of them 44b6): "
+      f"its 44b6 row is IN-SAMPLE; the four D175 arms are clean on "
+      f"both groups", flush=True)
+
+# Rule 1: a missing dataset is a crash here, never a shrunken comparison.
+_missing = [n for n in ALL_TRAIN if n not in CACHES]
+assert not _missing, (f"no detcache for: {_missing} -- attach "
+                      f"biohub-edge-ranker and biohub-cache-train")
+_missing = [n for n in ALL_TRAIN if n not in EDGEPROB]
+assert not _missing, (f"no BASE edgeprob cache for: {_missing} -- "
+                      f"biohub-edgeprob v3 must have scored all 199")
+_missing = [n for n in NAMES_EVAL if n not in EDGEPROB_F4]
+assert not _missing, (f"no edgeprob_F4 cache for: {_missing} -- "
+                      f"biohub-edgeprob v3 must have scored the 24 F4 sets")
+_missing = [n for n in ALL_TRAIN if n not in EDGEPROB2]
+assert not _missing, f"no BASE edgeprob2 cache for: {_missing}"
+_missing = [n for n in NAMES_EVAL if n not in EDGEPROB2_F4]
+assert not _missing, f"no edgeprob2_F4 cache for: {_missing}"
+_missing = [n for n in NAMES_EVAL if n not in FDET_F4]
+assert not _missing, f"no fdet_F4 cache for: {_missing} -- attach biohub-fusecache"
+_missing = [n for n in ALL_TRAIN if not geff_path(root, "train", n).exists()]
+assert not _missing, f"no GT geff for: {_missing}"
+
+# ---- columns and arms -------------------------------------------------
+# The harness's pair_features (the 23-column override) yields the 18 base
+# columns followed by 5 acceleration columns nobody uses (accel FAILED,
+# poolsize header). The head's five columns are appended after those.
+NCOL_HARNESS = NFEAT_ACC                      # 23
+C_PFWD, C_PREV, C_LFWD, C_LREV, C_HFUSED = (NCOL_HARNESS + k for k in range(5))
+C2_PFWD, C2_PREV, C2_LFWD, C2_LREV, C2_HFUSED = (NCOL_HARNESS + 5 + k
+                                                 for k in range(5))
+C_AVG_FWD, C_AVG_REV, C_HAVG = (NCOL_HARNESS + 10 + k for k in range(3))
+NCOL_ALL = NCOL_HARNESS + 13                  # 36
+NEW_NAMES = {C_PFWD: "p_fwd", C_PREV: "p_rev", C_LFWD: "l_fwd",
+             C_LREV: "l_rev", C_HFUSED: "h_fused",
+             C2_PFWD: "p2_fwd", C2_PREV: "p2_rev", C2_LFWD: "l2_fwd",
+             C2_LREV: "l2_rev", C2_HFUSED: "h2_fused",
+             C_AVG_FWD: "p_avg_fwd", C_AVG_REV: "p_avg_rev", C_HAVG: "h_avg"}
+BASE_NAMES = ["d_um", "dz_um", "abs_dz_um", "dxy_um", "md_um", "d_minus_md",
+              "score_i", "score_j", "abs_logit_diff", "dens_i", "dens_j",
+              "n_prev", "n_curr", "rank_of_j_for_i", "n_cand_i", "n_cand_j",
+              "speed_i", "t_frac"]           # pair_features row order
+assert len(BASE_NAMES) == NFEAT_BASE
+BASE_COLS = list(range(NFEAT_BASE))
+ARMS = {
+    "+BIDIR": BASE_COLS + [C_PFWD, C_PREV, C_HFUSED],
+    "+BIDIR2": BASE_COLS + [C2_PFWD, C2_PREV, C2_HFUSED],
+    "+BOTH": BASE_COLS + [C_PFWD, C_PREV, C_HFUSED, C2_PFWD, C2_PREV, C2_HFUSED],
+    "+AVG": BASE_COLS + [C_AVG_FWD, C_AVG_REV, C_HAVG],
+}
+ARM_ORDER = ["+BIDIR", "+BIDIR2", "+BOTH", "+AVG"]      # trained
+# head-only arms: no ranker; the named column IS the edge probability
+HEAD_ONLY = {"HEAD1": C_HFUSED, "HEAD12": C_HAVG}
+EVAL_ARMS = ["ANCHOR_D187"] + ARM_ORDER + list(HEAD_ONLY)
+REF = "+BIDIR"                                          # paired deltas vs this
+ARM_TAG = {"ANCHOR_D187": "d187", "+BIDIR": "bidir", "+BIDIR2": "bidir2",
+           "+BOTH": "both", "+AVG": "avg", "HEAD1": "head1", "HEAD12": "head12"}
+PKL_NAME = {"+BIDIR": "edge_ranker_ep175v3_bidir.pkl",
+            "+BIDIR2": "edge_ranker_ep175v3_bidir2.pkl",
+            "+BOTH": "edge_ranker_ep175v3_both.pkl",
+            "+AVG": "edge_ranker_ep175v3_avg.pkl"}
+GROUPS = (("6bba", HOLDOUT_6BBA), ("44b6", SET_44B6))
+DET_ARMS = ["F4"] + (["BASE"] if SCORE_BASE_ARM else [])
+DOMAINS = [f"{a}-{g}" for a in DET_ARMS for g, _ in GROUPS]
+if DET_SRC == "F4HP":
+    for _nm, _base, _hp in (("edgeprob", EDGEPROB_F4, EDGEPROB_F4HP),
+                            ("edgeprob2", EDGEPROB2_F4, EDGEPROB2_F4HP)):
+        # THE OVERRIDE REPLACES, IT NEVER ADDS -- and that is not a
+        # detail. `edgeprob2` is the OPTIONAL second head: divbench9 reads
+        # it with `EP2_OF["F4"].get(name)`, and only 24 movies have an
+        # `edgeprob2_F4_` cache at all, so 116 of the 128 scored movies are
+        # solved without it in BOTH arms. ep2hpcache cached 140. Merging
+        # those in would hand the hpara arm a second head on 116 movies
+        # where the control has none -- the arms would then differ in the
+        # PIPELINE, not in the placement, and the delta would be
+        # unreadable. So the hpara dict is first cut down to the keys the
+        # refine arm already has.
+        _add = sorted(set(_hp) - set(_base))
+        _hp = {k: v for k, v in _hp.items() if k in _base}
+        _miss6 = sorted(n for n in _base
+                        if n.startswith("6bba_") and n not in _hp)
+        assert not _miss6, (
+            f"{_nm}: {len(_miss6)} scored 6bba movies have a REFINE cache "
+            f"with no hpara counterpart ({_miss6[:3]}...) -- those would be "
+            f"scored with a head that read the refine coordinates against "
+            f"hpara points, and the (t, i, j) join fails outright.")
+        _ov = sorted(_hp)
+        _ov6 = [n for n in _ov if n.startswith("6bba_")]
+        if _nm == "edgeprob":
+            # The MANDATORY head. Every scored movie must have one.
+            assert len(_ov6) >= 128, (
+                f"edgeprob: only {len(_ov6)} of the 128 scored 6bba movies "
+                f"have an F4hp cache -- attach biohub-ephpcache.")
+        _base.update(_hp)
+        print(f"  {_nm}: {len(_ov)} entries switched to the hpara head "
+              f"({len(_ov6)} of them 6bba); {len(_add)} hpara caches IGNORED "
+              f"because the refine arm has no cache for those movies",
+              flush=True)
+
+EP_OF = {"BASE": EDGEPROB, "F4": EDGEPROB_F4}
+EP2_OF = {"BASE": EDGEPROB2, "F4": EDGEPROB2_F4}
+
+
+def load_dets(name, arm="BASE"):
+    """BASE = the xl three-branch average that shipped at 0.922.
+    F4 = the same with ep05 DeepCenter as a fourth equal-weight map,
+    which is what ships at 0.925 (ref 55889500). rankwhy's loader."""
+    z = np.load(CACHES[name] if arm == "BASE" else FDET_F4[name])
+    T = max(int(k[1:]) for k in z.files if k.startswith("c")) + 1
+    return [(z[f"c{t}"], z[f"s{t}"]) for t in range(T)]
+
+
+JOIN = dict(datasets=0, pairs=0, nan_p_rev=0, empty_frames=0)
+
+
+def _load_head(name, ep_path, T, ours):
+    """One head's cache -> (sorted key, 5 columns in key order), after the
+    per-frame primary counts and the index ranges have been checked."""
+    z = np.load(ep_path)
+    npf = np.asarray(z["n_per_frame"], np.int64)
+    assert len(npf) == T, (
+        f"{name}: {ep_path.name} n_per_frame has {len(npf)} frames, the det cache {T}")
+    assert np.array_equal(npf, ours), (
+        f"{name}: primaries per frame differ between {ep_path.name} and "
+        f"this harness at frames {np.where(npf != ours)[0][:8].tolist()} "
+        f"-- (t, i, j) cannot be trusted (BASE/F4 mismatch?)")
+    et = np.asarray(z["t"], np.int64)
+    ei = np.asarray(z["i"], np.int64)
+    ej = np.asarray(z["j"], np.int64)
+    K = int(npf.max()) + 1
+    if len(et):
+        assert et.min() >= 0 and et.max() <= T - 2, (
+            f"{name}: {ep_path.name} t outside [0, {T - 2}]")
+    assert np.all(ei < npf[et]) and np.all(ej < npf[et + 1]), (
+        f"{name}: an {ep_path.name} (i, j) index exceeds its frame's primary count")
+    key = (et * K + ei) * K + ej
+    order = np.argsort(key, kind="stable")
+    skey = key[order]
+    assert len(skey) == 0 or np.all(np.diff(skey) > 0), (
+        f"{name}: duplicate (t, i, j) rows in {ep_path.name}")
+    p_fwd = np.asarray(z["p_fwd"], np.float32)[order]
+    p_rev = np.asarray(z["p_rev"], np.float32)[order]
+    l_fwd = np.asarray(z["l_fwd"], np.float32)[order]
+    l_rev = np.asarray(z["l_rev"], np.float32)[order]
+    assert np.isfinite(p_fwd).all() and np.isfinite(l_fwd).all(), (
+        f"{name}: non-finite forward probability or logit in {ep_path.name}")
+    assert np.all((p_fwd >= 0) & (p_fwd <= 1)), f"{name}: p_fwd out of [0,1]"
+    nan_rev = ~np.isfinite(p_rev)
+    if nan_rev.any():
+        JOIN["nan_p_rev"] += int(nan_rev.sum())
+        warn_once("p_rev_nan",
+                  f"{name}: {int(nan_rev.sum())} of {len(p_rev)} pairs have "
+                  f"NaN p_rev in {ep_path.name} -> h_fused uses p_fwd alone "
+                  f"there; the HistGradientBoosting arms see the NaN natively")
+    pr = np.where(nan_rev, 0.0, p_rev).astype(np.float32)
+    h_fused = np.where(nan_rev, p_fwd,
+                       2.0 * p_fwd * pr / np.maximum(p_fwd + pr, 1e-12)
+                       ).astype(np.float32)
+    return K, skey, np.stack([p_fwd, p_rev, l_fwd, l_rev, h_fused], axis=1)
+
+
+def features_ext(name, dets, T, ep_path, ep2_path):
+    """The harness's own pass (pass1_tracks + pair_features, exactly what
+    solve_one computes) with the head's five columns joined by (t, i, j)
+    from the edgeprob cache at `ep_path` (BASE or F4, matching `dets`).
+
+    Returns (seeds, feats) where feats[t] = (pairs, rows[:, NCOL_ALL], P, C)
+    in the harness's own layout, so solve_one below consumes it unchanged.
+    """
+    seeds, vels, prev_of = pass1_tracks(dets)
+    feats = pair_features(dets, None, T)
+    ours = np.array([len(seeds[t][0]) for t in range(T)], np.int64)
+    K, skey, ex1 = _load_head(name, ep_path, T, ours)
+    if ep2_path is None:                    # head 2 not cached for this movie
+        K2, skey2, ex2 = K, skey, np.full(ex1.shape, np.nan, np.float32)
+    else:
+        K2, skey2, ex2 = _load_head(name, ep2_path, T, ours)
+    assert K2 == K and np.array_equal(skey, skey2), (
+        f"{name}: the two heads' caches hold different (t, i, j) sets "
+        f"({len(skey)} vs {len(skey2)} rows) -- were they cached on the "
+        f"same primaries?")
+    # the two heads averaged: probabilities in [0, 1] both, reverse NaN in
+    # one head falls back to the other's value
+    p_avg_fwd = 0.5 * (ex1[:, 0] + ex2[:, 0])
+    _r1, _r2 = ex1[:, 1], ex2[:, 1]
+    p_avg_rev = np.where(np.isfinite(_r1) & np.isfinite(_r2), 0.5 * (_r1 + _r2),
+                         np.where(np.isfinite(_r1), _r1, _r2)).astype(np.float32)
+    h_avg = (0.5 * (ex1[:, 4] + ex2[:, 4])).astype(np.float32)
+    extra = np.concatenate(
+        [ex1, ex2, np.stack([p_avg_fwd, p_avg_rev, h_avg], axis=1)],
+        axis=1).astype(np.float32)
+    assert extra.shape[1] == NCOL_ALL - NCOL_HARNESS, extra.shape
+    out = []
+    n_rows = 0
+    for t in range(T - 1):
+        pairs, rows, P, C = feats[t]
+        if not pairs:
+            JOIN["empty_frames"] += 1
+            out.append((pairs, np.zeros((0, NCOL_ALL), np.float32), P, C))
+            continue
+        assert rows.shape[1] == NCOL_HARNESS, rows.shape
+        pij = np.asarray(pairs, np.int64)
+        k = (t * K + pij[:, 0]) * K + pij[:, 1]
+        pos = np.searchsorted(skey, k)
+        pos_c = np.minimum(pos, max(len(skey) - 1, 0))
+        found = (pos < len(skey)) & (skey[pos_c] == k)
+        assert found.all(), (
+            f"{name} t={t}: {int((~found).sum())} of {len(k)} harness pairs "
+            f"have no edgeprob row -- the gate or the primaries differ; a "
+            f"silent 0 here would be a plausible wrong number")
+        out.append((pairs, np.concatenate([rows, extra[pos]], axis=1)
+                    .astype(np.float32), P, C))
+        n_rows += len(k)
+    assert n_rows == len(skey), (
+        f"{name}: harness produced {n_rows} pairs, the edgeprob cache holds "
+        f"{len(skey)} -- the pair sets are not identical")
+    JOIN["datasets"] += 1
+    JOIN["pairs"] += n_rows
+    return seeds, out
+
+
+def label_rows(name, feats):
+    """poolsize.py's GT labelling (its training loop, lines 862-905), the
+    logic verbatim. A row is kept only when the source primary matched a
+    GT node WITH children; label 1 iff the target primary matched one of
+    those children. Returns (X, y)."""
+    gt = read_geff(geff_path(root, "train", name))
+    g_t = np.asarray(gt["t"], int)
+    g_pos = np.stack([np.asarray(gt[c], float)
+                      for c in ("z", "y", "x")], axis=1) * SCALE
+    row_of = {int(v): i for i, v in enumerate(gt["node_ids"])}
+    child_of = {}
+    for a, b in gt["edges"]:
+        ra, rb = row_of.get(int(a)), row_of.get(int(b))
+        if ra is not None and rb is not None:
+            child_of.setdefault(ra, []).append(rb)
+    gt_by_t = defaultdict(list)
+    for i in range(len(g_t)):
+        gt_by_t[int(g_t[i])].append(i)
+    X_list, y_list = [], []
+    for t in range(len(feats)):
+        pairs, rows, P, C = feats[t]
+        if not pairs:
+            continue
+        Pu, Cu = P * SCALE[None, :], C * SCALE[None, :]
+
+        def match(pos_u, idx_list):
+            if not idx_list:
+                return {}
+            gtree = cKDTree(g_pos[idx_list])
+            m = {}
+            for di, x in enumerate(pos_u):
+                dd, gi = gtree.query(x)
+                if dd <= MATCH_UM:
+                    m[di] = idx_list[int(gi)]
+            return m
+
+        m_p = match(Pu, gt_by_t.get(t, []))
+        m_c = match(Cu, gt_by_t.get(t + 1, []))
+        det_of_gt = {g: d for d, g in m_c.items()}
+        for (i, j), row in zip(pairs, rows):
+            if i not in m_p:
+                continue
+            kids = child_of.get(m_p[i], [])
+            if not kids:
+                continue
+            j_true = {det_of_gt.get(b) for b in kids}
+            j_true.discard(None)
+            X_list.append(row)
+            y_list.append(1 if j in j_true else 0)
+    if not X_list:
+        return np.zeros((0, NCOL_ALL), np.float32), np.zeros(0, int)
+    return np.stack(X_list).astype(np.float32), np.asarray(y_list)
+
+
+# ---- FEATURES + JOIN: all 199 train movies on BASE -----------------------
+t_all = time.time()
+SIX = sorted(n for n in ALL_TRAIN if n.startswith("6bba_"))
+FOUR = sorted(n for n in ALL_TRAIN if n.startswith("44b6_"))
+assert len(SIX) == 128 and len(FOUR) == 71, (len(SIX), len(FOUR))
+FOLD_OF = {n: i % 2 for i, n in enumerate(SIX)}      # alternate by sorted name
+_missing = [n for n in SIX if n not in FDET_F4]
+assert not _missing, f"no fdet_F4 cache for {len(_missing)} 6bba movies: {_missing[:5]}"
+_missing = [n for n in SIX if n not in EDGEPROB_F4]
+assert not _missing, f"no edgeprob F4 cache for {len(_missing)} 6bba movies: {_missing[:5]}"
+MODEL_BIDIR, MCOLS_BIDIR, POOL_BIDIR = _load_pkl("edge_ranker_ep175v3_bidir.pkl", 170, 180)
+assert not (set(POOL_BIDIR) & set(SET_44B6)), "the production ranker saw the 44b6 draw"
+PROD_FLOOR = 0.48                                     # ref 56030644, LB 0.933
+STEAL_ARMS = []       # divbench6 sweeps the SOLVER, not the patch
+# (arm name, DIV_W). The shipped value is 0.55; ranker-fine's 12-event curve
+# read forks 111 / 190 / 394 / 1024 at 0.55 / 0.45 / 0.35 / 0.20, so these
+# three span an order of magnitude in fork production. 0.65 and above is not
+# swept: that direction makes FEWER forks and the gate cannot help there.
+DIVW_ARMS = [("dw35", 0.35)]   # divbench6's winner: +0.0015, both folds up
+_jobs = [(n, "44b6") for n in FOUR] + [(n, "6bba") for n in SIX]
+print(f"\n=== FEATURES + JOIN: {len(_jobs)} passes, all 199 train movies on "
+      f"BASE (xl) primaries + BASE edgeprob; every 6bba movie keeps its full "
+      f"features for the solve ===", flush=True)
+FEATS = {}                 # name -> (seeds, feats), 6bba only
+LAB4 = {}                  # name -> (X, y) on F4/F4HP features, 6bba only
+LAB = {}                   # name -> (X, y) labelled rows, all 199
+for k_, (name, role) in enumerate(_jobs):
+    t0 = time.time()
+    dets = load_dets(name, "BASE")
+    T = len(dets)
+    seeds, feats = features_ext(name, dets, T, EP_OF["BASE"][name],
+                                EP2_OF["BASE"][name])
+    X_, y_ = label_rows(name, feats)
+    LAB[name] = (X_, y_)
+    n_pairs = int(sum(len(p) for p, _r, _P, _C in feats))
+    n4 = ""
+    if role == "6bba" or name in SET_44B6:
+        dets4 = load_dets(name, "F4")
+        T4 = len(dets4)
+        seeds4, feats4 = features_ext(name, dets4, T4, EP_OF["F4"][name],
+                                      EP2_OF["F4"].get(name))
+        FEATS[name] = (seeds4, feats4)
+        if role == "6bba":
+            LAB4[name] = label_rows(name, feats4)
+        n4 = f" F4 pairs={int(sum(len(p) for p, _r, _P, _C in feats4))}"
+        del dets4
+    print(f"[{k_ + 1}/{len(_jobs)}] {name} {role}"
+          f"{' fold' + str(FOLD_OF[name]) if role == '6bba' else ''}: T={T} "
+          f"pairs={n_pairs} labelled={len(y_)} pos={int(y_.sum())}{n4} "
+          f"{time.time() - t0:.0f}s", flush=True)
+    del dets, X_, y_, seeds, feats
+    gc.collect()
+print(f"  join: {JOIN['datasets']} passes, {JOIN['pairs']} pairs, 100% "
+      f"matched; NaN p_rev {JOIN['nan_p_rev']}; empty frames "
+      f"{JOIN['empty_frames']}", flush=True)
+print(f"  features in {(time.time() - t_all) / 60:.1f} min", flush=True)
+
+
+def _auc(y, p):
+    y = np.asarray(y)
+    if len(y) == 0 or y.min() == y.max():
+        warn_once("auc_one_class",
+                  "an AUC was asked of rows with a single class -> NaN, "
+                  "not a number")
+        return float("nan")
+    return float(roc_auc_score(y, p))
+
+
+# ---- STAGE A: two out-of-fold +BIDIR rankers ------------------------------
+print("\n=== STAGE A: two out-of-fold +BIDIR rankers (18 + p_fwd p_rev h_fused; "
+      "poolsize hyperparameters), each trained on the 71 44b6 movies + the "
+      "other 64 6bba movies ===", flush=True)
+COLS = ARMS["+BIDIR"]
+MODELS_FOLD = {}
+for k in (0, 1):
+    t0 = time.time()
+    train_names = FOUR + [n for n in SIX if FOLD_OF[n] != k]
+    held = [n for n in SIX if FOLD_OF[n] == k]
+    Xa = np.concatenate([LAB[n][0] for n in train_names]).astype(np.float32)[:, COLS]
+    ya = np.concatenate([LAB[n][1] for n in train_names])
+    Xh = np.concatenate([LAB[n][0] for n in held]).astype(np.float32)[:, COLS]
+    yh = np.concatenate([LAB[n][1] for n in held])
+    perm = np.random.default_rng(0).permutation(len(ya))
+    n_val = max(1000, len(ya) // 10)
+    vi, ti = perm[:n_val], perm[n_val:]
+    m = HistGradientBoostingClassifier(max_iter=300, random_state=0)
+    m.fit(Xa[ti], ya[ti])
+    val_auc = _auc(ya[vi], m.predict_proba(Xa[vi])[:, 1])
+    m.fit(Xa, ya)
+    held_auc = _auc(yh, m.predict_proba(Xh)[:, 1])
+    MODELS_FOLD[k] = m
+    print(f"  fold{k}: trained on {len(train_names)} movies / {len(ya)} rows "
+          f"({ya.mean():.3f} pos), val AUC {val_auc:.4f}; held-out fold "
+          f"({len(held)} 6bba movies, {len(yh)} rows) AUC {held_auc:.4f}  "
+          f"{time.time() - t0:.0f}s", flush=True)
+    del Xa, ya, Xh, yh
+    gc.collect()
+del LAB
+gc.collect()
+
+print(f"\n=== RANKER AUC ON {DET_SRC} COORDINATES (out of fold, the "
+      f"{len(LAB4)} movies whose coordinates differ between the arms) ===",
+      flush=True)
+print("  Same pairs, same GT labels, same fitted model as stage B; the ONLY "
+      "difference from the arm this is compared against is where the points "
+      "were placed. A drop here says the RANKER mis-reads hpara; a drop in "
+      "score with this flat says the damage is downstream.", flush=True)
+_p4, _y4 = [], []
+for _k in (0, 1):
+    _ns = [n for n in sorted(LAB4) if FOLD_OF[n] == _k]
+    if not _ns:
+        continue
+    _X = np.concatenate([LAB4[n][0] for n in _ns]).astype(np.float32)[:, COLS]
+    _y = np.concatenate([LAB4[n][1] for n in _ns])
+    _p = MODELS_FOLD[_k].predict_proba(_X)[:, 1]
+    _p4.append(_p)
+    _y4.append(_y)
+    print(f"  fold{_k}: {len(_ns)} movies, {len(_y)} rows ({_y.mean():.3f} "
+          f"pos), AUC {_auc(_y, _p):.5f}", flush=True)
+if _p4:
+    _yy = np.concatenate(_y4)
+    print(f"  POOLED {DET_SRC}: {len(_yy)} rows, AUC "
+          f"{_auc(_yy, np.concatenate(_p4)):.5f}   <- compare arm to arm",
+          flush=True)
+del LAB4
+gc.collect()
+MODELS = {}                # arm_model() is kept but unused here
+
+
+# ---- STAGE B: the full pipeline, the only verdict that counts ----------
+def solve_one(dets, T, seeds, feats, model, cols, disapp=None, floor=None,
+              divw=None):
+    """rankwhy.solve_one with the model, its columns and the (joined)
+    features as parameters. Everything up to and including the ILP, plus
+    the sub-threshold repair pool. The post-link stages run in patch_final."""
+    if model is None:                      # head-only: the column IS p
+        probs = [np.nan_to_num(rows[:, cols], nan=0.0).astype(float)
+                 if len(pairs) else np.zeros(0)
+                 for pairs, rows, P, C in feats]
+    else:
+        probs = [model.predict_proba(rows[:, cols])[:, 1]
+                 if len(pairs) else np.zeros(0)
+                 for pairs, rows, P, C in feats]
+    coords_rows, offset, n_glob = [], {}, 0
+    for t in range(T):
+        c, s_ = seeds[t]
+        offset[t] = n_glob
+        n_glob += len(c)
+        for xyz in c:
+            coords_rows.append([t, xyz[0], xyz[1], xyz[2]])
+    coords = np.asarray(np.round(coords_rows), np.int16)
+    cand_edges = []
+    for t in range(T - 1):
+        pairs, rows, P, C = feats[t]
+        for (i_, j_), pr in zip(pairs, probs[t]):
+            if pr >= (ILP_FLOOR if floor is None else floor):
+                cand_edges.append((offset[t] + i_, offset[t + 1] + j_,
+                                   float(pr), 0.0))
+    graph = PIPE.build_graph(coords, cand_edges)
+    if graph.num_edges() > 0:
+        solver = td.solvers.ILPSolver(
+            edge_weight=-1.0 * td.EdgeAttr("edge_prob"),
+            appearance_weight=0.0,
+            disappearance_weight=(ILP_DISAPP if disapp is None else disapp),
+            division_weight=(DIV_W if divw is None else divw))
+        with PIPE.suppress_output():
+            graph = solver.solve(graph)
+    na = graph.node_attrs(attr_keys=["node_id", "t", "z", "y", "x"])
+    nid_l = [int(v) for v in na["node_id"].to_list()]
+    remap = {v: i for i, v in enumerate(nid_l)}
+    nodes_arr = np.stack([np.asarray(na[c_].to_list(), float)
+                          for c_ in ("t", "z", "y", "x")], axis=1)
+    rows_e, dropped = [], 0
+    if graph.num_edges() > 0:
+        ea = graph.edge_attrs(attr_keys=["source_id", "target_id"])
+        for a_, b_ in zip(ea["source_id"].to_list(),
+                          ea["target_id"].to_list()):
+            ra, rb = remap.get(int(a_)), remap.get(int(b_))
+            if ra is None or rb is None:
+                dropped += 1
+                continue
+            rows_e.append([ra, rb])
+    if dropped:
+        warn_once("ilp_endpoint_missing",
+                  f"{dropped} solved edges had an endpoint absent from "
+                  f"node_attrs and were dropped -> a LOWER BOUND")
+    e2 = np.array(rows_e, int) if rows_e else np.zeros((0, 2), int)
+    nodes0 = {i_ + 1: {"t": int(nodes_arr[i_, 0]),
+                       "xyz": nodes_arr[i_, 1:].astype(float)}
+              for i_ in range(len(nodes_arr))}
+    edges0 = [(int(a_) + 1, int(b_) + 1) for a_, b_ in e2]
+    cand, cand_sc, cand_trees = [], [], []
+    for t in range(T):
+        c_all = np.asarray(dets[t][0], float)
+        s_all = np.asarray(dets[t][1], float)
+        cm = (s_all >= CAND_THR) & (s_all < UNET_THRESH)
+        cand.append(c_all[cm])
+        cand_sc.append(s_all[cm])
+        cand_trees.append(cKDTree(cand[-1] * SCALE) if len(cand[-1])
+                          else None)
+    pmap = {}
+    for t in range(T - 1):
+        pairs, rows, P, C = feats[t]
+        for (i_, j_), pr, row in zip(pairs, probs[t], rows):
+            pmap[(t, int(i_), int(j_))] = (float(pr), float(row[C_PFWD]),
+                                            float(row[C_PREV]))
+    cd = {}
+    for g_, (t_, z_, y_, x_) in enumerate(coords.tolist()):
+        cd.setdefault((int(t_), int(z_), int(y_), int(x_)), (int(t_), g_ - offset[int(t_)]))
+    seed_of_node = {}
+    for i_ in range(len(nodes_arr)):
+        key = tuple(int(round(v)) for v in nodes_arr[i_])
+        seed_of_node[i_ + 1] = cd.get(key)
+    del graph, probs
+    return nodes0, edges0, (cand, cand_sc, cand_trees), (pmap, seed_of_node)
+
+
+def patch_final(nodes0, edges0, pool, out_path, divs=True, pfun=None, steal=None):
+    """rankwhy.patch_final verbatim: the four post-link stages on a FRESH
+    COPY, write the geff, return the final graph."""
+    cand, cand_sc, cand_trees = pool
+    nodes = {g: {"t": v["t"], "xyz": v["xyz"].copy()}
+             for g, v in nodes0.items()}
+    edges = list(edges0)
+    nid2 = len(nodes) + 1
+    nid2 = _gap_close(nodes, edges, cand, cand_sc, cand_trees, nid2)
+    nodes, edges = _short_filter(nodes, edges)
+    _linefit(nodes, edges)
+    PRE_STATE["nodes"] = nodes
+    PRE_STATE["edges"] = list(edges)
+    FORK_LOG.clear()
+    STEAL_LOG.clear()
+    if divs:
+        _add_safe_divisions(nodes, edges, pfun=pfun, steal=steal)
+    ids = sorted(nodes)
+    PRE_STATE["ids"] = ids
+    PRE_STATE["final_edges"] = list(edges)
+    rm = {g: i for i, g in enumerate(ids)}
+    arr = np.array([[nodes[g]["t"], *nodes[g]["xyz"]] for g in ids], float)
+    e3 = np.array([[rm[a_], rm[b_]] for a_, b_ in edges], int)
+    dr._save(str(out_path), arr, e3)
+    return nodes, edges
+
+
+def score_one(gp, name):
+    """score_dir's per-dataset body: the official scorer on one geff."""
+    dset = open_dataset(root / "train" / name, require_tracks=True,
+                        load_image=False)
+    res_ = td.graph.IndexedRXGraph.from_geff(str(gp))
+    g = res_[0] if isinstance(res_, tuple) else res_
+    er = compute_metric(g, dset.tracks, scale=dset.scale)
+    rec = (node_recall(g, dset.tracks)
+           if g.num_edges() > 0 and g.num_nodes() > 0 else 0.0)
+    gt = read_geff(geff_path(root, "train", name))
+    est = gt["extra"].get("estimated_number_of_nodes")
+    return per_sample_metrics(er, float(est) if est else float("nan"), rec)
+
+
+def pdir(arm, domain):
+    d = pathlib.Path(f"/kaggle/working/ep_{domain}_{ARM_TAG[arm]}")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def arm_model(arm):
+    if arm == "ANCHOR_D187":
+        return MODEL_D187, MCOLS_D187
+    if arm in HEAD_ONLY:
+        return None, HEAD_ONLY[arm]
+    return MODELS[arm], ARMS[arm]
+
+
+from tracking_cellmot.division_metrics import score_divisions   # noqa: E402
+
+FORK_LOG = {}
+PRE_STATE = {}
+DOMAIN = "BASE-6bba-all"
+ARM_TAG = {"REF": "ref"}
+FEAT20 = ["src", "d_pc1", "d_pq", "d_s", "dv", "p_c1", "p_q", "pf_c1", "pf_q",
+          "pr_q", "sc_p", "sc_c1", "sc_q", "len_back", "len_c1", "len_q",
+          "dens10", "n_orph", "t_frac", "rank_gap"]
+FEAT_NEW = ["dv2", "ang", "sc_q_r", "sc_p_r", "dens5", "p_q_marg", "q_ends", "steal"]
+FEAT_NAMES = FEAT20 + FEAT_NEW      # the first 20 are divbench3's, in order
+
+# ---------------------------------------------------------------------------
+# The 67 COUNTED forks from 44b6's 71 movies (61 FP + 6 TP), lifted verbatim
+# out of divbench5's forks_44b6.csv -- the same literal divbench8 used, which
+# is what makes its +0.0037 and this run's joint column the same measurement.
+# ---------------------------------------------------------------------------
+FEAT44 = ['src', 'd_pc1', 'd_pq', 'd_s', 'dv', 'p_c1', 'p_q', 'pf_c1', 'pf_q', 'pr_q', 'sc_p', 'sc_c1', 'sc_q', 'len_back', 'len_c1', 'len_q', 'dens10', 'n_orph', 't_frac', 'rank_gap', 'dv2', 'ang', 'sc_q_r', 'sc_p_r', 'dens5', 'p_q_marg', 'q_ends', 'steal']
+ROWS44 = [
+    (1,[1,4.1151,8.3363,10.876,2.4125,0.99095,0.0029257,0.95523,0.13841,0.0022598,0.43706,0.45343,0.32243,3,12,12,4,11,0.29293,0.98803,5.0454,117.67,0.11531,0.43278,0,np.nan,0,0]),
+    (1,[0,2.8752,1.4988,3.8679,1.0136,0.58258,0.56017,0.86076,0.82046,0.38619,0.42556,0.39483,0.39797,12,12,5,1,np.nan,0.58586,0.022409,2.142,121.07,0.78285,0.86616,0,0.55335,1,0]),
+    (1,[0,0.44644,4.3286,4.2824,1.722,0.63998,0.61329,0.8744,0.83979,0.38223,0.37555,0.35302,0.34672,12,12,12,1,np.nan,0.26263,0.026696,3.8387,81.114,0.51954,0.66519,0,0.61003,0,0]),
+    (1,[1,2.0472,4.8683,6.0338,2.5764,0.94912,0.075724,0.94316,0.24875,0.083781,0.32239,0.33415,0.24072,12,12,12,2,7,0.36364,0.8734,4.3478,115.29,0.11956,0.40108,0,-0.11295,1,0]),
+    (1,[0,5.0614,2.6081,6.2966,2.5735,0.70451,0.60631,0.88246,0.75596,0.46187,0.42987,0.3757,0.4204,12,12,12,0,np.nan,0.55556,0.098208,5.4618,105.89,0.85981,0.89484,0,np.nan,0,0]),
+    (1,[1,1.7802,4.4273,5.3591,4.6201,0.78471,0.36679,0.73471,0.37619,0.27553,0.34479,0.30911,0.32095,7,1,12,1,12,0.57576,0.41792,np.nan,112.18,0.60686,0.7107,0,0.034576,1,0]),
+    (1,[1,0.83494,5.6107,6.1589,2.6777,0.63522,0.32427,0.96123,0.57836,0.21563,0.38835,0.4222,0.29644,12,12,3,1,12,0.79798,0.31095,3.8422,127.9,0.49452,0.87784,0,np.nan,1,0]),
+    (1,[0,6.8734,3.1157,7.0175,2.2035,0.64817,0.61144,0.82395,0.5601,0.49129,0.25603,0.25481,0.22833,2,12,11,1,np.nan,0.57576,0.036729,4.7375,79.635,0.53394,0.69759,0,0.56171,1,0]),
+    (2,[0,5.774,3.4477,8.8651,2.4341,0.86959,0.83053,0.9087,0.84767,0.4976,0.41727,0.45395,0.44849,4,9,12,1,np.nan,0.040404,0.039063,5.2184,146.93,0.7964,0.5485,0,0.77149,0,0]),
+    (1,[0,2.1069,2.2592,4.0284,1.758,0.61807,0.55498,0.91761,0.67338,0.38248,0.36352,0.381,0.32478,12,9,12,0,np.nan,0.53535,0.063092,3.1077,134.61,0.19295,0.29914,0,0.53743,1,0]),
+    (1,[0,3.3267,2.8554,4.9005,1.5094,0.64905,0.55562,0.69359,0.69979,0.42173,0.41723,0.36377,0.41129,12,4,4,0,np.nan,0.94949,0.093428,3.357,104.62,0.4812,0.50778,0,0.52999,0,0]),
+    (1,[1,0.76358,6.4869,7.0711,2.4276,0.95781,0.018841,0.95714,0.066003,0.034449,0.36233,0.3688,0.2648,3,12,12,1,11,0.030303,0.93896,4.1345,137.79,0.61372,0.85294,0,np.nan,1,0]),
+    (1,[0,1.3047,3.9649,4.5898,1.253,0.67912,0.57957,0.9451,0.65386,0.47714,0.29502,0.31511,0.28503,12,12,3,1,np.nan,0.31313,0.099556,2.4257,110.62,0.67593,0.70475,0,0.55898,1,0]),
+    (1,[1,1.2118,5.9153,6.7042,2.5355,0.7374,0.47273,0.58676,0.50292,0.37011,0.36418,0.29519,0.33933,12,8,12,2,16,0.84848,0.26467,3.6326,126.3,0.80749,0.85652,0,0.45321,0,0]),
+    (1,[0,4.3671,1.6011,4.7223,1.3234,0.62968,0.62641,0.87636,0.87603,0.55184,0.40434,0.36243,0.35398,5,12,12,0,np.nan,0.050505,0.0032743,2.786,92.725,0.90712,0.98355,0,0.62566,1,0]),
+    (1,[1,1.3009,6.6108,7.8695,3.0903,0.96964,0.012602,0.91646,0.043552,0.008155,0.39657,0.35427,0.33567,2,12,12,2,14,0.020202,0.95704,6.6383,164.01,0.6341,0.84059,0,-0.20508,1,0]),
+    (1,[0,3.2795,1.5823,4.7245,1.5098,0.59823,0.57144,0.68177,0.88495,0.55473,0.33491,0.35021,0.28454,8,3,11,1,np.nan,0.080808,0.026794,2.3008,150.83,0.89477,0.95714,0,np.nan,1,0]),
+    (1,[0,2.9125,2.6155,4.8592,1.1532,0.74183,0.57313,0.89042,0.51084,0.50059,0.35048,0.35573,0.36624,12,12,12,1,np.nan,0.84848,0.1687,1.8635,122.95,0.97943,0.96837,1,0.21,0,0]),
+    (2,[0,2.1734,6.5029,7.7295,3.7615,0.94098,0.63259,0.84914,0.73345,0.22059,0.44743,0.45148,0.43839,2,12,12,0,np.nan,0.18182,0.30839,6.0286,116.78,0.65907,0.73126,0,0.62636,1,0]),
+    (1,[1,2.4867,8.2449,10.581,2.7842,0.99717,0.0022142,0.98775,0.040033,0.0058841,0.45991,0.44848,0.37155,12,12,5,2,11,0.63636,0.99496,4.8943,157.17,0.30119,0.83158,0,-0.51499,1,0]),
+    (1,[1,1.9983,9.2557,10.864,2.4154,0.99703,0.0022693,0.93512,0.060776,4.2638e-05,0.44145,0.44082,0.1855,12,6,5,2,7,0.92929,0.99476,4.3443,140.08,0.019713,0.68384,0,-0.0012568,1,0]),
+    (2,[1,1.6895,4.8564,6.0418,3.4421,0.66305,0.36494,0.58743,0.33651,0.40216,0.34988,0.25056,0.22991,12,12,5,0,9,0.35354,0.29811,5.3347,127.83,0.48663,0.95314,0,0.3553,1,0]),
+    (1,[1,0.77525,5.6381,6.1161,2.4098,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,0.19646,0.19641,12,5,12,1,13,0.15152,np.nan,3.8952,125.02,0.28449,np.nan,-1,np.nan,0,0]),
+    (1,[1,1.0091,6.5117,7.1609,2.6292,0.72858,0.3656,0.77819,0.57951,0.32442,0.26046,0.30719,0.28313,12,9,12,1,27,0.48485,0.36298,3.2625,126.73,0.88339,0.80647,0,0.10769,1,0]),
+    (1,[0,3.4101,1.3176,4.5085,0.8806,0.60011,0.59498,0.64621,0.4845,0.36461,0.29077,0.28529,0.32988,12,12,6,2,np.nan,0.71717,0.0051278,2.3276,140.78,0.95674,0.89441,0,0.53891,1,0]),
+    (1,[1,1.9156,4.4023,6.0262,2.3137,0.64758,0.3955,0.95207,0.45655,0.41841,0.32115,0.38011,0.30446,8,5,11,0,7,0.080808,0.25207,4.0547,141.86,0.61599,0.67264,0,np.nan,1,0]),
+    (1,[1,2.574,5.4107,7.8548,2.7025,0.80209,0.38596,0.87328,0.34741,0.34578,0.34181,0.30462,0.32537,12,8,11,0,6,0.87879,0.41613,3.5966,157.84,0.68732,0.73989,0,np.nan,0,0]),
+    (1,[0,1.6823,3.0786,4.336,1.9823,0.62922,0.58208,0.82486,0.83812,0.42372,0.34368,0.3296,0.29767,12,12,12,2,np.nan,0.27273,0.047143,3.1489,128.82,0.77219,0.88113,0,0.57185,1,0]),
+    (1,[0,1.6263,3.302,4.5351,2.077,0.60451,0.58508,0.83254,0.80283,0.42848,0.27404,0.23265,0.25639,12,2,5,3,np.nan,0.93939,0.019426,3.0435,130.82,0.1631,0.21148,0,0.50975,0,0]),
+    (1,[0,2.7992,2.6331,3.9463,2.0892,0.63036,0.56883,0.78653,0.75328,0.48443,0.32888,0.29541,0.28352,1,4,5,1,np.nan,0.010101,0.061537,2.5751,93.13,0.74596,0.85939,0,np.nan,1,0]),
+    (1,[1,1.2503,5.9642,7.1354,2.5673,0.76293,0.35465,0.70178,0.2981,0.37237,0.36053,0.37868,0.30455,12,12,12,1,12,0.43434,0.40828,3.5983,157.5,0.80848,0.91203,0,np.nan,1,0]),
+    (1,[0,1.9652,1.8661,3.2817,1.0737,0.60607,0.55983,0.81643,0.79169,0.41523,0.36528,0.29618,0.31106,12,11,12,1,np.nan,0.74747,0.046241,2.2935,117.84,0.55789,0.81608,0,0.5374,0,0]),
+    (1,[1,1.258,5.5688,5.0733,3.0675,0.7288,0.44398,0.77377,0.57633,0.35056,0.37697,0.37111,0.37178,4,12,12,1,20,0.24242,0.28482,3.9955,60.706,0.84722,0.86601,0,0.43628,1,0]),
+    (1,[0,2.6903,2.4733,5.1594,2.0591,0.67905,0.63926,0.91997,0.93177,0.45644,0.34732,0.33248,0.27692,9,5,6,1,np.nan,0.92929,0.03979,4.7371,175.43,0.41709,0.75206,0,0.63818,0,0]),
+    (2,[0,3.9746,3.4159,7.1314,2.3882,0.82831,0.67897,0.8615,0.87748,0.45621,0.44163,0.3996,0.42588,12,12,12,0,np.nan,0.19192,0.14934,5.0056,149.48,0.92955,0.96637,0,np.nan,0,0]),
+    (1,[1,1.7205,9.9023,11.312,2.2795,0.99628,0.022955,0.98924,0.23157,0.056075,0.37597,0.36304,0.16437,7,9,9,0,3,0.89899,0.97332,3.5255,142.27,0.021124,0.71339,0,np.nan,0,0]),
+    (1,[1,0.5924,4.6163,5.0655,2.7065,0.7462,0.4588,0.18536,0.4194,0.44159,0.35691,0.33319,0.30507,12,9,9,3,20,0.89899,0.2874,3.8324,136.96,0.80311,0.91292,0,0.039221,0,0]),
+    (2,[0,3.9542,4.0785,7.0564,3.2483,0.87255,0.59606,0.63334,0.53744,0.45551,0.46453,0.47506,0.41014,12,12,12,0,np.nan,0.52525,0.27649,5.8805,122.9,0.36162,0.74219,0,0.59386,1,0]),
+    (1,[1,2.3,6.6586,8.8597,4.3604,0.90562,0.19475,0.89403,0.44565,0.14967,0.22167,0.18379,0.19644,3,12,7,4,32,0.030303,0.71087,6.656,160.47,0.39512,0.59517,0,-0.033039,1,0]),
+    (1,[0,1.7475,3.8124,4.4129,2.3904,0.60608,0.5806,0.73627,0.79809,0.41216,0.27004,0.29544,0.21923,6,12,4,1,np.nan,0.060606,0.025488,4.1123,98.134,0.57699,0.8344,0,0.52682,1,0]),
+    (1,[1,1.5252,5.5553,7.0175,2.6751,0.60145,0.32913,0.84147,0.35676,0.26645,0.29689,0.294,0.26753,2,12,4,0,30,0.19192,0.27231,4.425,161.36,0.82501,0.91092,0,0.30525,1,0]),
+    (1,[1,2.2229,5.5549,7.6486,4.1216,0.50953,0.19723,0.48415,0.52542,0.15909,0.30502,0.25476,0.25812,12,9,12,1,25,0.33333,0.31231,7.6064,156.83,0.64027,0.83873,0,0.070326,1,0]),
+    (1,[1,2.1292,5.3973,6.7911,4.3097,0.69937,0.46488,0.89042,0.7081,0.31417,0.24538,0.23839,0.2942,12,2,4,2,32,0.63636,0.23449,5.9294,122.81,0.80166,0.57125,0,0.24529,1,0]),
+    (2,[1,1.862,6.7069,8.2038,2.8946,0.81168,0.36894,0.82122,0.4302,0.28295,0.35862,0.28418,0.32629,12,12,12,1,28,0.65657,0.44275,4.5906,139.01,0.90058,0.96063,0,0.33388,1,0]),
+    (1,[0,1.7649,3.2146,4.5342,2.2966,0.70845,0.57014,0.9068,0.93971,0.34653,0.33056,0.29259,0.37585,12,6,12,5,np.nan,0.52525,0.13831,3.9676,128.8,0.75752,0.57686,0,0.56944,1,0]),
+    (1,[0,2.579,1.8099,4.1409,1.1599,0.63783,0.55588,0.6785,0.90715,0.21906,0.32117,0.36429,0.38886,4,12,12,5,np.nan,0.58586,0.081941,2.5414,140.67,0.80584,0.54,0,0.55397,1,0]),
+    (1,[1,1.6067,10.156,11.509,3.3107,0.62668,0.01455,0.70669,0.096276,0.036577,0.27491,0.30616,0.24245,2,10,12,4,24,0.85859,0.61213,4.521,144.97,0.25106,0.36334,0,-0.089783,0,0]),
+    (1,[1,2.4287,7.5696,8.9242,2.6745,0.60788,0.51065,0.8042,0.73529,0.45098,0.31246,0.36518,0.18796,1,11,6,4,25,0.87879,0.097233,4.5874,116.57,0.087507,0.50556,0,np.nan,1,0]),
+    (1,[1,2.9573,5.4401,6.1442,2.3459,0.55974,0.35012,0.51931,0.34111,0.35572,0.41755,0.45069,0.4199,4,12,12,0,17,0.060606,0.20962,5.0676,88.952,0.74032,0.72985,0,np.nan,1,0]),
+    (1,[0,5.5975,2.7858,7.7487,2.5709,0.89594,0.5653,0.83914,0.70983,0.34196,0.51071,0.43892,0.41062,12,12,12,0,np.nan,0.70707,0.33064,5.3094,132.2,0.70039,0.99917,0,0.5563,0,0]),
+    (1,[0,3.5682,2.4296,5.0904,1.8244,0.77458,0.67228,0.73546,0.87333,0.50207,0.41613,0.46567,0.44803,12,12,12,2,np.nan,0.27273,0.1023,3.6785,114.82,0.47868,0.33013,0,0.66878,1,0]),
+    (1,[1,2.0359,6.3106,8.1549,np.nan,0.9341,0.20802,0.92848,0.64646,0.15307,0.34328,0.28482,0.28239,12,0,12,1,10,0.79798,0.72608,np.nan,151.28,0.77305,0.90908,0,0.18543,1,0]),
+    (1,[1,1.252,6.9832,7.9474,2.2777,0.99073,0.026301,0.96065,0.19303,0.040031,0.44871,0.43712,0.21517,2,12,4,0,15,0.020202,0.96443,5.0093,137.2,0.31101,0.99953,0,-0.03352,1,0]),
+    (1,[1,0.35639,5.7771,5.966,2.3329,0.74788,0.20334,0.90307,0.36605,0.24193,0.21271,0.2579,0.21336,5,5,3,1,13,0.12121,0.54455,5.4103,120.52,0.30021,0.29634,0,0.19674,1,0]),
+    (1,[1,0.76926,7.5988,8.0764,2.3997,0.84606,0.10354,0.75676,0.33311,0.12921,0.21642,0.23987,0.20331,12,12,3,1,15,0.22222,0.74252,4.1277,126.14,0.24052,0.31765,0,np.nan,1,0]),
+    (1,[1,1.4665,5.3516,6.7607,2.3252,0.92969,0.036197,0.95562,0.087872,0.039461,0.22409,0.19539,0.18064,12,12,12,2,14,0.54545,0.89349,3.3597,161.88,0.11682,0.36651,0,-0.35029,1,0]),
+    (1,[1,1.2621,7.0979,7.6668,2.5941,0.94827,0.063484,0.96144,0.13212,0.079767,0.31833,0.33325,0.21218,12,12,12,3,15,0.59596,0.88479,5.178,112.33,0.29328,0.82363,0,-0.32498,1,0]),
+    (1,[1,2.1617,6.3849,7.7897,2.3413,0.50183,0.17819,0.70337,0.37938,0.23799,0.17962,0.15552,0.21431,12,1,8,3,24,0.62626,0.32364,np.nan,123.51,0.30566,0.11159,0,0.16024,1,0]),
+    (1,[1,2.0447,4.3836,5.7961,2.9803,0.87121,0.17916,0.86841,0.29135,0.16016,0.16716,0.18336,0.17862,5,11,11,2,27,0.87879,0.69205,4.1633,124.67,0.10696,0.059393,0,0.044559,0,0]),
+    (1,[0,2.6454,2.9778,3.7391,1.5095,0.66244,0.60244,0.82838,0.86765,0.39293,0.29309,0.25295,0.21658,12,8,5,1,np.nan,0.88889,0.059996,2.9648,83.129,0.31861,0.73307,0,0.59958,1,0]),
+    (1,[1,2.5171,6.6315,6.3796,3.2765,0.81391,0.2008,0.92333,0.26727,0.1763,0.40384,0.40985,0.26374,1,4,12,1,13,0.010101,0.61311,5.1784,73.264,0.15429,0.70612,0,-0.2025,1,0]),
+    (1,[0,4.0667,2.4257,5.3746,0.99341,0.79324,0.67594,0.85704,0.87886,0.41882,0.34246,0.32609,0.32127,12,12,4,0,np.nan,0.67677,0.1173,2.5508,109.13,0.31459,0.39793,0,np.nan,1,0]),
+    (1,[1,2.4507,4.2093,5.4524,2.6586,0.57816,0.52454,0.92337,0.82684,0.45283,0.39552,0.35834,0.32944,7,12,12,0,7,0.35354,0.053623,3.8462,106.92,0.37475,0.6762,0,np.nan,1,0]),
+    (1,[1,0.60475,11.712,11.517,2.6209,0.97187,np.nan,0.94563,np.nan,np.nan,0.32084,0.42056,0.3718,12,3,12,1,3,0.44444,np.nan,3.5691,69.844,0.56327,0.33688,0,np.nan,1,0]),
+    (1,[0,1.1981,5.449,6.2552,2.9248,0.6249,0.56864,0.68435,0.8808,0.36822,0.42938,0.34683,0.36032,12,12,12,1,np.nan,0.48485,0.056262,5.8746,127.79,0.51158,0.84176,0,0.56197,1,0]),
+    (1,[1,1.5721,8.6297,9.744,2.3739,0.62659,0.038368,0.5213,0.17958,0.043508,0.36507,0.38005,0.23887,7,12,8,3,18,0.63636,0.58822,3.9333,131.56,0.74681,0.9592,0,-0.36648,1,0]),
+    (1,[1,1.3635,6.5871,6.6912,3.0074,0.68413,0.47365,0.77768,0.55409,0.38562,0.24719,0.23466,0.23136,10,12,4,1,9,0.54545,0.21048,6.5008,88.475,0.36884,0.4526,0,0.43496,1,0]),
+]
+assert FEAT44 == FEAT_NAMES, "the 44b6 fork table's columns are not this run's"
+X44 = np.array([r_[1] for r_ in ROWS44], float)
+Y44 = np.array([1 if r_[0] == 2 else 0 for r_ in ROWS44], int)
+assert X44.shape == (67, len(FEAT_NAMES)), X44.shape
+assert int(Y44.sum()) == 6, int(Y44.sum())
+WALK_ORDER = ["mother_absent", "daughter_absent", "recovered", "mother_deleted_post",
+              "1a_mother_no_child", "1b_mother_forked_elsewhere",
+              "0_sister_deleted_post", "2_mother_no_single_pred",
+              "3_child_wrong_frame", "4_mother_child_over_10um",
+              "5a_sister_not_orphan", "5b_no_orphans_in_frame",
+              "5c_sister_over_12um_of_mother", "6_sister_gap_over_15um",
+              "7_not_the_nearest_orphan", "8a_daughter_not_one_child",
+              "8b_diverge_under_2.25um", "9_passed_all_gates_then_capped_or_taken"]
+
+
+def _gt_struct(name):
+    gt = read_geff(geff_path(root, "train", name))
+    g_t = np.asarray(gt["t"], int)
+    g_pos = np.stack([np.asarray(gt[c], float) for c in ("z", "y", "x")], axis=1)
+    ids = [int(v) for v in gt["node_ids"]]
+    row_of = {v: i for i, v in enumerate(ids)}
+    kids = defaultdict(list)
+    for a, b in gt["edges"]:
+        ra, rb = row_of.get(int(a)), row_of.get(int(b))
+        if ra is not None and rb is not None:
+            kids[ra].append(rb)
+    mothers = {ids[r]: (r, [k for k in ks]) for r, ks in kids.items() if len(ks) >= 2}
+    return g_t, g_pos, ids, mothers
+
+
+_GTE_CACHE = {}
+
+
+def _gt_edge_rows(name):
+    """(set of GT edges as (row, row), {t: (rows, KDTree)}) for the true-other
+    test in the 5a walk. Cached: the geff read is not free."""
+    if name in _GTE_CACHE:
+        return _GTE_CACHE[name]
+    gt = read_geff(geff_path(root, "train", name))
+    g_t = np.asarray(gt["t"], int)
+    g_pos = np.stack([np.asarray(gt[c], float) for c in ("z", "y", "x")], axis=1)
+    ids = [int(v) for v in gt["node_ids"]]
+    row_of = {v: i for i, v in enumerate(ids)}
+    es = set()
+    for a, b in gt["edges"]:
+        ra, rb = row_of.get(int(a)), row_of.get(int(b))
+        if ra is not None and rb is not None:
+            es.add((ra, rb))
+    by_t = {}
+    for t_ in np.unique(g_t):
+        rows_ = np.where(g_t == t_)[0]
+        by_t[int(t_)] = (rows_, cKDTree(g_pos[rows_] * SCALE))
+    _GTE_CACHE[name] = (es, by_t)
+    return _GTE_CACHE[name]
+
+
+def _chain_len(start, step_map, cap=12):
+    n, cur = 0, start
+    while n < cap:
+        nxt = step_map.get(cur, [])
+        if len(nxt) != 1:
+            break
+        cur = nxt[0]
+        n += 1
+    return n
+
+
+def _aux_extra(seeds, pmap):
+    """Per-movie lookups the new fork features need, built once per solve.
+
+    scsort: every detection score in the movie, sorted, so a raw score can be
+            read as a per-movie quantile (sc_q / sc_p are the two strongest
+            features and both are raw scores whose scale moves with the movie
+            and with the imaging batch).
+    best2 : for each (t, j) the two best ranker probabilities over all parents
+            i in frame t, with their i, so "is this mother the best available
+            explanation for this node" is a lookup.
+    """
+    allsc = np.concatenate([np.asarray(s_, float) for _c, s_ in seeds]) if seeds \
+        else np.zeros(0)
+    scsort = np.sort(allsc)
+    best2 = {}
+    for (t_, i_, j_), v in pmap.items():
+        pr = v[0]
+        if not np.isfinite(pr):
+            continue
+        cur = best2.get((t_, j_))
+        if cur is None:
+            best2[(t_, j_)] = [(pr, i_), (-1.0, -1)]
+        elif pr > cur[0][0]:
+            cur[1] = cur[0]
+            cur[0] = (pr, i_)
+        elif pr > cur[1][0]:
+            cur[1] = (pr, i_)
+    return scsort, best2
+
+
+def fork_rows(name, k, seeds, aux, tp_forks, fp_forks):
+    """Every fork in the final graph, its features, its verdict."""
+    pmap, seed_of_node, scsort, best2 = aux
+    nodes, edges, ids = PRE_STATE["nodes"], PRE_STATE["final_edges"], PRE_STATE["ids"]
+    succ, pred = defaultdict(list), defaultdict(list)
+    for a, b in edges:
+        succ[a].append(b)
+        pred[b].append(a)
+    T = max(v["t"] for v in nodes.values()) + 1
+    trees = {}
+    for t in range(T):
+        c, _s = seeds[t]
+        trees[t] = cKDTree(np.asarray(c, float) * SCALE) if len(c) else None
+    pos_of = {ids[i]: i for i in range(len(ids))}
+    tp_n = {ids[i] for i in tp_forks if i < len(ids)}
+    fp_n = {ids[i] for i in fp_forks if i < len(ids)}
+
+    def _rank(v):
+        if not np.isfinite(v) or not len(scsort):
+            return np.nan
+        return float(np.searchsorted(scsort, v) / len(scsort))
+
+    def _step(g):
+        n_ = succ.get(g, [])
+        return n_[0] if len(n_) == 1 else None
+
+    rows = []
+    for p, ch in succ.items():
+        if len(ch) < 2:
+            continue
+        t = nodes[p]["t"]
+        pq = [(q, FORK_LOG.get((p, q))) for q in ch]
+        patched = [q for q, lg in pq if lg is not None]
+        if patched:
+            q = patched[0]
+            src = 1
+            c1 = FORK_LOG[(p, q)]["c1"]
+            if c1 not in ch:
+                c1 = [x for x in ch if x != q][0]
+        else:
+            src = 0
+            # the lower-ranked child is "q"
+            sp = seed_of_node.get(p)
+            pr = {}
+            for x in ch:
+                sx = seed_of_node.get(x)
+                pr[x] = pmap.get((sp[0], sp[1], sx[1]), (np.nan,))[0] if sp and sx and sx[0] == sp[0] + 1 else np.nan
+            ch_sorted = sorted(ch, key=lambda x: (np.nan_to_num(pr[x], nan=-1.0)))
+            q, c1 = ch_sorted[0], ch_sorted[-1]
+
+        def _p(a, b):
+            sa, sb = seed_of_node.get(a), seed_of_node.get(b)
+            if sa is None or sb is None or sb[0] != sa[0] + 1:
+                return (np.nan, np.nan, np.nan)
+            return pmap.get((sa[0], sa[1], sb[1]), (np.nan, np.nan, np.nan))
+
+        def _sc(a):
+            sa = seed_of_node.get(a)
+            return float(seeds[sa[0]][1][sa[1]]) if sa is not None else np.nan
+        p_c1, pf_c1, _ = _p(p, c1)
+        p_q, pf_q, pr_q = _p(p, q)
+        d_pc1 = _dist_um(nodes[p]["xyz"], nodes[c1]["xyz"])
+        d_pq = _dist_um(nodes[p]["xyz"], nodes[q]["xyz"])
+        d_s = _dist_um(nodes[c1]["xyz"], nodes[q]["xyz"])
+        c1n, qn = succ.get(c1, []), succ.get(q, [])
+        dv = (_dist_um(nodes[c1n[0]]["xyz"], nodes[qn[0]]["xyz"]) - d_s
+              if len(c1n) == 1 and len(qn) == 1 else np.nan)
+        # --- the eight new ones ------------------------------------------
+        c1nn = _step(c1n[0]) if len(c1n) == 1 else None
+        qnn = _step(qn[0]) if len(qn) == 1 else None
+        dv2 = (_dist_um(nodes[c1nn]["xyz"], nodes[qnn]["xyz"]) - d_s
+               if c1nn is not None and qnn is not None else np.nan)
+        v1 = (np.asarray(nodes[c1]["xyz"], float) - np.asarray(nodes[p]["xyz"], float)) * SCALE
+        v2 = (np.asarray(nodes[q]["xyz"], float) - np.asarray(nodes[p]["xyz"], float)) * SCALE
+        n1, n2 = float(np.linalg.norm(v1)), float(np.linalg.norm(v2))
+        ang = (float(np.degrees(np.arccos(np.clip(float(v1 @ v2) / (n1 * n2), -1.0, 1.0))))
+               if n1 > 1e-9 and n2 > 1e-9 else np.nan)
+        sc_p_v, sc_q_v = _sc(p), _sc(q)
+        tr = trees.get(t)
+        pxyz = np.asarray(nodes[p]["xyz"], float) * SCALE
+        dens10 = (len(tr.query_ball_point(pxyz, r=10.0)) - 1) if tr is not None else np.nan
+        dens5 = (len(tr.query_ball_point(pxyz, r=5.0)) - 1) if tr is not None else np.nan
+        sq, sp_ = seed_of_node.get(q), seed_of_node.get(p)
+        p_q_marg = np.nan
+        if sq is not None and sp_ is not None and np.isfinite(p_q):
+            b = best2.get((sq[0] - 1, sq[1]))
+            if b is not None:
+                other = b[0][0] if b[0][1] != sp_[1] else b[1][0]
+                if other >= 0:
+                    p_q_marg = float(p_q - other)
+        cur, steps = q, 0
+        while steps < 200:
+            nx = _step(cur)
+            if nx is None:
+                break
+            cur, steps = nx, steps + 1
+        q_ends = 1.0 if (len(succ.get(cur, [])) == 0 and nodes[cur]["t"] < T - 1) else 0.0
+        lg = FORK_LOG.get((p, q), {})
+        rank_gap = (p_c1 - p_q) if (p_c1 == p_c1 and p_q == p_q) else np.nan
+        row = dict(src=src, d_pc1=d_pc1, d_pq=d_pq, d_s=d_s, dv=dv, p_c1=p_c1, p_q=p_q,
+                   pf_c1=pf_c1, pf_q=pf_q, pr_q=pr_q, sc_p=sc_p_v, sc_c1=_sc(c1), sc_q=sc_q_v,
+                   len_back=_chain_len(p, pred), len_c1=_chain_len(c1, succ),
+                   len_q=_chain_len(q, succ), dens10=dens10,
+                   n_orph=lg.get("n_orph", np.nan), t_frac=t / max(1, T - 1),
+                   rank_gap=rank_gap,
+                   dv2=dv2, ang=ang, sc_q_r=_rank(sc_q_v), sc_p_r=_rank(sc_p_v),
+                   dens5=dens5, p_q_marg=p_q_marg, q_ends=q_ends,
+                   steal=float(lg.get("steal", 0)))
+        label = 2 if p in tp_n else (1 if p in fp_n else 0)     # 2 TP, 1 FP, 0 uncounted
+        rows.append((name, k, p, q, label, [row[f] for f in FEAT_NAMES]))
+    return rows
+def walk_lost(name, scores, pfun=None, steal_rows=None):
+    """divgate2's walk on the pre-patch graph for every GT division the
+    scorer did not pair. Returns {condition: count} and a list of
+    (mother_gt_id, condition).
+
+    When `steal_rows` is given, every case that stops at 5a is written into
+    it in full: the ranker's p for the edge the patch WOULD make against the
+    p for the edge the ILP DID make, both distances, whether the competing
+    edge is a true GT edge, and whether the competitor already forks (which
+    the steal pass refuses). divsteal measured this on Zebrahub with n=54 and
+    on ONE case in each competition domain; this is the competition
+    population, on production primaries."""
+    g_t, g_pos, gids, mothers = _gt_struct(name)
+    nodes, edges = PRE_STATE["nodes"], PRE_STATE["edges"]
+    gt_edge_rows, gt_by_t = _gt_edge_rows(name)
+
+    def gt_row_of(g):
+        """graph node -> GT row within MATCH_UM, or None."""
+        t_ = int(nodes[g]["t"])
+        b = gt_by_t.get(t_)
+        if b is None:
+            return None
+        rows_, tr_ = b
+        d_, i_ = tr_.query(np.asarray(nodes[g]["xyz"], float) * SCALE)
+        return rows_[int(i_)] if d_ <= MATCH_UM else None
+    succ, pred = defaultdict(list), defaultdict(list)
+    pre_set = set()
+    for a, b in edges:
+        succ[a].append(b)
+        pred[b].append(a)
+        pre_set.add((a, b))
+    by_t = defaultdict(list)
+    for g, v in nodes.items():
+        by_t[int(v["t"])].append(g)
+    trees = {}
+    for t, ids_ in by_t.items():
+        trees[t] = (ids_, cKDTree(np.asarray([nodes[g]["xyz"] for g in ids_], float) * SCALE))
+    orph_ids, orph_tree = {}, {}
+    for t, ids_ in by_t.items():
+        o = [g for g in ids_ if not pred.get(g)]
+        orph_ids[t] = o
+        if o:
+            orph_tree[t] = cKDTree(np.asarray([nodes[g]["xyz"] for g in o], float) * SCALE)
+
+    def match(r):
+        t = int(g_t[r])
+        if t not in trees:
+            return None
+        ids_, tr = trees[t]
+        d, i = tr.query(g_pos[r] * SCALE)
+        return ids_[int(i)] if d <= MATCH_UM else None
+
+    out = defaultdict(int)
+    det = []
+    for gid, (rm, kid_rows) in mothers.items():
+        if scores.get(gid, 0) == 1:
+            out["recovered"] += 1
+            det.append((gid, "recovered"))
+            continue
+        ga = match(rm)
+        if ga is None:
+            out["mother_absent"] += 1
+            det.append((gid, "mother_absent"))
+            continue
+        d1, d2 = match(kid_rows[0]), match(kid_rows[1])
+        if d1 is None or d2 is None:
+            out["daughter_absent"] += 1
+            det.append((gid, "daughter_absent"))
+            continue
+        kept = [g for g in (d1, d2) if (ga, g) in pre_set]
+        ch = succ.get(ga, [])
+        cond = None
+        if len(ch) == 0:
+            cond = "1a_mother_no_child"
+        elif len(ch) >= 2:
+            cond = "1b_mother_forked_elsewhere"
+        if cond is None:
+            c1 = ch[0]
+            t_ = int(nodes[ga]["t"])
+            q = d2 if (kept and kept[0] == d1) else d1
+            if len(pred.get(ga, [])) != 1:
+                cond = "2_mother_no_single_pred"
+            elif int(nodes[c1]["t"]) != t_ + 1:
+                cond = "3_child_wrong_frame"
+            elif _dist_um(nodes[ga]["xyz"], nodes[c1]["xyz"]) > DIV_CHILD_UM:
+                cond = "4_mother_child_over_10um"
+            elif pred.get(q):
+                cond = "5a_sister_not_orphan"
+                if steal_rows is not None:
+                    r = pred[q][0]
+                    p_pq = pfun(ga, q) if pfun else float("nan")
+                    p_rq = pfun(r, q) if pfun else float("nan")
+                    gr = gt_row_of(r)
+                    gq = gt_row_of(q)
+                    true_other = (1 if (gr is not None and gq is not None
+                                        and (gr, gq) in gt_edge_rows) else
+                                  (0 if (gr is not None and gq is not None) else -1))
+                    c1n_, qn_ = succ.get(c1, []), succ.get(q, [])
+                    dv_ = (_dist_um(nodes[c1n_[0]]["xyz"], nodes[qn_[0]]["xyz"])
+                           - _dist_um(nodes[c1]["xyz"], nodes[q]["xyz"])
+                           if len(c1n_) == 1 and len(qn_) == 1 else float("nan"))
+                    steal_rows.append(dict(
+                        movie=name, gt_mother=int(gid), p_pq=float(p_pq),
+                        p_rq=float(p_rq),
+                        d_pq=_dist_um(nodes[ga]["xyz"], nodes[q]["xyz"]),
+                        d_rq=_dist_um(nodes[r]["xyz"], nodes[q]["xyz"]),
+                        d_s=_dist_um(nodes[c1]["xyz"], nodes[q]["xyz"]),
+                        dv=float(dv_), true_other=true_other,
+                        r_forks=1 if len(succ.get(r, [])) > 1 else 0,
+                        q_multi_pred=1 if len(pred.get(q, [])) > 1 else 0))
+            elif orph_tree.get(t_ + 1) is None:
+                cond = "5b_no_orphans_in_frame"
+            elif _dist_um(nodes[ga]["xyz"], nodes[q]["xyz"]) > DIV_PARENT_UM:
+                cond = "5c_sister_over_12um_of_mother"
+            else:
+                d_s = _dist_um(nodes[c1]["xyz"], nodes[q]["xyz"])
+                if d_s > DIV_SISTER_UM:
+                    cond = "6_sister_gap_over_15um"
+                else:
+                    d_q, q_idx = orph_tree[t_ + 1].query(np.asarray(nodes[c1]["xyz"], float) * SCALE)
+                    if orph_ids[t_ + 1][q_idx] != q or d_q > DIV_SISTER_UM:
+                        cond = "7_not_the_nearest_orphan"
+                    else:
+                        c1n, qn = succ.get(c1, []), succ.get(q, [])
+                        if len(c1n) != 1 or len(qn) != 1:
+                            cond = "8a_daughter_not_one_child"
+                        else:
+                            dv = _dist_um(nodes[c1n[0]]["xyz"], nodes[qn[0]]["xyz"]) - d_s
+                            cond = ("8b_diverge_under_2.25um" if dv < DIV_DIVERGE_UM
+                                    else "9_passed_all_gates_then_capped_or_taken")
+        out[cond] += 1
+        det.append((gid, cond))
+    return out, det
+
+
+# ---- 44b6, the domain this bench has never scored ----------------------
+#
+# The production ranker on the 12 movies it was held out of. Both arms run
+# byte-identical code; the only difference is which detection cache
+# `load_dets(name, "F4")` opens, which DET_SRC decided at the top.
+ANCHOR_44B6_ADJ = 0.8515        # divbench9 ANCHOR_SOFT ("+BIDIR", "F4", "44b6")
+ANCHOR_44B6_DIV = 0.0000
+ANCHOR_44B6_TOL = 0.0005
+
+TMP = "/tmp/hp44"
+pathlib.Path(TMP).mkdir(parents=True, exist_ok=True)
+
+print(f"\n=== 44b6: {len(SET_44B6)} movies, PRODUCTION ranker "
+      f"(edge_ranker_ep175v3_bidir, pool D175) at the production "
+      f"configuration (disappearance {ILP_DISAPP}, floor {PROD_FLOOR}), "
+      f"DET_SRC={DET_SRC} ===", flush=True)
+print("  Stage B's two fold rankers each train on ALL 71 44b6 movies, so a "
+      "44b6 row through them is in-sample -- which is why divbench9's 44b6 "
+      "anchors are soft and why it never scored the domain. D175 held these "
+      "12 out, so this arm is clean.", flush=True)
+print(f"  ANCHOR (DET_SRC=F4 only): adj_J {ANCHOR_44B6_ADJ:.4f}, div_J "
+      f"{ANCHOR_44B6_DIV:.4f}. For F4HP it is printed and expected to move; "
+      f"the move is the measurement.", flush=True)
+
+ROWS44_OUT = []
+PER44 = {}
+t44 = time.time()
+for name in SET_44B6:
+    if time.time() - t_all > BUDGET_S:
+        print(f"  BUDGET reached; {len(SET_44B6) - len(ROWS44_OUT)} movies "
+              f"not attempted", flush=True)
+        break
+    t0 = time.time()
+    dets = load_dets(name, "F4")
+    T = len(dets)
+    seeds, feats = FEATS.pop(name)
+    n0, e0, p0, _aux = solve_one(dets, T, seeds, feats, MODEL_BIDIR,
+                                 MCOLS_BIDIR, disapp=ILP_DISAPP,
+                                 floor=PROD_FLOOR)
+    outp = pathlib.Path(f"{TMP}/{DET_SRC}") / f"{name}.geff"
+    outp.parent.mkdir(parents=True, exist_ok=True)
+    PATCH_CAPS.clear()
+    patch_final(n0, e0, p0, outp)
+    row = score_one(outp, name)
+    ROWS44_OUT.append(row)
+    PER44[name] = row
+    print(f"  [{len(ROWS44_OUT)}/{len(SET_44B6)}] {name}: T={T} "
+          f"nodes={sum(len(c) for c, _s in dets):,} "
+          f"adj_J {_adj_of(row):.4f} div {row['division_tp']}/"
+          f"{row['division_fp']}/{row['division_fn']} "
+          f"({time.time() - t0:.0f}s)", flush=True)
+    del dets, seeds, feats, n0, e0, p0, _aux
+    gc.collect()
+
+assert ROWS44_OUT, "no 44b6 movie was scored"
+R44 = _with_ratio(ROWS44_OUT)
+print(f"\n=== 44b6 AGGREGATE, {len(ROWS44_OUT)} movies, DET_SRC={DET_SRC} "
+      f"({(time.time() - t44) / 60:.1f} min) ===", flush=True)
+for k in ("edge_jaccard", "adj_edge_jaccard", "division_jaccard",
+          "total_node_ratio", "score"):
+    v = R44.get(k, float("nan"))
+    print(f"  {k:<22}{float(v):>12.4f}", flush=True)
+print(f"  div TP/FP/FN "
+      f"{sum(r['division_tp'] for r in ROWS44_OUT)}/"
+      f"{sum(r['division_fp'] for r in ROWS44_OUT)}/"
+      f"{sum(r['division_fn'] for r in ROWS44_OUT)}", flush=True)
+
+_got = float(R44["adj_edge_jaccard"])
+_hit = abs(_got - ANCHOR_44B6_ADJ) <= ANCHOR_44B6_TOL
+if DET_SRC == "F4":
+    print(f"\n  ANCHOR +BIDIR F4-44b6 adj_J {_got:.4f} want "
+          f"{ANCHOR_44B6_ADJ:.4f} -> {'OK' if _hit else 'MISS'} "
+          f"({_got - ANCHOR_44B6_ADJ:+.4f})", flush=True)
+    assert _hit, (f"the 44b6 control does not reproduce divbench9's recorded "
+                  f"+BIDIR row ({_got:.4f} vs {ANCHOR_44B6_ADJ:.4f}); the "
+                  f"F4HP arm would not be readable against it")
+else:
+    print(f"\n  [expected] +BIDIR F4-44b6 adj_J {_got:.4f} against the F4 "
+          f"arm's anchor {ANCHOR_44B6_ADJ:.4f} ({_got - ANCHOR_44B6_ADJ:+.4f})"
+          f" -- this arm changes the coordinates, so the move IS the "
+          f"measurement. Pair the CSVs; a single aggregate cannot say "
+          f"whether one movie carries it.", flush=True)
+
+_csv = pathlib.Path("/kaggle/working") / f"hp44_{DET_SRC}.csv"
+_keys = sorted({k for r in PER44.values() for k in r})
+with open(_csv, "w", encoding="utf-8", newline="\n") as _fh:
+    _fh.write("dataset,fold," + ",".join(_keys) + "\n")
+    for _n in sorted(PER44):
+        _fh.write(f"{_n},-1," + ",".join(repr(PER44[_n].get(_k))
+                                         for _k in _keys) + "\n")
+print(f"\n  {_csv.name} written ({len(PER44)} movies, {len(_keys)} columns). "
+      f"Same movies and same order in both arms, so tools/hparapair2.py "
+      f"pairs them directly.", flush=True)
+
+if len(ROWS44_OUT) == len(SET_44B6):
+    print("HP44 OK", flush=True)
+else:
+    print(f"HP44 INCOMPLETE ({len(ROWS44_OUT)} of {len(SET_44B6)})",
+          flush=True)
