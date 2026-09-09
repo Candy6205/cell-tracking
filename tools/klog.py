@@ -20,6 +20,17 @@ So a pattern that matches nothing gives the log alone.
     py tools/klog.py biohub-eprank3 -n 120     # last 120 lines
     py tools/klog.py biohub-eprank3 --grep AUC # matching lines only
 
+The same `file_pattern` argument that suppresses the download can SELECT one,
+which is the other half of the problem: a bench kernel's per-movie CSV is a
+few kB sitting behind those same tens of thousands of files.
+
+    py tools/klog.py biohub-rkpool-ref --fetch "rkpool_BASE\\.csv" --dest .
+
+`--fetch` takes a REGEX matched against each output file's name and writes
+what matches into `--dest` (default: the working directory). The log is still
+returned and still printed, because the CSV without the run's own anchors is
+half a reading.
+
 The owner defaults to faustine649. Token refresh goes through kag.py, so this
 inherits the once-per-12-hours behaviour and cannot trigger the 429 that the
 old refresh loop did.
@@ -32,6 +43,7 @@ import argparse
 import json
 import os
 import pathlib
+import shutil
 import sys
 import tempfile
 
@@ -39,8 +51,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import kag  # noqa: E402
 
 
-def fetch(slug, owner="faustine649"):
-    """Return the kernel's log as text ('' if the session left none)."""
+def fetch(slug, owner="faustine649", pattern=None, dest=None):
+    """Return the kernel's log as text ('' if the session left none).
+
+    `pattern` is a regex matched against output file names; anything matching
+    is copied into `dest`. The default matches nothing, so only the log comes
+    back -- that is the fast path this tool exists for.
+    """
     kag.refresh()
     from kaggle.api.kaggle_api_extended import KaggleApi
     api = KaggleApi()
@@ -48,7 +65,20 @@ def fetch(slug, owner="faustine649"):
     with tempfile.TemporaryDirectory() as td:
         # A pattern no output file can match: the log is written anyway.
         api.kernels_output(f"{owner}/{slug}", td,
-                           file_pattern=r"^\0never-matches\0$", quiet=True)
+                           file_pattern=pattern or r"^\0never-matches\0$",
+                           quiet=True)
+        if pattern is not None:
+            out = pathlib.Path(dest or ".")
+            out.mkdir(parents=True, exist_ok=True)
+            got = [q for q in pathlib.Path(td).rglob("*")
+                   if q.is_file() and q.name != f"{slug}.log"]
+            for q in got:
+                shutil.copy2(q, out / q.name)
+                print(f"[{q.name}  {q.stat().st_size} B -> {out / q.name}]",
+                      file=sys.stderr)
+            if not got:
+                print(f"[nothing matched {pattern!r} in {owner}/{slug}'s "
+                      f"output]", file=sys.stderr)
         p = pathlib.Path(td) / f"{slug}.log"
         if not p.exists():
             return None
@@ -69,11 +99,16 @@ def main(argv=None):
     ap.add_argument("--full", action="store_true")
     ap.add_argument("--grep", default=None)
     ap.add_argument("--save", default=None, help="also write the text here")
+    ap.add_argument("--fetch", default=None,
+                    help="regex over OUTPUT FILE NAMES; matches are copied "
+                         "into --dest. Omit it and only the log is pulled.")
+    ap.add_argument("--dest", default=".",
+                    help="where --fetch writes (default: cwd)")
     a = ap.parse_args(argv)
 
     slug = a.slug.split("/")[-1]
     owner = a.slug.split("/")[0] if "/" in a.slug else a.owner
-    text = fetch(slug, owner)
+    text = fetch(slug, owner, a.fetch, a.dest)
     if text is None:
         print(f"{owner}/{slug}: no log file returned at all", file=sys.stderr)
         return 2

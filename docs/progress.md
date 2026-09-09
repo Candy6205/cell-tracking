@@ -1364,6 +1364,164 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐⭐ rkpool RESULT (2026-09-09, 194.7 + 167.8 min CPU, the control reproduces SEVEN recorded numbers exactly): ON 128 MOVIES AT THE SHIPPED FLOOR, RETRAINING THE RANKER ON F4 COORDINATES **WINS** -- score +0.0023 [+0.0007, +0.0040], P(>0) 0.990, 77/128 movies up. eprank3's 12-movie verdict is overturned. AND dropping the new pkl into the shipped pipeline unchanged **LOSES 0.0014**, because DIV_W and the fork gate were tuned against the old calibration
+
+The user's own idea, from *"哦，排序器水土不服，那先重训也行"*. Chased to the
+128-movie paired test, it is worth about as much as the joint fork gate --
+and it cannot be shipped by swapping one file.
+
+#### The control is exact, on seven numbers
+
+`rkpool_ref` (RANK_TRAIN=BASE) is the shipped path with two more cache
+datasets attached. Every inherited anchor holds:
+
+    ANCHOR_D187  F4-6bba(12)  adj_J 0.9216  div_J 0.0606   HARD -> OK (+0.0000)
+    +BIDIR pkl   F4-6bba(12)  adj_J 0.9261                 soft -> OK
+    REF over 128  div 50/249/75  div_J 0.1337  adj_J 0.9133  score 0.9266  -> OK
+    REF + gate6   42/47/83  0.2442  0.9143  0.9387   (divbench3)  -> OK
+    REF + joint   46/39/79  0.2805  0.9143  0.9424   (divbench8)  -> OK
+    dw35 + gate6  50/68/75  0.2591  0.9143  0.9402   (divbench6)  -> OK
+
+So attaching `fuse44b6` + `ep44b6` and rebinding `LAB_TRAIN` perturbed
+nothing on the control side, and the delta below is the retrain.
+
+#### The measurement, 128 6bba movies out of fold, UNGATED, floor 0.48
+
+| | BASE pool (ships) | F4 pool (retrained) | delta |
+|---|---|---|---|
+| fold0 / fold1 training rows | 154,107 / 141,994 | 153,002 / 140,982 | −1,105 / −1,012 |
+| val AUC, own primaries | 0.9910 / 0.9929 | 0.9908 / 0.9925 | −0.0002 / −0.0004 |
+| **held-out AUC on F4 rows, pooled** | **0.99256** | **0.99267** | **+0.00011** |
+| forks offered / ILP / patch | 7,004 / 2,490 / 4,514 | 6,352 / 1,876 / 4,476 | **−652 forks** |
+| divisions tp/fp/fn | 50 / 249 / 75 | 52 / 225 / 73 | **+2 / −24 / −2** |
+| div_J | 0.1337 | 0.1486 | **+0.0149** |
+| adj_J | 0.9133 | 0.9141 | +0.0009 |
+| edge_J | 0.9104 | 0.9109 | +0.0005 |
+| **score** | **0.9266** | **0.9290** | **+0.0024** |
+
+Paired bootstrap, 4,000 draws, the same movie resample for both arms
+(`tools/rkpoolpair.py`, whose aggregation is asserted against the control's
+own log before anything is compared):
+
+| metric | mean d | 90% interval | P(>0) |
+|---|---|---|---|
+| edge_jaccard | +0.00053 | [−0.00039, +0.00139] | 0.834 |
+| adj_edge_jaccard | +0.00085 | [+0.00003, +0.00167] | **0.953** |
+| division_jaccard | +0.01460 | [+0.00140, +0.02889] | **0.962** |
+| **score** | **+0.00231** | **[+0.00067, +0.00396]** | **0.990** |
+
+**Two thirds of the gain is divisions** (0.1 x 0.0146 = +0.00146 against
+adj_J's +0.00085), and it is not one movie: 77/128 up on adj_J, median
++0.00014, the eight largest movers carry 27% of the total absolute
+movement, and deleting the single largest does not flip the sign.
+
+#### The shape: the ranking barely moved, the graph did
+
+The held-out AUC is flat to the fourth decimal (+0.00011) while the score
+moves +0.0024. That is the same shape eprank3 found and hparabench round 2
+found before it -- **the ordering of edges is not what changed.** What
+changed is which candidates clear floor 0.48 and what the ILP then does:
+
+* **652 fewer forks offered** (−9.3%), and 614 fewer of them reaching the
+  ILP. Division FP falls 249 -> 225 while TP *rises* 50 -> 52.
+* **10,506 fewer nodes kept** across the 128 graphs (2,091,678 -> 2,081,172,
+  −0.50%), 26/128 movies up, median −13.5 per movie. Node recall is
+  essentially unchanged (0.97323 -> 0.97279).
+
+So the retrained ranker is not better at ranking; it is better *calibrated*
+at 0.48, and the ILP is offered a cleaner candidate set.
+
+⚠ **Byte-pattern note, unprompted by any local number.** Fewer nodes and
+fewer edges mean a SMALLER hidden output. All 11 recorded (Δ bytes, Δ LB)
+pairs say byte-removing changes gain. This is the first candidate in a while
+where the local metric and the byte pattern agree in sign.
+
+#### It overturns eprank3, and TWO things differ, not one
+
+eprank3 read this same retrain as **−0.0011 / −0.0022** with both intervals
+crossing zero. rkpool reads **+0.0009** with the interval excluding it. The
+sign flipped. But eprank3 and rkpool differ in two ways at once:
+
+| | eprank3 | rkpool |
+|---|---|---|
+| movies | 12 (the holdout) | **128** |
+| ILP floor | **0.10** (inherited; no `PROD_FLOOR` at all) | **0.48** (production) |
+
+Both are known to matter. hparabench round 2 established the day before that
+a 12-movie holdout can disagree in SIGN with the 128 containing it (−0.0012
+vs +0.0013), and the floor is the exact knob a calibration change acts
+through. **Which of the two flipped it is not settled here.** `rkfloor`
+crosses floor x pkl on one movie set and is the separator; it is running.
+
+Until it reports, the defensible statement is the one the bigger, correctly
+floored experiment makes: **at the operating point that ships, on the whole
+scored population, the retrain gains.**
+
+#### ⚠ AND YET IT CANNOT BE SHIPPED AS A FILE SWAP
+
+The pre-registration warned that `PROD_FLOOR`, `ILP_DISAPP`, `DIV_W` and the
+fork gate were all tuned against the mismatched calibration. That is not a
+caveat any more, it is the result. The same cross, both arms:
+
+| cell | BASE (ships) | F4 (retrained) | delta |
+|---|---|---|---|
+| REF, ungated | 0.9266 | 0.9290 | +0.0024 |
+| REF + gate6 | 0.9387 | 0.9406 | +0.0019 |
+| **REF + joint — WHAT SHIPS TODAY** | **0.9424** | **0.9410** | **−0.0014** |
+| dw35 + gate6 | 0.9402 | 0.9419 | +0.0017 |
+| **dw35 + joint** | 0.9426 | **0.9449** | **+0.0023** |
+
+**Swap the pkl and change nothing else and the pipeline gets worse.** The
+gain survives in four of five cells and dies in precisely the one that is
+deployed.
+
+Why: the joint gate is worth +0.0037 on the old ranker and **+0.0004** on
+the new one, while DIV_W 0.35 goes the other way -- worth +0.0002 (interval
+crossing zero) on the old ranker and **+0.0041 [+0.0003, +0.0079]** on the
+new one. Additivity moves from 75% of the independent sum to 250%. The
+retrain removes 652 forks, which is most of what the joint gate was there to
+remove, and having removed them by a different route it leaves DIV_W 0.35
+room the old configuration did not have.
+
+⚠ Two reasons this row is weaker than the ungated one, and both are real:
+
+1. **No cross-arm interval exists for the gated cells.** The CSV carries the
+   UNGATED per-movie rows only, so +0.0023 / −0.0014 here are point
+   estimates. The within-arm bootstraps are printed in each log and are not
+   the same comparison.
+2. **The fork gate is retrained inside each arm** on that arm's own forks,
+   so these cells carry gate-training noise on top (pooled gate AUC 0.8798
+   -> 0.8995), and the *joint* gate's 44b6 training forks still come from
+   the BASE-ranker fork population -- a mismatch **the retrain itself
+   creates**, one level up. Fixing that means re-running divbench5's 44b6
+   forks under the new ranker.
+
+#### What to do with it
+
+Best available local cell is **F4 pkl + DIV_W 0.35 + joint gate = 0.9449**
+against today's shipped 0.9424, +0.0025. Three of the four moving parts
+would change at once, which is exactly the kind of submission this record
+keeps warning about. The order that respects the interaction:
+
+1. `rkfloor` first -- it says whether floor 0.48 is even the retrained
+   ranker's argmax. If it is not, the 0.9449 cell is measured at the wrong
+   floor too.
+2. Re-run the 44b6 fork population under the F4 ranker, so the joint gate is
+   joint in the same sense it was before.
+3. Only then a submission, with the byte delta recorded before it goes.
+
+#### Housekeeping
+
+`biohub-rkpool` shows **ERROR**, and the error is mine and harmless: the
+inherited `assert not ANCHOR_FAIL` fires at the very end on `REF_FORKS`
+(52/225 against the control's 50/249). Those anchors exist to prove the
+CONTROL is the recorded harness; in the treatment arm they *must* miss. They
+should have been gated on `RANK_TRAIN`. Because the assert is accumulated and
+checked once at the end, all 128 movies were scored and `rkpool_F4.csv` was
+written before it fired -- nothing was lost. `tools/klog.py --fetch` (new)
+pulled the 14 kB CSV out of the output in seconds instead of pulling the
+whole working directory.
+
 ### ⭐⭐⭐ THE ZEBRAHUB KILL, DIAGNOSED (2026-09-09, zhpara v3 / zhpara2 / zhpara3): it dies **inside `compute_metric`** on `ZSNS001_z2y2x7`, at 2.1 GB RSS on a box with about 30 GB — so it is not a gradual leak, and the leading candidate is a single quadratic allocation. Four kills, and this is the first one that left any evidence at all
 
 Zebrahub has now killed four runs -- `biohub-zh-pipeline` at 10 of 41 crops
@@ -1432,7 +1590,7 @@ is the only one with DENSE ground truth, so `N_gt` is every cell rather than
 the 0.77-9.71% an annotator labelled.
 
 
-### ⭐⭐⭐⭐ eprank3 / eprank3-ref RESULT (2026-09-09, 102.2 min + ~100 min CPU, the control reproduces ALL THREE recorded anchors exactly): RETRAINING THE PRODUCTION RANKER ON THE COORDINATES IT IS DEPLOYED ON MAKES IT WORSE -- adj_J −0.0011 on 6bba and −0.0022 on 44b6, 10 of 12 and 9 of 12 datasets down or flat. the direction is real on both domains but the MECHANISM I first gave (branch 3, BASE-as-augmentation) is RETRACTED by this run's own flat AUC, and the measurement froze the floor the way divradius froze the gate
+### ⭐⭐⭐⭐ eprank3 / eprank3-ref RESULT (2026-09-09, 102.2 min + ~100 min CPU, the control reproduces ALL THREE recorded anchors exactly): ⚠ SUPERSEDED IN SIGN by the rkpool entry above (128 movies, floor 0.48: +0.0009 adj_J, +0.0024 score, P 0.990). What stands is the number as measured -- 12 movies at floor 0.10. RETRAINING THE PRODUCTION RANKER ON THE COORDINATES IT IS DEPLOYED ON MAKES IT WORSE **on that holdout at that floor** -- adj_J −0.0011 on 6bba and −0.0022 on 44b6, 10 of 12 and 9 of 12 datasets down or flat. the direction is real on both domains but the MECHANISM I first gave (branch 3, BASE-as-augmentation) is RETRACTED by this run's own flat AUC, and the measurement froze the floor the way divradius froze the gate
 
 The user: *"你去把重训落地"*. It is landed --
 `edge_ranker_ep175v4_bidir_f4.pkl` exists -- and the first read says do not
@@ -1640,6 +1798,12 @@ that a 12-movie holdout can disagree in SIGN with the 128 that contain it**
 `rkpool_ref` -- 128 movies, out of fold, paired bootstrap -- is the decisive
 test and is running.
 
+⭐ **IT REPORTED, AND IT REVERSED THIS.** +0.00085 adj_J [+0.00003, +0.00167],
++0.0024 score, 77/128 movies up. This entry's caveat was the correct one and
+its headline was not. See the rkpool RESULT entry above; note also that
+rkpool ran at floor **0.48** and this ran at **0.10**, so sample size is not
+the only difference between them.
+
 What can be said now: the weighted metric is negative on **both** domains,
 2/12 and 3/12 datasets up, the harness is proven identical on both sides, and
 nothing about the direction is carried by a single dataset except the one
@@ -1805,7 +1969,9 @@ reused from round 2's CSV.
 2. **Flat** -> HistGB absorbs this shift. Then the TTA retrain is unlikely to
    rescue TTA either (same mechanism, smaller shift), and the case for the
    parallel-blend arm below weakens with it.
-3. **BASE beats F4** -> the BASE pool is acting as augmentation: training on
+3. (⚠ **BRANCH 1 IS WHAT FIRED**, on 128 movies at floor 0.48. This branch
+   fired only on the 12-movie read at floor 0.10.) **BASE beats F4** -> the
+   BASE pool is acting as augmentation: training on
    coordinates slightly noisier than the deployment ones regularises. That
    would be a finding in its own right and would argue AGAINST retraining for
    TTA.
