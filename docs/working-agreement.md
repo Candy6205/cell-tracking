@@ -878,6 +878,35 @@ movie and runs once, while a partial cache silently taxes every experiment
 downstream of it and is discovered only by a contradiction weeks later.
 
 
+## Check that the constant you are editing is the one being READ (2026-09-09)
+
+`rkhp` was licensed to reuse a recorded control CSV by re-arming
+`ANCHOR_HARD` at that run's values. **`ANCHOR_HARD` and `ANCHOR_SOFT` are
+never read anywhere in the `hparabench_ref.py` lineage.** They are declared
+at the top, documented in the module docstring, mutated by the `DET_SRC ==
+"F4HP"` demotion block — and consulted by nothing. The anchors that actually
+fire are literals next to the print, forty lines from the end:
+
+    ANCHOR_FAIL.append(("ANCHOR_D187", "F4-6bba", got, 0.9216))
+
+So the edit was a silent no-op and the safety check never ran. The run's
+conclusion survived only because the numbers were correct and I read them.
+
+`checkgen.py` cannot catch this: the dict is syntactically fine and the
+mutation lines "use" it. The one-second check that does:
+
+```
+grep -n "THE_NAME" <generated>.py
+```
+
+If every hit is an assignment or a mutation and none is a read, the thing is
+vestigial. Do it for any constant an experiment's validity rests on, in the
+generated file, before pushing — not in the ancestor's docstring, which is
+where the misleading documentation lives.
+
+**A safety mechanism that silently does nothing is worse than none**, because
+it is reported as present in the entry that cites it.
+
 ## A log that will not DOWNLOAD looks exactly like a log that is empty (2026-09-09)
 
 `kagglesdk`'s `kernels_output` writes the fetched log with

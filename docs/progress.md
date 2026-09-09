@@ -1364,6 +1364,108 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐⭐ rkhp RESULT (2026-09-09, 188 min CPU, both recorded cells reproduce EXACTLY): THE TWO CHANGES DO NOT ADD -- they INTERFERE. Both together reads **0.9282**, below hpara alone (0.9298) and below the retrain alone (0.9290), where additive would have been 0.9321. And the best cell of the four has the **LARGEST** train/deploy mismatch, which kills "removing the mismatch" as the retrain's mechanism
+
+The user asked the exact question this answers: *"万一重训的排序器和新坐标不
+适应怎么办"*. It does not adapt, and the failure is not the one either of us
+expected.
+
+#### The 2x2, ungated REF, 128 6bba movies, DIV_W 0.55, floor 0.48
+
+| cell | ranker trained on | detections | div tp/fp/fn | div_J | adj_J | **score** |
+|---|---|---|---|---|---|---|
+| **A** ships | BASE primaries | refine | 50/249/75 | 0.1337 | 0.9133 | **0.9266** |
+| **B** retrain | F4 (refine) | refine | 52/225/73 | 0.1486 | 0.9141 | **0.9290** |
+| **C** hpara | BASE primaries | **hpara** | 55/237/70 | 0.1519 | 0.9146 | **0.9298** |
+| **D** both | **hpara** | **hpara** | 50/222/75 | 0.1441 | 0.9138 | **0.9282** |
+
+A and C are anchored to their recorded values and reproduce them to four
+decimals, including the division cells. Paired bootstrap, same movie
+resample for both arms of each comparison:
+
+| comparison | Δ score | 90% interval | P(>0) |
+|---|---|---|---|
+| B − A, the retrain alone | +0.00231 | [+0.00067, +0.00396] | 0.990 |
+| C − A, hpara alone | **+0.00309** | [+0.00137, +0.00492] | **0.998** |
+| D − A, both | +0.00153 | [−0.00047, +0.00360] | 0.890 |
+| **D − C, the retrain ON TOP of hpara** | **−0.00156** | **[−0.00304, −0.00007]** | **0.043** |
+| D − B, hpara on top of the retrain | −0.00078 | [−0.00324, +0.00168] | 0.295 |
+
+**Adding the retrain on top of hpara is distinguishably NEGATIVE** — the one
+interval in the table that excludes zero on the wrong side, and it does so on
+edge_J and adj_J as well as score. **Doing both is not distinguishable from
+shipping nothing** (D − A crosses zero).
+
+#### The mechanism I have been carrying is dead
+
+Line the four cells up by how badly the ranker's training coordinates match
+its deployment coordinates:
+
+| cell | mismatch | score |
+|---|---|---|
+| C | **largest** — trained on BASE, deployed on hpara | **0.9298, best** |
+| B | none — trained and deployed on refine-F4 | 0.9290 |
+| D | none — trained and deployed on hpara | 0.9282 |
+| A | moderate — trained on BASE, deployed on refine-F4 | 0.9266, worst |
+
+**The best cell has the biggest mismatch and the two matched cells sit in the
+middle.** If "the ranker is trained on coordinates it is not deployed on"
+were the defect the retrain repairs, D would beat C. It loses to it, and
+distinguishably. So the rkpool entry's framing — accurate as a description of
+what was changed — is **not** an explanation of why it gained, and this entry
+withdraws it as one.
+
+⚠ And no replacement is offered, because the obvious candidates are measured
+and none of them order the cells:
+
+* **not the ranking.** Held-out AUC is flat across all four: 0.99256 (A),
+  0.99267 (B), 0.99250 (D), all on ~184k rows. Nothing here is about the
+  ranker's ability to order edges.
+* **not the training pool.** rkhp trains on 153,375 / 141,329 rows against
+  rkpool's 153,002 / 140,982 — hpara moves the gated pair set by 0.24%.
+* **not output size.** Nodes kept: A 2,091,678; B −10,506; C −670; D −2,700.
+  The score order is A < D < B < C; the node order is B < D < C < A. They do
+  not agree, so "both changes drop nodes and D overshoots" is also false.
+
+What is left is that two changes which each improve the shipped pipeline
+make it worse together, through the ILP rather than through the ranking, and
+the record should say that plainly rather than name a fourth mechanism it has
+not measured.
+
+#### The gated cross, which is what would actually ship
+
+Point estimates only — the CSVs carry the ungated rows, so there are no
+cross-arm intervals here, and each arm's fork gate is trained inside that arm
+on its own forks:
+
+| cell | REF ungated | REF+gate6 | **REF+joint = SHIPS** | dw35+gate6 | dw35+joint |
+|---|---|---|---|---|---|
+| A ships | 0.9266 | 0.9387 | **0.9424** | 0.9402 | 0.9426 |
+| B retrain | 0.9290 | 0.9406 | **0.9410** | 0.9419 | **0.9449** |
+| C hpara | 0.9298 | 0.9408 | **0.9433** | 0.9429 | 0.9428 |
+| D both | 0.9282 | 0.9387 | **0.9404** | 0.9405 | 0.9419 |
+
+**D is at or below A in every column.** And the two survivors want different
+things: in the shipped configuration only **C gains** (+0.0009, one constant
+changed), while **B needs DIV_W 0.35** to be worth anything and then gives
+the highest cell anywhere (0.9449, +0.0025 over what ships).
+
+#### ⚠ A check I built did not fire, and I read it by eye instead
+
+This kernel was licensed to pair against round 2's CSV by re-arming
+`ANCHOR_HARD` at round 2's F4HP values. **`ANCHOR_HARD` and `ANCHOR_SOFT` are
+never read anywhere in this script lineage** — they are declared, documented,
+mutated by the F4HP demotion block, and consulted by nothing; the real
+anchors are literals next to the print. So the re-arm was a no-op, the log
+printed `want 0.9216 -> MISS (-0.0012)`, and the check I relied on never ran.
+
+The conclusion is unaffected, because the numbers are right there and match
+round 2 exactly — `ANCHOR_D187` 0.9204 / div_J 0.0667 and `+BIDIR pkl` 0.9252
+/ div_J 0.1389, both to four decimals, on fixed pkls that cannot see
+`RANK_TRAIN`. But it was verified by reading, not by the mechanism built for
+it, and a mechanism that silently does nothing is worse than none. See the
+working-agreement note added with this entry.
+
 ### ⭐⭐⭐⭐ rkhp PUSHED (2026-09-09, one CPU kernel, no new GPU): DO hpara AND THE RETRAIN ADD? They touch the same thing -- which coordinates the ranker sees -- and shipping hpara with the F4-pool pkl would RE-CREATE the mismatch the retrain just removed. The reading is fixed here, before the number
 
 Tonight produced two changes that each beat the same control on the same 128
@@ -1756,6 +1858,13 @@ changed is which candidates clear floor 0.48 and what the ILP then does:
 
 So the retrained ranker is not better at ranking; it is better *calibrated*
 at 0.48, and the ILP is offered a cleaner candidate set.
+
+⚠ **WITHDRAWN AS AN EXPLANATION, 2026-09-09, by rkhp.** The 2x2 shows the
+BEST cell is the one with the LARGEST train/deploy mismatch (trained on BASE
+primaries, deployed on hpara, 0.9298), and both MATCHED cells sit below it.
+If the mismatch were the defect, the matched hpara cell would win; it loses
+distinguishably. The description of WHAT was changed stands; the account of
+WHY it gained does not. See the rkhp RESULT entry above.
 
 ⚠ **Byte-pattern note, unprompted by any local number.** Fewer nodes and
 fewer edges mean a SMALLER hidden output. All 11 recorded (Δ bytes, Δ LB)
