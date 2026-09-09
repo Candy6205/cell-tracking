@@ -66,7 +66,37 @@ V3_ADJ = {("ZSNS001_z2y1x4", "REF"): 0.819402,
           ("ZSNS001_z2y1x6", "REF"): 0.764233,
           ("ZSNS001_z2y1x6", "HP"): 0.763003}
 assert set(TRIPWIRE) <= set(ANCHOR8), TRIPWIRE
+BOTH_ALL = list(BOTH)          # the full 41, for the inherited coverage asserts
 BOTH = TRIPWIRE + REMAIN''')
+
+# The two inherited asserts run AFTER the assignment above and are about
+# CACHE COVERAGE, not about what this run chooses to score. v1 died on the
+# first of them (`only 5 crops carry both caches`) because it was handed the
+# deliberately restricted list. Point them at BOTH_ALL, then say what this
+# run actually does.
+rep('''assert len(BOTH) >= 8, (
+    f"only {len(BOTH)} crops carry both caches -- attach "
+    f"faustine649/biohub-zhhpcache")
+assert set(ANCHOR8) <= set(BOTH), (
+    "the 8 anchor crops are not all present in the hpara cache; the anchor "
+    "and the measurement would be on different samples")''',
+    '''assert len(BOTH_ALL) >= 8, (
+    f"only {len(BOTH_ALL)} crops carry both caches -- attach "
+    f"faustine649/biohub-zhhpcache")
+assert set(ANCHOR8) <= set(BOTH_ALL), (
+    "the 8 anchor crops are not all present in the hpara cache; the anchor "
+    "and the measurement would be on different samples")
+assert len(BOTH) == 5 and set(BOTH) <= set(BOTH_ALL), (len(BOTH), BOTH)
+# The sizes of ALL 41, so "the missing ones are the largest" stops being an
+# inference from the sort order and becomes a number. v3 ordered ascending by
+# cache size, so its last three should sit at the top of this list.
+_ss = sorted((_size.get(n, 0) / 1e6, n) for n in BOTH_ALL)
+print(f"  zhdet cache size MB over all {len(BOTH_ALL)} crops: "
+      f"min {_ss[0][0]:.2f} ({_ss[0][1]}), median {_ss[len(_ss) // 2][0]:.2f}, "
+      f"max {_ss[-1][0]:.2f} ({_ss[-1][1]})", flush=True)
+print(f"  the 3 unfinished ones rank " + ", ".join(
+    f"{[n for _s, n in _ss].index(n) + 1}/{len(_ss)}" for n in REMAIN)
+    + " by size", flush=True)''')
 
 # ---- the RSS trace goes to a FILE, because stdout does not survive -----
 rep('''    try:
