@@ -1364,6 +1364,73 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ jointgate (2026-09-09, OFFLINE, no kernel; the shipped gate reproduces EXACTLY): THE INCOHERENT JOINT GATE COSTS hpara ALMOST NOTHING -- **+0.0003 of score** to fix. So the outstanding item that held up a submission is, for that candidate, not worth holding it up
+
+The user chose *"先不提交，补测再说"*. This is the half of the 补测 that needed
+no compute.
+
+#### The gap, restated in one line
+
+`fork_gate_joint.pkl` is fitted on 128 6bba counted forks **plus 67 44b6
+ones**, and the 44b6 half comes from `divbench5` — generated under the
+shipped BASE ranker on refine coordinates. Change the ranker or the
+coordinates and only the 6bba half moves, so the gate is fitted on a mixture
+of two fork-generating processes. `rkpool` saw the consequence without being
+able to name it: the joint gate's margin over the 6bba-only gate falls from
++0.0037 on the shipped ranker to +0.0004 on the retrained one.
+
+#### It is priceable offline, and the anchor proves the method
+
+`gatelab` established that the pruning curve is a pure function of
+(label, gate p), because `div_J = TP/(TP+FP+FN)` with `FN = N_GT − TP` and
+N_GT fixed at 125. Every arm's fork table is in its kernel output. So:
+
+| arm | 44b6 forks the gate saw | div tp/fp/fn | div_J | recorded | agreement |
+|---|---|---|---|---|---|
+| A ships | none (6bba-only) | 42/47/83 | 0.2442 | 42/47/83 | **EXACT** |
+| A ships | SHIPPED (divbench5) | 46/39/79 | 0.2805 | 46/39/79 | **EXACT** |
+| B retrain | none (6bba-only) | 45/52/80 | 0.2542 | 45/52/80 | **EXACT** |
+| B retrain | SHIPPED | 45/46/80 | 0.2632 | 45/49/80 | 3 forks |
+| C hpara | none (6bba-only) | 45/53/80 | 0.2528 | 45/53/80 | **EXACT** |
+| C hpara | SHIPPED | 49/52/76 | 0.2768 | 49/51/76 | 1 fork |
+| **C hpara** | **its OWN (88 hpara 44b6 forks)** | **47/43/78** | **0.2798** | — | **NEW** |
+
+**Arm A is the pure anchor** — its own run produced divbench8's recorded
+numbers — and it reproduces both cells exactly, so the offline gate IS the
+shipped gate. B and C reach their recorded cells through a *different*
+kernel's fork table and land 3 and 1 forks away, which is the precision
+available: **44 to 51 counted forks sit within 2x of the `p > 0.03` cut**,
+so a fork either side of it flips on any numerical difference. That is why
+the measurement below compares offline to offline, where the offset cancels.
+
+#### The measurement
+
+| arm | joint gate on SHIPPED forks | on its OWN forks | Δ div_J | ~Δ score |
+|---|---|---|---|---|
+| A ships | 0.2805 | its own ARE the shipped ones | 0 | 0 |
+| **C hpara** | 0.2768 | **0.2798** | **+0.0029** | **+0.0003** |
+| B retrain | 0.2632 | *waiting on `fk44f4`* | | |
+
+**Fixing the coherence buys hpara +0.0003 of score.** Its shipped-cell number
+(0.9433, against what ships at 0.9424) is therefore not materially
+understated by the mixture, and the outstanding item does not change hpara's
+case either way.
+
+⚠ Note the shape of it: the coherent gate keeps **fewer** forks of both kinds
+(49/51 -> 47/43), losing 2 TPs to gain 8 FPs removed. div_J rises because FPs
+outnumber TPs nine to one in this population — a gate trained on forks from
+the same process is *more* willing to prune, not better at telling them apart.
+
+#### What is still open, and it is only B's row
+
+The retrain's 44b6 forks do not exist yet — `divbench5` never ran with
+`RANK_TRAIN="F4"`. `fk44f4` is producing them and is the only thing between
+here and a like-for-like comparison of the two candidates. B is where the
+mixture might actually matter: its joint-gate margin over the 6bba-only gate
+is +0.0090 offline (0.2542 -> 0.2632) against A's +0.0363 (0.2442 -> 0.2805),
+a four-fold collapse, and that is what coherent forks would either restore
+or leave alone.
+
 ### ⭐⭐⭐⭐⭐ rkhp RESULT (2026-09-09, 188 min CPU, both recorded cells reproduce EXACTLY): THE TWO CHANGES DO NOT ADD -- they INTERFERE. Both together reads **0.9282**, below hpara alone (0.9298) and below the retrain alone (0.9290), where additive would have been 0.9321. And the best cell of the four has the **LARGEST** train/deploy mismatch, which kills "removing the mismatch" as the retrain's mechanism
 
 The user asked the exact question this answers: *"万一重训的排序器和新坐标不
