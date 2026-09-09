@@ -878,6 +878,53 @@ movie and runs once, while a partial cache silently taxes every experiment
 downstream of it and is discovered only by a contradiction weeks later.
 
 
+## A log that will not DOWNLOAD looks exactly like a log that is empty (2026-09-09)
+
+`kagglesdk`'s `kernels_output` writes the fetched log with
+
+    out = open(os.path.join(target_dir, slug + ".log"), "w")
+
+— no `encoding`, so it takes the platform default, which on this machine is
+**gbk**. Every script in this project prints `⚠` (U+26A0), and cp936 cannot
+encode it, so the download dies with
+
+    UnicodeEncodeError: 'gbk' codec can't encode character '\u26a0'
+
+**and no log file is written at all.** The failure is indistinguishable at a
+glance from the zero-byte log a SIGKILLed session leaves, which is the one
+diagnosis this project most needs to read correctly — `zhpara4` was nearly
+recorded as "killed, no evidence" when in fact its log was 21 KB and ended in
+`Killed`.
+
+`tools/klog.py` re-execs itself under `-X utf8` when UTF-8 mode is off.
+`PYTHONIOENCODING` does **not** fix this: it changes stdio, not `open()`'s
+default. And `os.execv` cannot be used for the re-exec on Windows — it joins
+the argv list with spaces and no quoting, so `D:\programming\cell tracking`
+arrives as two arguments; use `subprocess`.
+
+## Before pushing a run to CONFIRM a mechanism, try to falsify it from data you already have (2026-09-09)
+
+`zhpara4` was pushed to confirm that a dense `N_pred × N_gt` cost matrix
+kills the big zebrahub crops. Its probe fired and printed 17.7 GB for the
+crop that dies — confirmation, read on its own. But `zhpara` v3's own output
+CSV carried `n_gt` and `num_pred_nodes` for the 38 crops that **succeeded**,
+and one of them needs **20.95 GB** by the same formula. The hypothesis was
+falsifiable, for free, from a file already downloaded, before the kernel was
+written.
+
+The check costs one script and no compute:
+
+- write down the number the mechanism predicts;
+- find the rows already on disk where the mechanism predicts the OTHER
+  outcome;
+- if those rows exist, the mechanism is dead and the run is not needed.
+
+This is the same failure as `measure-before-defending-a-mechanism`, one step
+earlier: there the number was surprising and went unchecked, here the number
+was *expected* and the counterexamples went unlooked-for. A confirming
+measurement is the weakest kind, and a run designed only to confirm will
+usually succeed.
+
 ## A killed kernel loses stdout. Diagnostics go to a FILE (2026-09-09)
 
 Zebrahub has now OOM-killed four runs — `biohub-zh-pipeline` at 10 of 41
