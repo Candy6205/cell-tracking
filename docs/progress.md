@@ -1364,6 +1364,84 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ rkhp PUSHED (2026-09-09, one CPU kernel, no new GPU): DO hpara AND THE RETRAIN ADD? They touch the same thing -- which coordinates the ranker sees -- and shipping hpara with the F4-pool pkl would RE-CREATE the mismatch the retrain just removed. The reading is fixed here, before the number
+
+Tonight produced two changes that each beat the same control on the same 128
+movies, and they have never been run together:
+
+| ranker trained on | detections solved | score | run |
+|---|---|---|---|
+| BASE primaries | refine | 0.9266 | `rkpool_ref` — what ships |
+| **F4 primaries** | refine | **0.9290** | `rkpool`, +0.0024 |
+| BASE primaries | **hpara** | **0.9298** | `hparabench` round 2, +0.0032 |
+| **F4/hpara primaries** | **hpara** | **?** | **`rkhp`** |
+
+**There is no reason to expect the sum.** The retrain's whole content is
+"train the ranker on the coordinates it is deployed on". hpara *changes those
+coordinates*. So a pkl fitted on refine-F4 rows and deployed on hpara points
+is the same disease one placement further along, and the matched joint arm --
+train on hpara rows, solve hpara -- is the one worth measuring.
+
+#### Why it is one constant and no new GPU
+
+`hparabench_ref.py` already carries the entire `DET_SRC == "F4HP"` override,
+and it is the careful kind: it swaps the F4 detection cache *and both head
+caches* for their hpara counterparts, first cutting the hpara dict down to
+the keys the refine arm already has, so the two arms can never differ in the
+PIPELINE instead of the placement. rkpool then added `RANK_TRAIN` on top.
+Because the override rewrites `FDET_F4` / `EDGEPROB_F4` **in place**,
+`RANK_TRAIN="F4"` inside an `F4HP` run already means "train on hpara rows".
+
+What made it impossible until today was coverage: round 2 had **140** hpara
+caches. `hpara44` and `ephp44` (both COMPLETE this morning) took it to
+**fdet_F4hp 199, edgeprob_F4hp 199**, so the whole 175-movie training pool
+can now be put on hpara.
+
+#### Why ONE kernel, when this record forbids reusing a recorded CSV
+
+The control is round 2's F4HP arm and its per-movie CSV is on disk. Reusing
+it is normally not allowed here -- attaching different datasets has perturbed
+a control before, which is why `rkpool_ref` was RUN rather than read off
+divbench3. What licenses it this time is a proof rather than a hope:
+
+**`ANCHOR_D187` and the `+BIDIR pkl` arm load FIXED pkls, and `rkpool`
+demonstrated empirically that both are byte-identical across `RANK_TRAIN`
+arms** — 0.9216 / 0.0606 and 0.9261 / 0.1351, the same to four decimals in
+both. So on round 2's coordinates they must reproduce round 2's numbers no
+matter what the fold rankers learned from, and they are re-armed as anchors:
+
+    ANCHOR_D187  F4-6bba(12)  adj_J 0.9204  div_J 0.0667   HARD
+    +BIDIR pkl   F4-6bba(12)  adj_J 0.9252  div_J 0.1389   soft
+
+If they hold, the harness is round 2's and the CSVs may be paired. If they
+miss, the 59 hpara caches added since round 2 perturbed the scored path and
+the pairing is void — which is the entire reason the check exists.
+
+#### Pre-registered reading, all four branches informative
+
+1. **ADDITIVE** (~0.9322) — the two fix different things. The joint candidate
+   is then worth about +0.0056 local over what ships, the largest single step
+   on record since the pipeline was assembled.
+2. **ABSORBED** (~0.9298, the larger alone) — then **hpara's gain WAS the
+   mismatch**, and that reinterprets hpara rather than the retrain: the
+   +0.0031 would be the ranker coping better with cleaner coordinates, not
+   the geometry helping the linker. The zebrahub arm would become the odd one
+   out needing its own explanation, since it runs dcmerge's solver with no
+   ranker at all and still read +0.0011 P 0.998.
+3. **BETWEEN** — partial overlap; ship the better single one unless the joint
+   clears both by more than the bench's noise.
+4. **BELOW EITHER** — they interfere, and `DIV_W` and the fork gate have to be
+   re-crossed a third time. rkpool already showed the retrain moves the fork
+   population by 9.3%, and hpara moves it too.
+
+⚠ **This is the UNGATED REF comparison.** rkpool's lesson was that the shipped
+cell (DIV_W 0.55 + the joint gate) can move the *other way* from the ungated
+one -- there, four of five cells gained and the deployed one lost 0.0014. The
+gate cross this kernel prints is trained inside this arm on this arm's own
+forks. Read it as direction. Nothing ships off it until the 44b6 fork
+population is regenerated under the same ranker, which is the outstanding
+item from the rkpool entry and is unchanged by this run.
+
 ### ⭐⭐⭐⭐⭐ rkfloor (2026-09-09, 103.3 min CPU, all FOUR anchors exact): eprank3's TWO negative numbers have TWO DIFFERENT causes. 44b6's was the FLOOR -- it turns positive at 0.30/0.48/0.60. 6bba's was the POPULATION -- the same 12 movies at the same floor 0.48 read −0.0019 while the 128 containing them read +0.0009. Neither was the retrain
 
 The question the rkpool entry left open, closed. `rkfloor` crosses
