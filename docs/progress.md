@@ -1364,6 +1364,122 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ rkpool / rkpool-ref PUSHED (2026-09-09, two CPU kernels): THE RANKER THAT SHIPS WAS TRAINED ON BASE DETECTIONS AND IS DEPLOYED ON F4 ONES. The mismatch has never been measured, it costs no GPU to remove, and it makes ttabench's −0.0051 unreadable. THE READING IS FIXED HERE, BEFORE THE NUMBERS
+
+The user, on being told that ttabench measured TTA through a ranker fitted on
+non-TTA columns: *"哦，排序器水土不服，那先重训也行"*. Following that down
+found something larger than the TTA question.
+
+#### The mismatch, in two lines of source
+
+`edgeprob_rank2.py:1608` builds the production training pool:
+
+    _jobs = [(n, "BASE", "pool") for n in POOL175]
+
+So `edge_ranker_ep175v3_bidir.pkl` -- the pkl every submission loads --
+learned the map from features to truth on **BASE** primaries (the xl
+three-branch mean, LB 0.922) and is deployed on **F4** ones (that mean plus
+ep05 DeepCenter as a fourth equal-weight map, LB 0.925, ref 55889500).
+`hparabench_ref` inherits the same shape: stage A's two fold rankers train
+from `LAB`, built with `EP_OF["BASE"]`, and stage B solves F4.
+
+**Every score in this record was produced by a ranker reading coordinates it
+was not fitted on**, and no arm has ever isolated what that costs.
+
+#### It also breaks ttabench's number, and by more than I said
+
+The ttabench entry above reports adj_J −0.0051 / edge_J −0.0074 for
+edge-feature TTA. Its override replaced `EDGEPROB_F4`; **training reads
+`EDGEPROB`**. Not one tta4 row entered the fold rankers. They were 100%
+noTTA-trained and then handed tta4 columns at solve time, so that delta is
+train/test mismatch plus TTA, with no way to separate them. (I first told the
+user "90%+ noTTA"; it is all of it.) **The measurement stands as what it
+measured -- TTA bolted onto a ranker fitted without it -- and that is not the
+question the public notebook's +0.005 poses.** The matched test needs tta4 in
+the TRAINING rows, which `ttacache` (140 movies, running) makes possible on
+6bba.
+
+#### Why it costs no GPU, and why it could not be run before 2026-09-07
+
+A ranker trained on F4 needs F4 primaries and F4 head probabilities for the
+whole pool. `fuse44b6` (59 of 59, 90.1 min) and `ep44b6` (59 of 59, 45.3 min)
+landed exactly those for the 59 44b6 train movies that lacked them, so all
+199 movies now carry both. hparabench simply never attached them -- its log
+reads `199 BASE + 140 F4`. With `biohub-fuse44b6` + `biohub-ep44b6` attached,
+the F4 pool is the same 175 movies the BASE pool is: **no pool-size
+confound, no new GPU.**
+
+#### The two arms
+
+Identical movies, folds, columns, estimator, seed and stage B. One line
+differs -- which table stage A concatenates from.
+
+| kernel | `RANK_TRAIN` | the fold rankers learn on | stage B solves |
+|---|---|---|---|
+| `rkpool_ref` | `BASE` | the xl three-branch mean | F4 |
+| `rkpool` | `F4` | that mean + ep05 DeepCenter | F4 |
+
+The held-out-fold AUC is read on **F4 rows in both arms**, deliberately: F4 is
+what stage B solves, so for the BASE arm that is a cross-domain read, and it
+is what the mismatch costs in AUC before the ILP ever sees it.
+
+**ANCHORS.** `rkpool_ref` is hparabench_ref's path with `LAB_TRAIN` bound back
+to `LAB`, so divbench3 must come back to the digit: REF over the 128 =
+50/249/75, div_J 0.1337, adj_J 0.9133, score 0.9266, plus the gate cross cells
+0.2442 / 0.2805 / 0.2591. Those asserts are inherited unchanged and not
+restated -- if attaching two more cache datasets perturbed the BASE path they
+fail on their own, which is why the control arm is being RUN rather than
+reused from round 2's CSV.
+
+#### Pre-registered reading, all three branches informative
+
+1. **F4 beats BASE, interval excludes zero** -> the mismatch costs real score.
+   Retrain the production pkl on F4 and every submission gains for free. But
+   then `PROD_FLOOR` 0.48, `ILP_DISAPP` 1.5, `DIV_W` 0.55 and the fork gate
+   were all tuned against the mismatched ranker's calibration and every one of
+   them has to be re-checked -- the divradius2 lesson, at pipeline scale.
+2. **Flat** -> HistGB absorbs this shift. Then the TTA retrain is unlikely to
+   rescue TTA either (same mechanism, smaller shift), and the case for the
+   parallel-blend arm below weakens with it.
+3. **BASE beats F4** -> the BASE pool is acting as augmentation: training on
+   coordinates slightly noisier than the deployment ones regularises. That
+   would be a finding in its own right and would argue AGAINST retraining for
+   TTA.
+
+#### Not run, and not previously rejected: the head and the ranker as PEERS
+
+The user: *"边头和排序器同级呢，虽然之前好像否定过这个"*. Checked. Three
+things were tried and rejected -- `+BIDIR2` / `+BOTH` / `+AVG` (more head
+columns INSIDE the ranker, 1/11, 5/7, 4/7 per movie) and `HEAD1` / `HEAD12`
+(the head REPLACING the ranker, 0.9245 / 0.8453). A convex blend of the two
+probabilities at the same level was never run, and `make_submit_ep2.py:72`
+forbids it structurally:
+
+    assert (RANKER_NAME is None) != (HEAD_ONLY_COL is None)
+
+Two things make it worth a arm rather than a paragraph. `HEAD1` loses only
+0.0016 / 0.0062 yet splits **6/6 per movie on both domains** -- two
+near-equal predictors that disagree movie by movie is the shape an average
+helps, unlike `+BIDIR2`'s 1/11. And the record's own caveat
+(`progress.md:4692`) is that our ILP's costs "were tuned against the ranker's
+calibration, not h_fused's", so HEAD1's −0.0016 was measured at a floor
+belonging to the other scale: **it is a lower bound on the head's value, not
+an estimate of it.** A blend arm therefore has to sweep the floor with the
+weight, not freeze it.
+
+⚠ Held back until `rkpool` reports, because the two interact directly: if
+training on F4 moves the ranker's probabilities, every blend weight measured
+against the old ranker is stale.
+
+⚠ **What none of this says is that the official head likes our nodes.**
+`progress.md:104`: both official edge heads were trained on all 199 train
+movies, so every local head number is in-sample. `progress.md:46`:
+`submit_off` (official nodes + head only, no ranker) read +0.004 / +0.057
+locally and scored **LB 0.895, the worst on record**. That run changed the
+detector too, so it does not isolate the head -- but it is the reason a
+head-heavy configuration does not go to LB on local numbers alone.
+
+
 ### ⭐⭐⭐⭐ divradius + divradius2 (2026-09-09, laptop CPU, BOTH gate anchors EXACT): the last OPEN row of the public-notebook comparison closes -- their parent radius costs −0.0042 score, 90% [−0.0079, −0.0006]. The first pass ALSO produced a free +0.0009 candidate that turned out to be an artifact of freezing the gate, and the "named, fixable defect" at `DIV_PARENT_UM` 12 vs `GATE_UM` 10 gets a ceiling of +0.0022
 
 My own entry a few hours ago claimed all six differences from the public
@@ -1645,23 +1761,72 @@ touches the whole 128, measure it on the whole 128.** A 12-movie read of a
 128-movie change is not a cheap approximation of it; here it was the wrong
 sign.
 
+#### 44b6 IS IN, and it is a NULL (2026-09-09, hp44 6.8 min + hp44_ref 6.4 min, the control's hard anchor EXACT)
+
+`hp44` / `hp44_ref`: the production ranker (`edge_ranker_ep175v3_bidir`, pool
+D175) at the production configuration, on the 12 44b6 movies D175 held out.
+The control's own assert: **`ANCHOR +BIDIR F4-44b6 adj_J 0.8384 want 0.8384 ->
+OK (+0.0000)`** -- the second cross-harness, four-day reproduction of
+`ilpsweep`'s measured F48 delta of −0.0131.
+
+| 44b6, 12 movies | edge_J | adj_J | div_J | score |
+|---|---|---|---|---|
+| F4 (refine) | 0.8264 | 0.8384 | 0.0000 | 0.8384 |
+| F4HP (hpara) | 0.8267 | 0.8386 | 0.0000 | 0.8386 |
+| paired bootstrap mean | +0.00002 | **−0.00015** | 0 | **−0.00015** |
+| 90% interval | | **[−0.00644, +0.00514]** | | P(>0) **0.509** |
+
+**A coin flip.** 4 of 12 movies up, median −0.00080. The weight-averaged
+aggregate (+0.0002) and the bootstrap mean (−0.00015) disagree in sign
+because the aggregate is carried by the two heaviest movies (`8f5ab931`
+w=658 +0.0099, `c96cfa10` w=650 +0.0090) while a movie resample lets the
+many small negatives speak. Both sit on zero.
+
+**Why div_J cannot contribute here, which is a specific reason and not a
+shrug:** these 12 movies contain **zero scored GT divisions** (F4 0/11/2,
+F4HP 0/16/2 -- hpara proposes 5 more false forks and still finds no true
+one). div_J is 0.0000 in both arms, so 44b6's score IS its adj_J, and the
++0.0182 div_J that carries a third of hpara's 6bba gain has no way to
+express itself on this domain.
+
+| domain | hpara − refine | interval | reading |
+|---|---|---|---|
+| 6bba, 128 movies | **+0.0031** | [+0.0014, +0.0049] | positive, excludes zero |
+| 44b6, 12 movies | −0.0002 | [−0.0064, +0.0051] | **null** |
+| zebrahub | `zhpara` running | | |
+
 #### What is still missing before this can be submitted
 
-- **44b6: never measured, and not because of hpara.** `divbench9` defines
-  `GROUPS = (("6bba", …), ("44b6", …))` and `DOMAINS` and **uses neither** --
-  dead code from an ancestor. The bench has never scored 44b6. `SET_44B6`
+- **44b6: DONE, and null** -- see the section above. It had never been
+  measured, and not because of hpara: `divbench9` defines
+  `GROUPS = (("6bba", …), ("44b6", …))` and `DOMAINS` and **uses neither**
+  (dead code from an ancestor), so the bench has never scored 44b6. `SET_44B6`
   exists in it only to hold 12 movies out of the ranker pool and to feed the
   joint gate. (I told the user both arms would print 44b6 rows; they do not.)
-  `hp44` / `hp44_ref` are pushed: stage B's fold rankers are in-sample on all
-  71 44b6 movies, so they run `MODEL_BIDIR` (pool D175, which held the 12
-  evaluation movies out) at the production configuration, with divbench9's
-  recorded `+BIDIR F4-44b6` adj_J **0.8515** as a hard anchor on the control.
-- **zebrahub:** `zhpara` running.
+  `hp44` / `hp44_ref` ran `MODEL_BIDIR` (pool D175, which held those 12 out)
+  at the production configuration instead.
+- **zebrahub:** `zhpara` running. **This is now the whole decision.** With
+  6bba positive and 44b6 null, a zebrahub null leaves one positive domain out
+  of three, which under this record's own rule is a property of 6bba and not
+  a shippable change; a zebrahub positive makes it two of three with no
+  negative anywhere.
 - Three domains, or it does not count. One domain positive is a property of
   that domain.
 
 
 ### ⭐⭐⭐⭐ ttabench (2026-09-09, 178 min CPU, the view-1 identity anchor EXACT on 12/12): edge-feature TTA costs adj_J −0.0051 and edge_J −0.0074 through the FULL pipeline, both intervals excluding zero. The link I had asserted without measuring is now measured -- and my prediction that it could not be measured was wrong
+
+⚠ **AMENDED 2026-09-09, later the same night, by the rkpool entry above.**
+The fold rankers in this run were **100% noTTA-trained**: the override
+replaced `EDGEPROB_F4`, and stage A trains from `LAB`, which is built with
+`EP_OF["BASE"]`. So the arms differ in the ranker's TRAINING distribution as
+well as its input, and −0.0051 is "TTA bolted onto a ranker fitted without
+it", not "TTA". Tested claim that survives: *bolting D4 feature averaging onto
+the shipped, non-TTA-trained ranker loses adj_J*. Tested claim that does NOT
+survive: *D4 feature averaging is worth nothing to this pipeline.* The matched
+version needs tta4 in the training rows -- `ttacache` is caching them.
+Everything else below (the view-1 identity anchor, the row-set check, the
+per-movie table) is unaffected.
 
 Three hours earlier I wrote that the head's AUC dropping meant "the ~20 GPU
 hours are refused". The user: *"边概率头变了和它不值之间的关联是？"* -- and
