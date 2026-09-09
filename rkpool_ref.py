@@ -3166,6 +3166,15 @@ print(f"\n  {_csv.name} written ({len(PER)} movies, {len(_keys)} columns). "
       f"which is exactly the failure this comparison is exposed to.",
       flush=True)
 
+if RANK_TRAIN != "BASE":
+    _moved = [f for f in ANCHOR_FAIL if f[0] == "REF_FORKS"]
+    ANCHOR_FAIL = [f for f in ANCHOR_FAIL if f not in _moved]
+    for _f in _moved:
+        print(f"  [expected] {_f[0]} {_f[1]} moved to {_f[2]} from {_f[3]} -- "
+              f"this arm retrains the ranker, so the REF graphs are NOT "
+              f"divbench3's and this anchor cannot hold; it is the "
+              f"measurement. ANCHOR_D187 is untouched by the retrain and "
+              f"stays hard.", flush=True)
 if DET_SRC == "F4HP":
     _moved = [f for f in ANCHOR_FAIL if f[0] in ("ANCHOR_D187", "REF_FORKS")]
     ANCHOR_FAIL = [f for f in ANCHOR_FAIL if f not in _moved]

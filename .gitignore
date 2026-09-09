@@ -23,3 +23,8 @@ cache/
 kaggle.json
 access_token
 .kaggle/
+
+# Kernel outputs pulled down for analysis (tools/klog.py --fetch). Evidence,
+# not sources: every file here is reproducible from the kernel that wrote it,
+# and the fork tables alone are 3 MB.
+bench_csv/
