@@ -876,3 +876,38 @@ prohibitive, and when you do:
 The cost asymmetry is the whole argument: a cache pass is GPU-minutes per
 movie and runs once, while a partial cache silently taxes every experiment
 downstream of it and is discovered only by a contradiction weeks later.
+
+
+## A killed kernel loses stdout. Diagnostics go to a FILE (2026-09-09)
+
+Zebrahub has now OOM-killed four runs — `biohub-zh-pipeline` at 10 of 41
+crops (progress.md:425), `zhpara` v1 at 9, `zhpara` v3 at 39, `zhpara2` at 9
+— and **not one of them left a readable error.** Kaggle returns a
+**zero-byte log** for a SIGKILLed session: stdout is not truncated, it is
+gone. `zhpara2` printed `VmRSS` / `VmHWM` at every stage of every crop
+specifically to catch this, and every one of those lines was lost with the
+process.
+
+`zhpara` v3 already encoded the right pattern for RESULTS — `_checkpoint()`
+rewrote the per-crop CSV after every crop, which is why 38 crops of paired
+data survived a run that died. The mistake was not applying the same rule to
+DIAGNOSTICS.
+
+**The rule.** Anything you would want to read after a kill must be written to
+a file under `/kaggle/working`, flushed and `fsync`ed at the point of
+writing. That includes:
+
+- per-unit results (already standard here: `_checkpoint()`);
+- memory/timing traces, and any "where was I" breadcrumb;
+- the last successful step's name, so a kill points at a stage rather than a
+  range.
+
+`print(..., flush=True)` is for a run that FINISHES. It is worth nothing for
+one that gets killed, which on the zebrahub domain is the common case.
+
+**And artefacts on disk are evidence.** Two of this night's diagnoses came
+from output files rather than logs: 39 GT geffs against 38 CSV rows put the
+death inside crop 39, and the single leftover prediction geff named the crop
+and proved the REF arm had already saved. Design the file layout so that a
+half-finished run says where it stopped — write per-unit artefacts, delete
+them when the unit completes, and the leftovers are the answer.
