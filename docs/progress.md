@@ -1552,16 +1552,34 @@ a simple offset. If calibration is the mechanism it is a change in the trees'
 shape, which cannot be read off the pkls and needs both models' probabilities
 on the same rows.
 
-⚠ **THE MEASUREMENT IS ALSO CONFOUNDED, and by my own hand.**
-`PROD_FLOOR = 0.48` and `ILP_DISAPP = 1.5` were tuned against the
-BASE-trained ranker's calibration. This run changed the ranker's training
-distribution and then scored it at constants belonging to the other one --
-**the identical error the user corrected three experiments earlier**, where
-`divradius` froze the fork gate and read +0.0088 for a sister radius that
-became −0.0005 once the gate was retrained per cell. The lesson went into the
-record and then straight back out of it. So −0.0011 / −0.0022 currently
-admits two readings that this run cannot separate: a real loss, or a real
-ranker measured at the wrong operating point.
+⚠ **THE MEASUREMENT IS ALSO CONFOUNDED, and by my own hand -- at a floor
+that does not even ship.** `eprank3` inherits `edgeprob_rank2`'s solver
+constants, and **it has no `PROD_FLOOR` at all**:
+
+    eprank3.py:203      ILP_FLOOR = 0.10      # candidates fed to the ILP
+    eprank3.py:1849         if pr >= ILP_FLOOR:
+    $ grep -c PROD_FLOOR eprank3.py
+    0
+
+So the whole comparison ran at **floor 0.10**, while what ships is **0.48**
+(ref 56030644), and `ilpsweep` measured that move as 6bba +0.0000 but 44b6
+**−0.0131** -- the two operating points are not equivalent on that domain.
+−0.0011 / −0.0022 was therefore read at a scale belonging neither to the new
+ranker nor to production.
+
+Freezing it at all is **the identical error the user corrected three
+experiments earlier**, where `divradius` froze the fork gate and read +0.0088
+for a sister radius that became −0.0005 once the gate was retrained per cell.
+The lesson went into the record and then straight back out of it. (My first
+write-up of this even named the wrong constant, `PROD_FLOOR = 0.48`, before
+reading the source.) So the result admits two readings this run cannot
+separate: a real loss, or a real ranker measured at the wrong operating
+point.
+
+**`rkpool` is at the right one.** `rkpool.py:1848` sets
+`PROD_FLOOR = 0.48` and stage B solves with `floor=PROD_FLOOR`, so the
+128-movie decision is taken at the shipped configuration as well as the
+larger sample.
 
 **`rkfloor` settles it and is cheap**: both v4 pkls already exist, so nothing
 is retrained; it needs features for the 24 evaluation movies only, crosses
