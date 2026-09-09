@@ -1487,10 +1487,53 @@ checked it: the retrain drops **652 of 7,004** forks (9.3%) and **24 of the
 What the gate's own quantiles DO show is a cleaner fork population -- every
 decile of its probability rises (50% 0.0028 -> 0.0036, 80% 0.0275 -> 0.0463,
 90% 0.2558 -> 0.3923) and its pooled out-of-fold AUC rises 0.8798 -> 0.8995.
-**Why that collapses the joint gate's marginal value while raising DIV_W's is
-not established.** Both runs wrote `forks_f4_v4.csv`; joining them per fork --
-which forks the retrain never offers, against which ones the gate removes --
-is the cheap measurement that would settle it, and it has not been done.
+
+##### The per-fork join, done (`tools/forkjoin.py`, offline, no kernel)
+
+Both arms wrote their DIV_W 0.55 fork table, so the overlap question is a
+join. **It cannot be keyed on `(movie, p, q)`** -- `p` and `q` index the
+SELECTED node set and the two arms select different nodes (6bba_05b6850b
+keeps 6,165 against 6,154), so that key matched 78 of 7,004. The coordinates
+are identical in both arms, so the fork's own geometry is the stable key, and
+it checks out: **label agreement 4,049/4,049, 100.00%**, on a key that knows
+nothing about labels. The gate is reproduced first and hits divbench3 exactly
+(AUC 0.9283 / 0.8326, p > 0.03 -> 42/47/83, div_J 0.2442).
+
+**1. The churn is four times the net.** Net −652 forks, but the retrain
+*drops 2,955 and adds 2,303*. It reshapes the fork population rather than
+trimming it, which no aggregate count showed.
+
+**2. The overlap hypothesis is dead, measured.** Of the forks the retrain
+drops, **83.1%** sat below the gate's cut -- against **77.5%** of the ones it
+keeps and a base rate of **79.8%**. The gate-p medians of dropped and kept
+forks are 0.0050 and 0.0049. The retrain is not removing the gate's targets;
+to the gate's eye it removes forks at almost exactly the base rate.
+
+**3. What it IS selective about is the label, not the gate's opinion.** It
+drops **18% of the TPs and 42% of the FPs** (9 of 50 against 104 of 249), and
+the forks it *adds* are better than the ones it removes: +11 TP / +80 FP in,
+−9 TP / −104 FP out. Net +2 TP, −24 FP -- the whole division gain, decomposed.
+
+##### ⚠ AND THE THING I SAID COLLAPSED IS NOT THE THING THAT COLLAPSED
+
+Written above: "the joint gate is worth +0.0037 on the old ranker and +0.0004
+on the new one". True as arithmetic, wrong as a description. Those are the
+*joint* gate's margin **over the 6bba-only gate**. The gate itself is worth
+the same in both arms:
+
+| | BASE | F4 |
+|---|---|---|
+| ungated -> + gate6 | 0.9266 -> 0.9387 = **+0.0121** | 0.9290 -> 0.9406 = **+0.0116** |
+| gate6 -> joint | 0.9387 -> 0.9424 = **+0.0037** | 0.9406 -> 0.9410 = **+0.0004** |
+
+So the fork gate is undamaged by the retrain. What the retrain destroys is
+the *extra* value the JOINT gate got from adding 71 44b6 movies' counted
+forks to its training set -- and that has a mechanism already named in this
+entry: those 44b6 forks come from divbench5, i.e. from the **BASE** ranker's
+fork population, while the 6bba forks being gated now come from the F4 one.
+The retrain creates a new train/deploy mismatch one level up, in the gate.
+Re-running the 44b6 forks under the F4 ranker is the fix, and it is step 2
+below.
 
 ⚠ Two reasons this row is weaker than the ungated one, and both are real:
 
