@@ -1955,15 +1955,17 @@ del LAB, LAB_TRAIN
 gc.collect()
 
 print(f"\n=== RANKER AUC ON {DET_SRC} COORDINATES (out of fold, the "
-      f"{len(LAB4)} movies whose coordinates differ between the arms) ===",
-      flush=True)
+      f"{len(SIX)} scored 6bba movies; LAB4 holds {len(LAB4)} because "
+      f"RANK_TRAIN={RANK_TRAIN}) ===", flush=True)
 print("  Same pairs, same GT labels, same fitted model as stage B; the ONLY "
       "difference from the arm this is compared against is where the points "
       "were placed. A drop here says the RANKER mis-reads hpara; a drop in "
       "score with this flat says the damage is downstream.", flush=True)
+AUC_NAMES = sorted(n for n in LAB4 if n in FOLD_OF)
+assert len(AUC_NAMES) == len(SIX), (len(AUC_NAMES), len(SIX))
 _p4, _y4 = [], []
 for _k in (0, 1):
-    _ns = [n for n in sorted(LAB4) if FOLD_OF[n] == _k]
+    _ns = [n for n in AUC_NAMES if FOLD_OF[n] == _k]
     if not _ns:
         continue
     _X = np.concatenate([LAB4[n][0] for n in _ns]).astype(np.float32)[:, COLS]

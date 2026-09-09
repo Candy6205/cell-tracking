@@ -177,6 +177,32 @@ gc.collect()''',
     '''del LAB, LAB_TRAIN
 gc.collect()''')
 
+# ---- 3b. the AUC readout is about the 128 SCORED movies ----------------
+# v1 died here, AFTER stage A had trained both rankers and printed them:
+#     _ns = [n for n in sorted(LAB4) if FOLD_OF[n] == _k]
+#     KeyError: '44b6_0113de3b'
+# `FOLD_OF = {n: i % 2 for i, n in enumerate(SIX)}` holds 6bba names only.
+# Widening LAB4 to all 199 for TRAINING left this readout iterating it too.
+# Restricting to 6bba is not just the minimal fix, it is the correct one:
+# stage B scores 128 6bba movies and the BASE arm's LAB4 is 6bba-only by
+# construction, so an unrestricted readout would compare two different movie
+# sets between the arms and still print a plausible AUC.
+rep('''_p4, _y4 = [], []
+for _k in (0, 1):
+    _ns = [n for n in sorted(LAB4) if FOLD_OF[n] == _k]''',
+    '''AUC_NAMES = sorted(n for n in LAB4 if n in FOLD_OF)
+assert len(AUC_NAMES) == len(SIX), (len(AUC_NAMES), len(SIX))
+_p4, _y4 = [], []
+for _k in (0, 1):
+    _ns = [n for n in AUC_NAMES if FOLD_OF[n] == _k]''')
+
+rep('''print(f"\\n=== RANKER AUC ON {DET_SRC} COORDINATES (out of fold, the "
+      f"{len(LAB4)} movies whose coordinates differ between the arms) ===",
+      flush=True)''',
+    '''print(f"\\n=== RANKER AUC ON {DET_SRC} COORDINATES (out of fold, the "
+      f"{len(SIX)} scored 6bba movies; LAB4 holds {len(LAB4)} because "
+      f"RANK_TRAIN={RANK_TRAIN}) ===", flush=True)''')
+
 # ---- 4. the CSV must not overwrite the other arm's -------------------
 rep('f"hparabench_{DET_SRC}.csv"', 'f"rkpool_{RANK_TRAIN}.csv"')
 
