@@ -1537,7 +1537,10 @@ def features_ext(name, dets, T, ep_path, ep2_path):
     feats = pair_features(dets, None, T)
     ours = np.array([len(seeds[t][0]) for t in range(T)], np.int64)
     K, skey, ex1 = _load_head(name, ep_path, T, ours)
-    K2, skey2, ex2 = _load_head(name, ep2_path, T, ours)
+    if ep2_path is None:               # head 2 not cached for this movie
+        K2, skey2, ex2 = K, skey, np.full(ex1.shape, np.nan, np.float32)
+    else:
+        K2, skey2, ex2 = _load_head(name, ep2_path, T, ours)
     assert K2 == K and np.array_equal(skey, skey2), (
         f"{name}: the two heads' caches hold different (t, i, j) sets "
         f"({len(skey)} vs {len(skey2)} rows) -- were they cached on the "
@@ -1646,7 +1649,7 @@ for det_arm in DET_ARMS:
     _jobs += [(n, det_arm, "6bba" if n in HOLDOUT_6BBA else "44b6")
               for n in NAMES_EVAL]
 print(f"\n=== FEATURES + JOIN: {len(_jobs)} passes ({len(POOL175)} pool on "
-      f"BASE + {len(NAMES_EVAL)} eval x {DET_ARMS}) ===", flush=True)
+      f"{POOL_ARM} + {len(NAMES_EVAL)} eval x {DET_ARMS}) ===", flush=True)
 FEATS = {}                 # (det_arm, name) -> (seeds, feats)
 X_pool_l, y_pool_l = [], []
 X_grp = {d: [] for d in DOMAINS}
@@ -1655,10 +1658,10 @@ for k_, (name, det_arm, role) in enumerate(_jobs):
     t0 = time.time()
     dets = load_dets(name, det_arm)
     T = len(dets)
-    # .get, not [], because edgeprob2_F4_ covers 24 movies and the F4 pool
-    # needs 175. features_ext already handles ep2_path=None by filling head
-    # 2's five columns with NaN; +BIDIR does not read them, and every arm
-    # that does is cut from ARM_ORDER above.
+    # .get, not [], because edgeprob2_F4_ covers 24 movies -- and NONE of the
+    # 175 pool ones. With the guard above, head 2's five columns come through
+    # as NaN; +BIDIR does not read them, and every arm that does is cut from
+    # ARM_ORDER.
     seeds, feats = features_ext(name, dets, T, EP_OF[det_arm][name],
                                 EP2_OF[det_arm].get(name))
     X_, y_ = label_rows(name, feats)

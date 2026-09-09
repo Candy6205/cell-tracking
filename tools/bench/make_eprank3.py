@@ -55,6 +55,16 @@ second head ("the two heads agree too much to ensemble", −0.002 to −0.010 on
 both groups). The head-only eval arms (`HEAD1`, `HEAD12`) are untouched --
 they train nothing.
 
+⚠ THE TWO ARMS RAN DIFFERENT VERSIONS OF THIS FILE, and it does not matter.
+`eprank3_ref` was pushed from v1 and left running; `eprank3` is v2, which adds
+the `ep2_path is None` guard v1 died on. On the BASE pool that guard is
+UNREACHABLE: edgeprob_rank2 already asserts
+`_missing = [n for n in ALL_TRAIN if n not in EDGEPROB2]`, so every one of the
+199 movies has a `edgeprob2_BASE_` cache and `.get` never returns None there.
+The ref arm therefore executes byte-identical logic and its anchors are read
+the same way. Stated rather than quietly relied on, because "identical but
+for one switch" is the whole basis for reading the F4 arm against it.
+
 ⚠ This kernel writes a pkl. It does NOT change what any submission loads;
 `make_submit_ep2.py` selects by `RANKER_NAME` and still names the v3 pkl.
 Switching production over is a separate, deliberate edit, and it should wait
@@ -104,15 +114,39 @@ PKL_NAME = {"+BIDIR": f"edge_ranker_ep175v4_bidir_{POOL_ARM.lower()}.pkl"}''')
 rep('_jobs = [(n, "BASE", "pool") for n in POOL175]',
     '_jobs = [(n, POOL_ARM, "pool") for n in POOL175]')
 
-# ---- 3. head 2 is absent on most F4 movies; do not KeyError on it -------
+# ---- 3. head 2 is absent on the whole F4 pool; do not die on it ---------
+# v1 died here, at movie 1, in fifteen minutes:
+#     _load_head(name, ep2_path, T, ours)
+#     TypeError: expected str, bytes or os.PathLike object, not NoneType
+# The docstring of v1 claimed "features_ext already handles ep2_path=None".
+# That is true of `hparabench_ref.py`'s features_ext (it has the guard at its
+# line 1715) and NOT of `edgeprob_rank2.py`'s, which is the file this port is
+# cut from. I read the descendant and edited the ancestor. The run's own log
+# also printed "Head 2 on F4 covers 0 of them" -- edgeprob2_F4_'s 24 movies
+# are exactly the evaluation set, so the F4 pool has no head-2 cache at all,
+# which is what makes the guard load-bearing rather than defensive.
+rep('''    K, skey, ex1 = _load_head(name, ep_path, T, ours)
+    K2, skey2, ex2 = _load_head(name, ep2_path, T, ours)''',
+    '''    K, skey, ex1 = _load_head(name, ep_path, T, ours)
+    if ep2_path is None:               # head 2 not cached for this movie
+        K2, skey2, ex2 = K, skey, np.full(ex1.shape, np.nan, np.float32)
+    else:
+        K2, skey2, ex2 = _load_head(name, ep2_path, T, ours)''')
+
 rep('''    seeds, feats = features_ext(name, dets, T, EP_OF[det_arm][name],
                                 EP2_OF[det_arm][name])''',
-    '''    # .get, not [], because edgeprob2_F4_ covers 24 movies and the F4 pool
-    # needs 175. features_ext already handles ep2_path=None by filling head
-    # 2's five columns with NaN; +BIDIR does not read them, and every arm
-    # that does is cut from ARM_ORDER above.
+    '''    # .get, not [], because edgeprob2_F4_ covers 24 movies -- and NONE of the
+    # 175 pool ones. With the guard above, head 2's five columns come through
+    # as NaN; +BIDIR does not read them, and every arm that does is cut from
+    # ARM_ORDER.
     seeds, feats = features_ext(name, dets, T, EP_OF[det_arm][name],
                                 EP2_OF[det_arm].get(name))''')
+
+# ---- 3b. the header must not say BASE when the pool is F4 --------------
+rep('''print(f"\\n=== FEATURES + JOIN: {len(_jobs)} passes ({len(POOL175)} pool on "
+      f"BASE + {len(NAMES_EVAL)} eval x {DET_ARMS}) ===", flush=True)''',
+    '''print(f"\\n=== FEATURES + JOIN: {len(_jobs)} passes ({len(POOL175)} pool on "
+      f"{POOL_ARM} + {len(NAMES_EVAL)} eval x {DET_ARMS}) ===", flush=True)''')
 
 # ---- 4. the F4 pool must be COMPLETE before it may be used --------------
 rep('print(f"D175 pool ({len(POOL175)}): {\' \'.join(POOL175)}", flush=True)',
