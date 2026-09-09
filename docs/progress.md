@@ -1434,6 +1434,26 @@ the pairing is void — which is the entire reason the check exists.
    re-crossed a third time. rkpool already showed the retrain moves the fork
    population by 9.3%, and hpara moves it too.
 
+#### And the byte pattern already separates them (`tools/bytedir.py`)
+
+The project's one LB predictor that is independent of the local metric --
+11 recorded (Δ bytes, Δ LB) pairs, every byte-removing change gaining --
+reads the two candidates very differently on the same 128 movies:
+
+| candidate | Δ nodes | Δ nodes % | Δ matched edges % | the pattern says |
+|---|---|---|---|---|
+| retrain (F4 ranker, refine) | **−10,506** | **−0.50%** | −0.11% | **GAIN** |
+| hpara (BASE ranker, hpara) | −670 | −0.03% | +0.06% | **no call** |
+
+**The retrain removes output; hpara does not.** That fits each mechanism --
+the retrain changes which detections the ILP keeps, while hpara moves points
+*inside* their voxels on an identical peak set, so it has little reason to
+change the node count at all. It also means the two candidates are not
+equally supported: the retrain has the independent predictor behind it and
+hpara has only the local bench, which for `submit-f48` was the one that was
+wrong. Direction only -- these are training-movie nodes, not test-output
+bytes.
+
 ⚠ **This is the UNGATED REF comparison.** rkpool's lesson was that the shipped
 cell (DIV_W 0.55 + the joint gate) can move the *other way* from the ungated
 one -- there, four of five cells gained and the deployed one lost 0.0014. The
