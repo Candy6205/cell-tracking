@@ -1553,6 +1553,191 @@ own. Retraining cannot recover a fork that was never proposed, so that works
 against the tightened arms only in the direction they already lose.
 
 
+### ⭐⭐⭐⭐⭐ hparabench ROUND 2 (2026-09-09, both arms 179 min CPU, control anchors EXACT on divbench3 / divbench6 / divbench8): FULL COVERAGE OVERTURNS ROUND 1. hpara is +0.0031 score on 6bba, 90% [+0.0014, +0.0049], and the AUC is FLAT -- so the gain is not the ranker, it is the geometry. Plus: the 12-movie holdout disagrees in SIGN with the 128 that contain it
+
+Round 1 scored 128 movies of which TWELVE carried hpara coordinates, read
+`edge_J −0.0018` off the changed subset, and concluded the placement does not
+convert. `hparacache` v3 + `ephpcache` + `ep2hpcache` now cover 140, so all
+128 scored movies differ between the arms. The conclusion reverses.
+
+**The control is exact on all three cross cells** -- `REF+gate6` 42/47/83
+0.2442, `REF+joint` 46/39/79 0.2805, `dw35+gate6` 50/68/75 0.2591, each
+reproducing divbench3 / divbench8 / divbench6 to the digit. The harness did
+not move.
+
+#### The measurement, ungated, 128 movies, paired movie by movie
+
+`tools/hparapair2.py`: 4,000 draws, the SAME resample for both arms so the
+movie draw cancels, and the aggregation asserted against each run's own log
+before anything is compared (`summarise`'s micro-average for edge_J and
+div_J, its weight-average by `tp+fp+fn` for adj_J).
+
+| | F4 (refine) | F4HP (hpara) | delta | 90% interval | P(>0) |
+|---|---|---|---|---|---|
+| `edge_J` | 0.9104 | 0.9118 | **+0.00134** | [+0.00041, +0.00228] | 0.990 |
+| `adj_J` | 0.9133 | 0.9146 | **+0.00128** | [+0.00037, +0.00221] | 0.988 |
+| `div_J` | 0.1337 | 0.1519 | **+0.01810** | [+0.00322, +0.03387] | 0.977 |
+| **score** | 0.9266 | 0.9298 | **+0.00309** | **[+0.00137, +0.00492]** | **0.998** |
+
+**Every interval excludes zero, and it is not one movie.** 68 of 128 up on
+adj_J; the six biggest movers carry 19% of the total absolute movement.
+
+#### The discriminator says FLAT, and that combination was not in the table
+
+| | pooled out-of-fold AUC | rows |
+|---|---|---|
+| F4 | 0.99256 | 183,966 |
+| F4HP | **0.99244** | 184,174 |
+
+−0.00012. **The ranker reads hpara coordinates exactly as well as refine
+ones**, which kills the distribution-shift hypothesis round 1 raised (the
+ranker was fitted on refine features and never saw coordinates this clean).
+The pre-registered 2x2 had no row for "AUC flat, score UP" -- it assumed a
+gain would have to arrive through the ranker.
+
+**Where it does arrive, and it is visible in the counts.** Forks proposed
+fall 7,004 -> 6,709 (**−4%**) while true ones RISE, 50/249/75 -> 55/237/70.
+Every test in `_add_safe_divisions` is a DISTANCE -- `DIV_PARENT_UM`,
+`DIV_SISTER_UM`, `DIV_DIVERGE_UM`, and `GAP1_GATE_UM` downstream. `refinecmp`
+measured hpara cutting frame-to-frame jitter 31%. Cleaner coordinates make
+distance tests discriminate better, so the patch proposes FEWER forks and
+more of them are real. The edges follow for the same reason.
+
+#### Gated -- what actually ships -- the gain is smaller and half of it reverses
+
+| joint gate, p > 0.03 | div TP/FP/FN | div_J | adj_J | score |
+|---|---|---|---|---|
+| F4 | 46/39/79 | 0.2805 | 0.9143 | 0.9424 |
+| F4HP | 49/51/76 | 0.2784 | **0.9155** | **0.9433** |
+| delta | +3/+12/−3 | **−0.0021** | **+0.0012** | **+0.0009** |
+
+The adj_J half survives intact (+0.0012 gated against +0.00128 ungated); the
+div_J half reverses, because **the fork gate was trained on the refine
+coordinate fork population and hpara changes that population.** ⚠ There is
+no interval on the gated +0.0009 -- the CSV carries the ungated per-movie
+rows only. What can be said is that adj_J carries weight 1.0 against div_J's
+0.1, so the gated delta is essentially the adj_J delta, and that term's
+interval is [+0.0004, +0.0022].
+
+#### ⭐⭐⭐⭐⭐ The 12-movie holdout disagrees in SIGN with the 128 that contain it
+
+Both arms print the D187 anchor cell and the production-floor cell, and both
+are computed on `HOLDOUT_6BBA` -- a subset of the 128:
+
+| hpara − refine | adj_J | div_J | score |
+|---|---|---|---|
+| 12-movie holdout, D187 anchor config | **−0.0012** | +0.0061 | ≈ −0.0006 |
+| 12-movie holdout, production floor 0.48 | **−0.0009** | +0.0038 | ≈ −0.0005 |
+| **128 movies** | **+0.0013** [+0.0004, +0.0022] | +0.0182 | **+0.0031** [+0.0014, +0.0049] |
+
+**The same change, measured on 12 movies and on the 128 that contain them,
+comes out with opposite signs**, and the 128-movie interval excludes zero.
+This is not sampling noise in the loose sense -- the pipeline is
+deterministic, eight `random_state` values give identical output -- it is
+that those 12 movies are not a representative draw of the 128 for this
+quantity.
+
+**And that holdout is what almost everything in this project is tuned
+against.** `divbench6`'s DIV_W argmax, round 1's hpara verdict, `divradius`'s
+sister radius, every AUC in `accdiag` and `ttascore`: all 12 movies. The
+practical rule that falls out is narrow and worth keeping: **when a change
+touches the whole 128, measure it on the whole 128.** A 12-movie read of a
+128-movie change is not a cheap approximation of it; here it was the wrong
+sign.
+
+#### What is still missing before this can be submitted
+
+- **44b6: never measured, and not because of hpara.** `divbench9` defines
+  `GROUPS = (("6bba", …), ("44b6", …))` and `DOMAINS` and **uses neither** --
+  dead code from an ancestor. The bench has never scored 44b6. `SET_44B6`
+  exists in it only to hold 12 movies out of the ranker pool and to feed the
+  joint gate. (I told the user both arms would print 44b6 rows; they do not.)
+  `hp44` / `hp44_ref` are pushed: stage B's fold rankers are in-sample on all
+  71 44b6 movies, so they run `MODEL_BIDIR` (pool D175, which held the 12
+  evaluation movies out) at the production configuration, with divbench9's
+  recorded `+BIDIR F4-44b6` adj_J **0.8515** as a hard anchor on the control.
+- **zebrahub:** `zhpara` running.
+- Three domains, or it does not count. One domain positive is a property of
+  that domain.
+
+
+### ⭐⭐⭐⭐ ttabench (2026-09-09, 178 min CPU, the view-1 identity anchor EXACT on 12/12): edge-feature TTA costs adj_J −0.0051 and edge_J −0.0074 through the FULL pipeline, both intervals excluding zero. The link I had asserted without measuring is now measured -- and my prediction that it could not be measured was wrong
+
+Three hours earlier I wrote that the head's AUC dropping meant "the ~20 GPU
+hours are refused". The user: *"边概率头变了和它不值之间的关联是？"* -- and
+there was none. `ttascore` measured the edge head's own probability. The
+ranker had not run, the ILP had not run, nothing had been scored. Then, told
+that a 12-movie score test would probably come back "cannot tell":
+*"只看12部的分数会死？"* and *"你都知道测不出来了，还在这里诚实的测不出来"*.
+
+Both landed, and the second one was right in a way I did not expect: **the
+test was not underpowered.**
+
+**Where the ±0.005 I was quoting came from, and why it did not apply.** It
+was hparabench round 1's interval, and that comparison changed the
+COORDINATES -- detections moved, the gate re-formed, the candidate pair set
+changed, so the arms shared almost nothing. Here `ttaprobe` held
+`det_logits` at view 0 on purpose: the detections are byte-identical, the
+`(t, i, j)` rows are identical, and the only difference in the entire
+pipeline is the value in two columns. Borrowing an interval from a much
+looser comparison is not measuring this one.
+
+**THE ANCHOR, and it was free.** `ttaprobe`'s `noTTA` arm is the same
+wrapper with the averaging switched off, so it must reproduce
+`edgeprob_F4_` bit for bit. **12 of 12 movies, worst |dp| = 0.000e+00.** The
+wrapper is transparent at view 1, so `hparabench_ref`'s CSV is a legitimate
+control and the tta4 delta carries no offset of the wrapper's own. That
+check ran in the first seconds of the kernel, before three hours of CPU.
+
+#### The result, paired over the 12 movies that carry a tta4 cache
+
+`tools/ttapair.py`, 4,000 draws, the same resample for both arms. 116 of the
+128 movies are byte-identical between the runs by construction, and the
+harness confirmed it: exactly 12 rows differ.
+
+| | noTTA | tta4 | delta | 90% interval | P(>0) |
+|---|---|---|---|---|---|
+| `edge_J` | 0.9235 | 0.9159 | **−0.00741** | **[−0.01309, −0.00241]** | **0.003** |
+| `adj_J` | 0.9265 | 0.9213 | **−0.00507** | **[−0.01051, −0.00023]** | **0.040** |
+| `div_J` | 0.0769 | 0.0976 | +0.01933 | [−0.07094, +0.11475] | 0.632 |
+| score | 0.9342 | 0.9311 | −0.00313 | [−0.01370, +0.00932] | 0.312 |
+
+**The two terms that could be measured are both negative and both exclude
+zero.** The composite score does not, and the reason is entirely `div_J`:
+twelve movies contain twelve GT divisions, so its interval is 0.19 wide and
+it swamps a term that enters at one tenth the weight. adj_J is the term
+carrying weight 1.0, and it is down.
+
+Per movie, 5 of 12 up on adj_J -- not unanimous. The aggregate is driven by
+`283bf9f1` (−0.027) and `7af54fde` (−0.010), both heavy.
+
+Diluted over all 128 the same numbers read adj_J −0.0005, exactly a tenth of
+−0.0052, which is the 12-of-128 arithmetic and a useful check that nothing
+else moved.
+
+#### The chain, now measured end to end
+
+    D4-average the U-Net features
+      -> the edge head's own AUC falls 0.00417        (ttascore, 12/12 movies)
+      -> 10.6% of gated pairs swap order              (Spearman 0.85-0.97)
+      -> through ranker + ILP + patches + scorer:
+         adj_J  −0.0051  90% [−0.0105, −0.0002]
+         edge_J −0.0074  90% [−0.0131, −0.0024]
+
+⚠ **I asserted the last step before measuring it and the measurement happened
+to agree. That is luck, not method** -- and working-agreement.md records that
+offline edge AUC anti-predicted this pipeline three times running, so the
+prior was against me. The verdict stands; the way I reached it the first time
+does not.
+
+⚠ Two limits kept in view. This is the FIRST edge head only -- `ttaprobe`
+cached `edgeprob_` and not `edgeprob2_`, so the second head stays
+single-view on the 12 movies that have one. And 12 movies is 12 movies:
+`ttacache` (140 movies, tta4, ~4.1 GPU h) is running to redo this on the
+full scored set, which is affordable and was refused earlier for a cost
+estimate belonging to a much bigger scope.
+
+
 ### hparabench ROUND 2 + zhpara PUSHED (2026-09-09, three CPU kernels). Full coverage at last: 128 of 128 scored movies now differ between the arms instead of 12, the AUC discriminator widens with it, and zebrahub gets its own harness. THE READING IS FIXED HERE, BEFORE THE NUMBERS
 
 Round 1 could not answer its own question. It scored 128 6bba movies and
