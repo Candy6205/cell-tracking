@@ -1381,6 +1381,9 @@ _EP2_ALL = _walk_files(_npz_prefix("edgeprob2_"))
 EDGEPROB2 = {k: v for k, v in _EP2_ALL.items() if not k.startswith("F4_")}
 EDGEPROB2_F4 = {k[len("F4_"):]: v for k, v in _EP2_ALL.items()
                 if k.startswith("F4_")}
+_HP_EP2 = {k[len("F4hp_"):]: v for k, v in _EP2_ALL.items()
+           if k.startswith("F4hp_")}
+EDGEPROB2 = {k: v for k, v in EDGEPROB2.items() if not k.startswith("F4hp_")}
 del _EP2_ALL
 assert EDGEPROB2, ("no edgeprob2_*.npz under /kaggle/input -- attach "
                    "faustine649/biohub-edgeprob2 as a kernel source")
@@ -1416,12 +1419,24 @@ if DET_SRC == "F4HP":
     # BENCH movies are asserted complete further down, once BENCH is defined.
     _dov = sorted(set(FDET_F4) & set(_HP_DET))
     _eov = sorted(set(EDGEPROB_F4) & set(_HP_EP))
+    _e2ov = sorted(set(EDGEPROB2_F4) & set(_HP_EP2))
     FDET_F4 = {**FDET_F4, **{k: _HP_DET[k] for k in _dov}}
     EDGEPROB_F4 = {**EDGEPROB_F4, **{k: _HP_EP[k] for k in _eov}}
-    print(f"  hpara override: {len(_dov)} detection and {len(_eov)} head "
-          f"entries REPLACED; {len(set(_HP_DET) - set(_dov))} hpara detection "
-          f"caches ignored because the refine arm has none for those movies",
-          flush=True)
+    EDGEPROB2_F4 = {**EDGEPROB2_F4, **{k: _HP_EP2[k] for k in _e2ov}}
+    print(f"  hpara override: {len(_dov)} detection, {len(_eov)} head-1 and "
+          f"{len(_e2ov)} head-2 entries REPLACED; "
+          f"{len(set(_HP_DET) - set(_dov))} hpara detection caches ignored "
+          f"because the refine arm has none for those movies", flush=True)
+    # HEAD 2 MUST MOVE WITH HEAD 1 wherever it exists at all. Any movie left
+    # with a refine head-2 cache beside an hpara head-1 one would fail
+    # features_ext's own (t, i, j) equality assert -- which is how v1 died.
+    _split = sorted(set(EDGEPROB_F4) & set(EDGEPROB2_F4) - set(_e2ov))
+    assert not _split, (
+        f"{len(_split)} movies would carry an hpara head 1 beside a REFINE "
+        f"head 2 ({_split[:4]}) -- attach faustine649/biohub-ep2hpcache. "
+        f"features_ext compares the two heads' (t, i, j) sets and they do "
+        f"not match once the points move: GATE_UM = 10.0 gates pairs by "
+        f"distance and a median 0.43 um shift walks pairs across it.")
 
 
 # ---- the two shipped rankers, loaded not trained ------------------------

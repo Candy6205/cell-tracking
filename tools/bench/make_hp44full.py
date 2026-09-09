@@ -82,6 +82,31 @@ _HP_EP = {k[len("F4hp_"):]: v for k, v in _EP_ALL.items()
 EDGEPROB = {k: v for k, v in EDGEPROB.items() if not k.startswith("F4hp_")}
 del _EP_ALL''')
 
+# ---- head 2 has to move with head 1, or the join is invalid ------------
+# v1 died on `features_ext`'s own assert, and it was right to:
+#
+#   44b6_0b24845f: the two heads' caches hold different (t, i, j) sets
+#                  (69683 vs 69505 rows)
+#
+# The override replaced head 1 with its hpara cache and left head 2 on refine
+# coordinates. That is exactly the mechanism `ephpcache` exists for: moving
+# every point by a median 0.43 um walks candidate pairs across `GATE_UM = 10.0`
+# in both directions, so the two heads no longer index the same pairs.
+# `ep2hpcache` already cached head 2 on hpara points for the same 140 movies
+# hparacache built, so the fix is to move head 2 with head 1. The 59 44b6 pool
+# movies have head 2 in NEITHER arm (edgeprob2's F4 pass covered 24), so `.get`
+# returns None there in both -- symmetric, and the +BIDIR ranker reads no
+# head-2 column anyway.
+rep('''EDGEPROB2_F4 = {k[len("F4_"):]: v for k, v in _EP2_ALL.items()
+                if k.startswith("F4_")}
+del _EP2_ALL''',
+    '''EDGEPROB2_F4 = {k[len("F4_"):]: v for k, v in _EP2_ALL.items()
+                if k.startswith("F4_")}
+_HP_EP2 = {k[len("F4hp_"):]: v for k, v in _EP2_ALL.items()
+           if k.startswith("F4hp_")}
+EDGEPROB2 = {k: v for k, v in EDGEPROB2.items() if not k.startswith("F4hp_")}
+del _EP2_ALL''')
+
 # ---- the override, replace-only, over exactly the 71 -------------------
 rep('''FDET_F4 = _walk_files(_npz_prefix("fdet_F4_"))
 print(f"fdet_F4 caches: {len(FDET_F4)}", flush=True)
@@ -99,12 +124,24 @@ if DET_SRC == "F4HP":
     # BENCH movies are asserted complete further down, once BENCH is defined.
     _dov = sorted(set(FDET_F4) & set(_HP_DET))
     _eov = sorted(set(EDGEPROB_F4) & set(_HP_EP))
+    _e2ov = sorted(set(EDGEPROB2_F4) & set(_HP_EP2))
     FDET_F4 = {**FDET_F4, **{k: _HP_DET[k] for k in _dov}}
     EDGEPROB_F4 = {**EDGEPROB_F4, **{k: _HP_EP[k] for k in _eov}}
-    print(f"  hpara override: {len(_dov)} detection and {len(_eov)} head "
-          f"entries REPLACED; {len(set(_HP_DET) - set(_dov))} hpara detection "
-          f"caches ignored because the refine arm has none for those movies",
-          flush=True)''')
+    EDGEPROB2_F4 = {**EDGEPROB2_F4, **{k: _HP_EP2[k] for k in _e2ov}}
+    print(f"  hpara override: {len(_dov)} detection, {len(_eov)} head-1 and "
+          f"{len(_e2ov)} head-2 entries REPLACED; "
+          f"{len(set(_HP_DET) - set(_dov))} hpara detection caches ignored "
+          f"because the refine arm has none for those movies", flush=True)
+    # HEAD 2 MUST MOVE WITH HEAD 1 wherever it exists at all. Any movie left
+    # with a refine head-2 cache beside an hpara head-1 one would fail
+    # features_ext's own (t, i, j) equality assert -- which is how v1 died.
+    _split = sorted(set(EDGEPROB_F4) & set(EDGEPROB2_F4) - set(_e2ov))
+    assert not _split, (
+        f"{len(_split)} movies would carry an hpara head 1 beside a REFINE "
+        f"head 2 ({_split[:4]}) -- attach faustine649/biohub-ep2hpcache. "
+        f"features_ext compares the two heads' (t, i, j) sets and they do "
+        f"not match once the points move: GATE_UM = 10.0 gates pairs by "
+        f"distance and a median 0.43 um shift walks pairs across it.")''')
 
 # ---- assert the 71 are complete, where BENCH exists --------------------
 rep('''_missing = [n for n in BENCH if n not in EDGEPROB_F4]
