@@ -31,10 +31,12 @@ if the control reproduces the record, the delta is the retrain.
 
     py tools/rkpoolpair.py bench_csv/rkpool_BASE.csv bench_csv/rkpool_F4.csv
 """
-import csv
 import sys
 
 import numpy as np
+
+sys.path.insert(0, __file__.rsplit("\\", 1)[0].rsplit("/", 1)[0])
+import benchagg as BA  # noqa: E402
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "bench_csv/rkpool_BASE.csv"
 F4 = sys.argv[2] if len(sys.argv) > 2 else "bench_csv/rkpool_F4.csv"
@@ -45,47 +47,14 @@ ANCHOR = dict(edge_jaccard=0.9104, adj_edge_jaccard=0.9133,
 TOL = 0.0001
 
 
-def load(path):
-    out = {}
-    for r in csv.DictReader(open(path, encoding="utf-8")):
-        d = {}
-        for k, v in r.items():
-            if k in ("dataset", "fold"):
-                continue
-            try:
-                d[k] = float(v)
-            except (TypeError, ValueError):
-                d[k] = float("nan")
-        out[r["dataset"]] = d
-    return out
-
-
-A, H = load(BASE), load(F4)
+A, H = BA.load(BASE), BA.load(F4)
 NAMES = sorted(set(A) & set(H))
 print(f"{len(A)} BASE rows, {len(H)} F4 rows, {len(NAMES)} paired")
 assert len(NAMES) == 128, len(NAMES)
 
 
-def agg(rows):
-    """summarise()'s aggregation, verbatim."""
-    etp = sum(r["edge_tp"] for r in rows)
-    efp = sum(r["edge_fp"] for r in rows)
-    efn = sum(r["edge_fn"] for r in rows)
-    dtp = sum(r["division_tp"] for r in rows)
-    dfp = sum(r["division_fp"] for r in rows)
-    dfn = sum(r["division_fn"] for r in rows)
-    ej = etp / max(1e-9, etp + efp + efn)
-    dj = dtp / max(1e-9, dtp + dfp + dfn)
-    ok = [r for r in rows if r["adj_edge_jaccard"] == r["adj_edge_jaccard"]]
-    w = [r["edge_tp"] + r["edge_fp"] + r["edge_fn"] for r in ok]
-    tw = sum(w)
-    aj = (sum(wi * r["adj_edge_jaccard"] for wi, r in zip(w, ok)) / tw
-          if tw else float("nan"))
-    return dict(edge_jaccard=ej, division_jaccard=dj, adj_edge_jaccard=aj,
-                score=aj + 0.1 * dj)
-
-
-KEYS = ["edge_jaccard", "adj_edge_jaccard", "division_jaccard", "score"]
+agg = BA.agg
+KEYS = BA.KEYS
 
 print("\n=== ANCHOR: the CONTROL must reproduce its own log and divbench3 ===")
 gA = agg([A[n] for n in NAMES])
