@@ -1364,6 +1364,74 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐ THE ZEBRAHUB KILL, DIAGNOSED (2026-09-09, zhpara v3 / zhpara2 / zhpara3): it dies **inside `compute_metric`** on `ZSNS001_z2y2x7`, at 2.1 GB RSS on a box with about 30 GB — so it is not a gradual leak, and the leading candidate is a single quadratic allocation. Four kills, and this is the first one that left any evidence at all
+
+Zebrahub has now killed four runs -- `biohub-zh-pipeline` at 10 of 41 crops
+(progress.md:425), `zhpara` v1 at 9, `zhpara` v3 at 39, `zhpara2` at 9 -- and
+until tonight **none of them left a readable error.** Kaggle returns a
+**zero-byte log** for a SIGKILLed session: stdout is not truncated, it is
+gone. `zhpara2` printed a full `VmRSS` / `VmHWM` trace for exactly this
+purpose and every line of it died with the process.
+
+#### What each run ruled out
+
+| run | what it establishes |
+|---|---|
+| `zhpara` v3 (38/41) | 39 GT geffs against 38 CSV rows -> it died INSIDE crop 39; the single leftover prediction geff names it **`ZSNS001_z2y2x7`** and shows the REF arm had already saved. `_checkpoint()` kept 38 crops of paired data. |
+| artefact count | 819 files / 7.6 MB under `ps_zh_gt` -> **disk exhaustion is dead**, measured rather than assumed. It was the hypothesis I was about to fix. |
+| `zhpara2` (8 anchors, died on crop 9) | **not accumulation.** It held only 8 small crops of state and still died on the first big one. And its 8 crops reproduce v3's rows **bit for bit** -- 8 x 2 arms x 12 columns, 0 differ, worst \|d\| 0.000e+00 -- so the harness is deterministic and rows from separate runs may be joined. |
+| `zhpara3` (`rss.log`, fsynced) | **the stage.** |
+
+#### The trace that survived
+
+`_rss` writing to `/kaggle/working/rss.log` with `flush` + `fsync` is the
+whole difference. On `ZSNS001_z2y2x7`:
+
+     97s  REF after zh_load          1,201,936 kB
+    312s  REF after solve_one        2,398,420 kB   peak 2,409,328 kB
+    323s  REF freed, pre from_geff   2,132,648 kB
+    323s  REF after from_geff        2,132,736 kB
+                                     <- killed. The next sample would have
+                                        been "REF after compute_metric".
+
+That crop's `solve_one` takes **215 s** against 9-13 s on the two tripwire
+crops, so it is roughly twenty times the work of a small one.
+
+#### What does not add up, and why it changes the fix
+
+**RSS entering the metric was 2.1 GB, peak 2.4 GB, on a box with about
+30 GB.** Nothing here is climbing gradually into a ceiling, so "it OOMed" as
+a description of a slow leak is simply wrong, and every memory-shaving fix
+aimed at that story would have been aimed at nothing. (The one blind change
+`zhpara3` did make -- freeing `nodes0 / edges0 / pool` right after
+`patch_and_save` -- is visible in the trace as 2,398 MB -> 2,132 MB, and it
+was not the problem.)
+
+**The hypothesis that fits every fact** is a single quadratic allocation:
+`compute_metric` matches the predicted graph against the ground-truth graph,
+and `zhpara` imports `scipy.optimize.linear_sum_assignment`. A DENSE
+`N_pred x N_gt` float64 cost matrix at 60,000 x 60,000 is **28.8 GB in one
+allocation** -- it would die between two RSS samples, leave no Python
+traceback, and produce exactly the zero-byte log all four runs produced,
+while the last recorded RSS stayed modest.
+
+⚠ **Two rivals are still live** and nothing so far distinguishes them: a
+segfault inside a native extension (rustworkx / scipy) kills just as
+silently at modest RSS, and so would a cgroup limit far below the advertised
+30 GB. `zhpara4` measures the two numbers that separate them -- `MemTotal` /
+`MemAvailable` (assumed in every zebrahub post-mortem in this record and
+never once read) and the pred/GT node and edge counts with the dense size in
+GB, written before every `compute_metric` call. The two tripwire crops
+supply the same numbers for graphs that DO fit, so the comparison lives
+inside one run.
+
+**If the quadratic story holds, the fix is not a bigger box** -- it is a
+sparse or blocked matcher, and it would explain why this domain has killed
+runs since the beginning while the competition domains never have: zebrahub
+is the only one with DENSE ground truth, so `N_gt` is every cell rather than
+the 0.77-9.71% an annotator labelled.
+
+
 ### ⭐⭐⭐⭐ eprank3 / eprank3-ref RESULT (2026-09-09, 102.2 min + ~100 min CPU, the control reproduces ALL THREE recorded anchors exactly): RETRAINING THE PRODUCTION RANKER ON THE COORDINATES IT IS DEPLOYED ON MAKES IT WORSE -- adj_J −0.0011 on 6bba and −0.0022 on 44b6, 10 of 12 and 9 of 12 datasets down or flat. Branch 3 of the pre-registration fired: the BASE pool was acting as augmentation
 
 The user: *"你去把重训落地"*. It is landed --
@@ -1445,6 +1513,23 @@ near-equal, disagreeing predictors" -- it is more likely one signal at two
 calibrations. It does not make the ranker a wrapper around the head, though:
 the 18 columns alone (`ANCHOR_D187`, no head) still read AUC 0.9894 and
 adj_J 0.9216.
+
+#### The 128-movie control is verified too (`rkpool_ref`, 134.6 min stage B)
+
+`rkpool_ref` -- the same BASE-vs-F4 question on 128 6bba movies out of fold --
+completed and reproduced **four** recorded numbers exactly:
+
+    ANCHOR_D187  F4-6bba(12)   adj_J 0.9216  want 0.9216 HARD -> OK (+0.0000)
+    +BIDIR pkl   F4-6bba(12)   adj_J 0.9261  want 0.9261 soft -> OK
+    REF          F4-6bba(128)  50/249/75  div_J 0.1337  adj_J 0.9133
+                               score 0.9266 (divbench3) -> OK
+    POOLED F4 edge AUC 0.99256 over 183,966 rows  (hparabench round 2: 0.99256)
+
+**And the fold AUCs are flat between the arms at 128-movie scale too**:
+BASE 0.9935 / 0.9917 against F4 0.9935 / 0.9918 on the held-out folds. So the
+"AUC flat, score moves" shape is not an artefact of the 12-movie read; the
+ranker orders edges equally well either way and the damage is downstream.
+`rkpool` (the F4 arm) is what remains.
 
 #### ⚠ What this does NOT settle
 
