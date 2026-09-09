@@ -836,3 +836,43 @@ Three practical consequences:
    above, and neither implies the other. That rule is about whether an
    effect generalises. This one is about whether two numbers were ever
    the same kind of number.
+
+
+## Cache the whole population, not the arm you are about to run (2026-09-09)
+
+The user, twice in one night: *"思考，把44b6全跑一遍不行吗，你这分裂全挂0"*,
+then *"你去把重训落地，这种只提供24部的资料的事情请不要再发生了"*.
+
+**What went wrong, three times, the same way.** A cache kernel was scoped to
+the movies the *next* experiment needed, and every later experiment then
+inherited that scope as a hard limit:
+
+| cache | scoped to | what it silently capped |
+|---|---|---|
+| `edgeprob` F4 pass | **24** eval movies | `edgeprob_rank2` could only train the shipped ranker on BASE rows — the F4 pool did not exist. The mismatch is still in production. |
+| `hparacache` v1 | **24** bench movies | hparabench round 1 read hpara on 12 of 128 scored movies and concluded the opposite of round 2's 128-movie answer. |
+| `hparacache` v3 | **140** (12 of 71 44b6) | hpara on 44b6 could only be scored on a draw holding **2 GT divisions**, so div_J was 0.0000 in both arms and the domain read "null" for a reason that was the draw, not the change. |
+
+Each time the scoping decision was defensible on the day and wrong within a
+week, because the cache outlives the experiment that motivated it and the
+next experiment does not get to renegotiate it. `ep6bba` (09-06), `ep44b6`
+(09-07) and `hpara44` (09-09) are all retrofits of the same omission.
+
+**The rule.** When a cache kernel is about to run a model over a population,
+the default is **the whole population that any bench in this repo scores** —
+199 train movies for the competition sets, all 41 crops for zebrahub — not
+the subset the current arm reads. Deviate only when the cost is genuinely
+prohibitive, and when you do:
+
+1. say in the kernel's docstring what the full population would have cost,
+   in the same units as the partial run;
+2. name, in the same paragraph, which comparison the partial cache forecloses;
+3. treat any later number computed on the partial set as **provisional until
+   the cache is complete** — the record now holds three cases where the
+   partial answer had the wrong sign or the wrong magnitude
+   (round 1's hpara verdict; `divbench3`'s +0.0020 against the full 71's
+   +0.0014; ttabench's −0.0051 through a ranker that saw no tta4 rows).
+
+The cost asymmetry is the whole argument: a cache pass is GPU-minutes per
+movie and runs once, while a partial cache silently taxes every experiment
+downstream of it and is discovered only by a contradiction weeks later.
