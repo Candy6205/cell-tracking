@@ -1586,8 +1586,24 @@ is retrained; it needs features for the 24 evaluation movies only, crosses
 floor x pkl, and prints each ranker's probability QUANTILES on the same
 gated rows -- the calibration measurement that cannot be made from the pkls.
 If the loss is the operating point, the F4 ranker has its own optimum floor
-and shrinks or reverses there; if it is real, no floor recovers it. Anchor:
-the BASE pkl at floor 0.48 must read 0.9261 / 0.8515.
+and shrinks or reverses there; if it is real, no floor recovers it.
+
+**Four anchor cells across two floors**, all recorded, and they validate the
+sweep machinery itself before any new number is read:
+
+| BASE pkl | F4-6bba | F4-44b6 | source |
+|---|---|---|---|
+| floor 0.10 | 0.9261 | 0.8515 | eprank3-ref, ilpsweep REF |
+| floor 0.48 | 0.9261 | 0.8384 | ilpsweep's F48 delta (+0.0000 / −0.0131) |
+
+(An earlier draft of this paragraph wrote "0.9261 / 0.8515" for floor 0.48.
+0.8515 is the floor-0.10 value; 0.8384 is 0.48's. 6bba is 0.9261 at both
+because its F48 delta is +0.0000, which is exactly what hid the difference.)
+
+⚠ And floor 0.48 ships because it **won on LB** (+0.001, ref submit-f48,
+−1.43% bytes), not because it is the local optimum -- locally it is
++0.0000 / −0.0131. So "which floor is best" is already a question where
+local and LB disagree, and `rkfloor` can only answer the local half.
 
 Also on record from the same run, and relevant to the parallel-blend
 question: the `+BIDIR` permutation drop is **h_fused +0.1765** against
