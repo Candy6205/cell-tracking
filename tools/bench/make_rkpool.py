@@ -206,6 +206,30 @@ rep('''print(f"\\n=== RANKER AUC ON {DET_SRC} COORDINATES (out of fold, the "
 # ---- 4. the CSV must not overwrite the other arm's -------------------
 rep('f"hparabench_{DET_SRC}.csv"', 'f"rkpool_{RANK_TRAIN}.csv"')
 
+# ---- 5. the REF anchor cannot hold in the arm that changes the ranker --
+# v1 ran all 128 movies, wrote its CSV, and THEN died:
+#     AssertionError: hard anchor miss: [('REF_FORKS', 'F4-6bba', 52225, 50249)]
+# REF_FORKS asserts the 128-movie division cells are divbench3's 50/249/75.
+# That is a statement about the SHIPPED ranker's graphs, so it must hold in
+# the BASE arm and CANNOT hold in the F4 one -- it is the measurement. The
+# ancestor already does exactly this for its own treatment arm (DET_SRC ==
+# "F4HP"); this extends the same downgrade to RANK_TRAIN, and no further:
+# ANCHOR_D187 uses the D187 pkl, which neither arm retrains, so it stays HARD
+# on both sides and is the check that the harness did not move.
+rep('''if DET_SRC == "F4HP":
+    _moved = [f for f in ANCHOR_FAIL if f[0] in ("ANCHOR_D187", "REF_FORKS")]''',
+    '''if RANK_TRAIN != "BASE":
+    _moved = [f for f in ANCHOR_FAIL if f[0] == "REF_FORKS"]
+    ANCHOR_FAIL = [f for f in ANCHOR_FAIL if f not in _moved]
+    for _f in _moved:
+        print(f"  [expected] {_f[0]} {_f[1]} moved to {_f[2]} from {_f[3]} -- "
+              f"this arm retrains the ranker, so the REF graphs are NOT "
+              f"divbench3's and this anchor cannot hold; it is the "
+              f"measurement. ANCHOR_D187 is untouched by the retrain and "
+              f"stays hard.", flush=True)
+if DET_SRC == "F4HP":
+    _moved = [f for f in ANCHOR_FAIL if f[0] in ("ANCHOR_D187", "REF_FORKS")]''')
+
 base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 for fname, rt in (("rkpool.py", "F4"), ("rkpool_ref.py", "BASE")):
     body = src.replace('RANK_TRAIN = "BASE"', f'RANK_TRAIN = "{rt}"', 1)
