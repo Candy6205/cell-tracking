@@ -137,4 +137,20 @@ def main(argv=None):
 
 if __name__ == "__main__":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    # kagglesdk writes the log with `open(path, "w")` -- no encoding -- so it
+    # gets the platform default, which on this box is gbk. Any kernel whose
+    # stdout contains a character cp936 cannot represent dies on DOWNLOAD:
+    #     UnicodeEncodeError: 'gbk' codec can't encode character '⚠'
+    # zhpara4 hit exactly that, and every script here prints U+26A0. Only
+    # UTF-8 mode changes `open`'s default, and it has to be set before the
+    # interpreter starts, so re-exec once if it is off.
+    # (`os.execv` is not usable here: on Windows it joins the argv list with
+    # spaces and no quoting, so a path like "D:\programming\cell tracking"
+    # arrives as two arguments. subprocess quotes correctly.)
+    if not sys.flags.utf8_mode and not os.environ.get("_KLOG_UTF8"):
+        import subprocess
+        env = dict(os.environ, _KLOG_UTF8="1")
+        raise SystemExit(subprocess.call(
+            [sys.executable, "-X", "utf8", os.path.abspath(__file__)]
+            + sys.argv[1:], env=env))
     raise SystemExit(main())

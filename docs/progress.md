@@ -1364,6 +1364,95 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐ zhpara4 (2026-09-09, ~6 min to the kill): THE BOX IS 32.9 GB WITH 31.7 GB FREE AND THE LOG SAYS `Killed`, SO BOTH RIVALS ARE DEAD -- AND SO IS MY OWN HYPOTHESIS. A crop needing a **20.95 GB** dense matrix SCORED; the one that kills needs **17.7 GB**. Separately: the three lost crops do NOT bias the zebrahub hpara verdict
+
+Two of the three things this run was built to settle came back clean, and the
+third came back against me.
+
+#### What is now measured rather than assumed
+
+**The ceiling.** `MemTotal 32,870,492 kB` (32.9 GB), `MemAvailable
+31,686,692 kB`. Every zebrahub post-mortem in this record has *assumed* about
+30 GB and none had read it. There is **no cgroup limit far below the
+advertised size** -- rival 1 is dead.
+
+**The signal.** The log survived this time (21,397 chars, not zero) and its
+last line is `Killed`. That is SIGKILL. A native segfault prints
+`Segmentation fault` -- rival 2 is dead. It is the OOM killer, inside
+`compute_metric`, exactly where zhpara3's `rss.log` put it.
+
+#### And the hypothesis this run existed to confirm is CONTRADICTED
+
+The prediction was a dense `N_pred x N_gt` float64 cost matrix. The probe
+fired and the numbers are real:
+
+    tripwire crop 1   pred  8,966n / gt  5,051n   dense  0.4 GB   scored
+    tripwire crop 2   pred  6,164n / gt  5,320n   dense  0.3 GB   scored
+    ZSNS001_z2y2x7    pred 40,936n / gt 54,073n   dense 17.7 GB   KILLED
+
+which looks like confirmation until the 38 crops that DID score are put on
+the same axis (`tools/zhsize.py`, from zhpara v3's own CSV, which carries
+`n_gt` and `num_pred_nodes`):
+
+| crop | n_gt | n_pred | dense | outcome |
+|---|---|---|---|---|
+| ZSNS001_tail_z2y3x2 | 56,167 | 46,633 | **20.95 GB** | **scored** |
+| ZSNS005_z1y6x8 | 47,527 | 51,282 | 19.50 GB | scored |
+| ZSNS001_tail_z2y0x3 | 47,455 | 43,611 | 16.56 GB | scored |
+| **ZSNS001_z2y2x7** | 54,073 | 40,936 | **17.7 GB** | **killed, twice** |
+
+**A larger allocation succeeded and a smaller one failed, in the same run.**
+The 38 that scored span 0.18 - 20.95 GB, so the lost crop is not even an
+extrapolation -- it sits *inside* the range that works. And it is not a
+matter of accumulated state: it killed zhpara v3 after 38 crops and zhpara4
+after 2, entering the metric at 2.1 GB both times.
+
+So `N_pred x N_gt x 8` does not predict the kill, and a dense cost matrix
+over the nodes is not what is being allocated -- or not the only thing.
+
+⚠ **I wrote "the hypothesis that fits every fact" in the previous entry.** It
+fit every fact I had bothered to collect. The 38 successful crops' node
+counts were sitting in a CSV in the kernel output the whole time and would
+have falsified it before the run was pushed.
+
+#### What is left, stated as small as the evidence allows
+
+An OOM kill inside `compute_metric`, reproducible on one specific crop across
+two runs at very different resident memory, **not** ordered by node counts.
+Whatever is quadratic is quadratic in something else -- candidate pairs
+within a matching radius, a per-component structure, an edge-level rather
+than node-level matrix. Naming it needs a probe *inside* the metric, not
+around it, and this is the third run spent on the question.
+
+**The cost of not knowing is now small**, which is the reason to stop here:
+
+#### The three lost crops do NOT bias the hpara verdict
+
+They are the three largest by cache size (39/41, 40/41, 41/41), so they are
+missing BY SIZE, not at random. That only matters if the effect depends on
+size, and on the 38 that scored it does not:
+
+| | value |
+|---|---|
+| Spearman(dense size, d adj_J), n=38 | **−0.093** |
+| Spearman(dense size, \|d adj_J\|) | −0.219 |
+| weighted d adj_J, largest 12 crops | **+0.00077** |
+| weighted d adj_J, smallest 12 crops | **+0.00065** |
+| weighted d adj_J, all 38 | +0.00098 |
+
+Same sign in both thirds, no size trend, and the largest third -- the third
+adjacent to the missing crops -- carries the effect as strongly as the
+smallest. **The zebrahub arm of the hpara ledger (+0.0011 [+0.0005, +0.0017],
+P 0.998, 38 of 41 crops) stands**, with the caveat it already carried: it
+runs dcmerge's solver, so it answers "does placement help the LINKER", not
+"does it help the shipped submission".
+
+`tools/klog.py` needed a fix before any of this was readable: kagglesdk
+writes the downloaded log with `open(path, "w")` and no encoding, so on this
+box it gets gbk and **any kernel whose stdout contains `⚠` fails to
+download** -- which is every script in this project. It now re-execs itself
+under `-X utf8`.
+
 ### ⭐⭐⭐⭐⭐ rkpool RESULT (2026-09-09, 194.7 + 167.8 min CPU, the control reproduces SEVEN recorded numbers exactly): ON 128 MOVIES AT THE SHIPPED FLOOR, RETRAINING THE RANKER ON F4 COORDINATES **WINS** -- score +0.0023 [+0.0007, +0.0040], P(>0) 0.990, 77/128 movies up. eprank3's 12-movie verdict is overturned. AND dropping the new pkl into the shipped pipeline unchanged **LOSES 0.0014**, because DIV_W and the fork gate were tuned against the old calibration
 
 The user's own idea, from *"哦，排序器水土不服，那先重训也行"*. Chased to the
@@ -1623,7 +1712,14 @@ aimed at that story would have been aimed at nothing. (The one blind change
 `patch_and_save` -- is visible in the trace as 2,398 MB -> 2,132 MB, and it
 was not the problem.)
 
-**The hypothesis that fits every fact** is a single quadratic allocation:
+⚠ **DEAD, 2026-09-09, by zhpara4 -- see the entry above.** A crop needing a
+**20.95 GB** dense matrix scored and the one that kills needs **17.7 GB**, so
+`N_pred x N_gt` does not order the outcome. The 38 successful crops' node
+counts were in the kernel output when this paragraph was written. What
+survives from here is the *shape* -- one allocation, not a slow climb -- and
+nothing about which one.
+
+~~**The hypothesis that fits every fact** is a single quadratic allocation:
 `compute_metric` matches the predicted graph against the ground-truth graph,
 and `zhpara` imports `scipy.optimize.linear_sum_assignment`. A DENSE
 `N_pred x N_gt` float64 cost matrix at 60,000 x 60,000 is **28.8 GB in one
@@ -1634,7 +1730,12 @@ while the last recorded RSS stayed modest.
 ⚠ **Two rivals are still live** and nothing so far distinguishes them: a
 segfault inside a native extension (rustworkx / scipy) kills just as
 silently at modest RSS, and so would a cgroup limit far below the advertised
-30 GB. `zhpara4` measures the two numbers that separate them -- `MemTotal` /
+30 GB.~~
+
+⭐ **BOTH RIVALS ARE NOW DEAD, and so is the hypothesis they were rivals to.**
+`MemTotal` reads 32.9 GB with 31.7 GB available -- no hidden cgroup limit --
+and the log's last line is `Killed`, which is SIGKILL, not the `Segmentation
+fault` a native crash prints. See the zhpara4 entry above. `zhpara4` measures the two numbers that separate them -- `MemTotal` /
 `MemAvailable` (assumed in every zebrahub post-mortem in this record and
 never once read) and the pred/GT node and edge counts with the dense size in
 GB, written before every `compute_metric` call. The two tripwire crops
