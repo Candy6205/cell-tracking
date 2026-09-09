@@ -133,6 +133,21 @@ Two rules learned the hard way:
   - Writing the script with the file tool and running the file skips the
     shell entirely: there is no quoting layer left to get wrong. It costs
     one extra call.
+  - **2026-09-09: broken TWICE more in one session, both by `py - <<'PYEOF'`.**
+    A quoted heredoc expands nothing, which is exactly why it feels safe —
+    and it is, right up until the patch text contains a backslash escape
+    inside a string it is WRITING. Then there are two escape layers, the
+    patch's own and the one it emits, and getting the depth wrong turns
+
+        print(f"\n=== THE MEASUREMENT ===")
+
+    into a source file with a real line break inside an unterminated string.
+    The first failure was an assert that could not match its own target; the
+    second wrote a syntactically invalid `tools/jointgate.py`.
+  - **The tell: if the patch string contains a backslash at all, the heredoc
+    is already the wrong tool.** And for a file THIS session authored, do not
+    write a patch script at all — rewrite the whole file with the file tool.
+    It is cheaper than reasoning about escape depth and has no quoting layer.
 - **Locate cuts by line content, never by a search string containing an
   escape** (toolchain trap 8). And match on what is actually in the file:
   on 2026-08-27 a patch failed because the text used an em dash and the
