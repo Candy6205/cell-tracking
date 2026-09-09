@@ -2,12 +2,12 @@
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": false,
+  "enable_gpu": true,
   "enable_tpu": false,
   "enable_internet": true,
-  "id": "faustine649/biohub-zhpara3",
-  "title": "Biohub zhpara3",
-  "code_file": "zhpara3.py",
+  "id": "faustine649/biohub-ttacache2",
+  "title": "Biohub ttacache2",
+  "code_file": "ttacache2.py",
   "dataset_sources": [
     "pilkwang/biohub-tracking-support-pack-50ep-v1",
     "faustine649/cell-tracking"
@@ -16,12 +16,17 @@
     "faustine649/biohub-edge-ranker",
     "faustine649/biohub-cache-train",
     "faustine649/biohub-poolsize",
-    "faustine649/biohub-zebrahub-extract",
-    "faustine649/biohub-zh-detect",
-    "faustine649/biohub-zhhpcache"
+    "faustine649/biohub-fusecache",
+    "faustine649/biohub-fuse6bba",
+    "faustine649/biohub-fuse44b6",
+    "faustine649/biohub-edgeprob",
+    "faustine649/biohub-ep6bba",
+    "faustine649/biohub-ep44b6",
+    "faustine649/biohub-ttacache"
   ],
   "competition_sources": [
     "biohub-cell-tracking-during-development"
   ],
-  "model_sources": []
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
 }

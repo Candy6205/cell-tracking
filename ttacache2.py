@@ -387,10 +387,23 @@ DONE_TTA = _walk_files(lambda fn: fn[len("edgeprob_tta4_"):-len(".npz")]
                        if fn.startswith("edgeprob_tta4_")
                        and fn.endswith(".npz") else None)
 print(f"edgeprob_tta4_ caches already mounted: {len(DONE_TTA)}", flush=True)
-CACHE_NAMES = sorted(n for n in CACHES_F4 if n not in set(DONE_TTA))
+# AND inside ALL_TRAIN. v1 selected on "has F4 primaries" alone and its own
+# assert caught the consequence: **207 fdet_F4_ caches are mounted, not 199**
+# -- eight of them are not train movies at all -- so the remainder came out
+# 67 instead of 59. Caching eight extra movies would have cost ~15 GPU
+# minutes and, far worse, silently widened the ranker's feature pool to a
+# different population than the noTTA arm's. The eight are NAMED below
+# rather than dropped quietly.
+_extra = sorted(n for n in CACHES_F4 if n not in set(ALL_TRAIN))
+if _extra:
+    print(f"  {len(_extra)} fdet_F4_ caches are NOT train movies and are "
+          f"excluded: {' '.join(_extra)}", flush=True)
+CACHE_NAMES = sorted(n for n in CACHES_F4
+                     if n in set(ALL_TRAIN) and n not in set(DONE_TTA))
 _n6 = sum(1 for n in CACHE_NAMES if n.startswith("6bba_"))
-print(f"cache scope: {len(CACHES_F4)} movies with F4 primaries, "
-      f"{len(DONE_TTA)} already cached, {len(CACHE_NAMES)} to run "
+print(f"cache scope: {len(CACHES_F4)} fdet_F4_ caches mounted, "
+      f"{len(ALL_TRAIN)} of them train movies, {len(DONE_TTA)} already "
+      f"cached, {len(CACHE_NAMES)} to run "
       f"({_n6} 6bba + {len(CACHE_NAMES) - _n6} 44b6)", flush=True)
 assert CACHE_NAMES, (
     "every movie with F4 primaries already has a tta4 cache -- either "
