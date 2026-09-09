@@ -1364,6 +1364,71 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐⭐ zhpara v3 (2026-09-09, ~3.8 h CPU, killed at crop 39 of 41 with 38 crops of PAIRED data saved, all three anchors EXACT): hpara is POSITIVE on zebrahub too -- score +0.0011, 90% [+0.0005, +0.0017], P(>0) = 0.998. TWO of three domains positive, one null, none negative
+
+The third domain, and the only one with **dense** ground truth: zebrahub
+labels every cell, so its denominator is the real cell population rather than
+what an annotator could see. That is why its absolute scores are 0.68 and not
+0.93, and why it is the one place hpara's effect can be read without a
+sparse-GT caveat.
+
+**The anchor is exact on all three metrics.** The REF arm over the 8
+dcmerge-v2 crops:
+
+    edge_jaccard      got 0.8036  want 0.8036  OK (+0.0000)
+    adj_edge_jaccard  got 0.8093  want 0.8093  OK (+0.0000)
+    division_jaccard  got 0.0230  want 0.0230  OK (+0.0000)
+
+#### The measurement, 38 crops, paired crop by crop
+
+| | REF (refine) | HP (hpara) | delta | 90% interval | P(>0) |
+|---|---|---|---|---|---|
+| `edge_J` | 0.6826 | 0.6836 | **+0.00101** | [+0.00040, +0.00161] | 0.995 |
+| `adj_J` | 0.6828 | 0.6839 | **+0.00102** | [+0.00042, +0.00162] | 0.996 |
+| `div_J` | 0.0064 | 0.0072 | +0.00077 | [−0.00014, +0.00182] | 0.922 |
+| **score** | 0.6835 | 0.6846 | **+0.00110** | **[+0.00049, +0.00171]** | **0.998** |
+
+27 of 38 crops up on adj_J, median +0.00116 -- broad, not one crop.
+
+**And the division counts replay 6bba's mechanism exactly**: REF 44/853/5929
+-> HP 49/823/5924. **TP +5, FP −30, FN −5, all three in the right
+direction.** Same story hparabench round 2 found on 6bba (7,004 -> 6,709
+forks proposed while true ones rose): every test in `_add_safe_divisions` is
+a DISTANCE, so cleaner coordinates make the distance tests discriminate
+better. Two instruments, two GT regimes, one mechanism.
+
+#### The three-domain ledger
+
+| domain | Δ score | 90% interval | P(>0) | sample |
+|---|---|---|---|---|
+| 6bba | **+0.0031** | [+0.0014, +0.0049] | 0.998 | 128 movies |
+| 44b6 | −0.0002 | [−0.0064, +0.0051] | 0.509 | 12 movies, **2 GT divisions** |
+| zebrahub | **+0.0011** | [+0.0005, +0.0017] | 0.998 | 38 crops, dense GT |
+
+**Two positive with intervals excluding zero, one null, none negative.** The
+record's rule -- three domains, or it does not count -- is met, and this is
+the first candidate of the night to meet it.
+
+#### Three limits kept in view
+
+1. **38 of 41, and the missing 3 are the LARGEST.** v3 ordered the crops
+   smallest-first behind the 8 anchor crops precisely so a kill would cost
+   least, and it worked -- `_checkpoint()` rewrote the CSV after every crop,
+   so 38 paired crops survived a run that died. But adj_J is weight-averaged,
+   large crops carry the most weight, and those are exactly the three that
+   are missing. **The number will move when they land; the direction is
+   unknown.** Finishing them is a ~30-minute job on 3 crops, not a re-run.
+2. **zebrahub's div_J interval includes zero** (P = 0.922). The edge half is
+   what clears here; the division half is directionally right and not
+   significant.
+3. **44b6's "null" is a property of its 12-movie draw**, which carries 2 GT
+   divisions and scored div_J 0.0000 in both arms. `hpara44` (GPU) +
+   `ephp44` are running/queued to give all 71 movies hpara coordinates, so
+   that domain can be re-read on 26 GT divisions instead of 2. `divbench5` v2
+   already showed the 12-movie draw reads 43% high on this kind of quantity
+   (+0.0020 on 2 events against the full 71's +0.0014 on 26).
+
+
 ### ⭐⭐⭐⭐ rkpool / rkpool-ref PUSHED (2026-09-09, two CPU kernels): THE RANKER THAT SHIPS WAS TRAINED ON BASE DETECTIONS AND IS DEPLOYED ON F4 ONES. The mismatch has never been measured, it costs no GPU to remove, and it makes ttabench's −0.0051 unreadable. THE READING IS FIXED HERE, BEFORE THE NUMBERS
 
 The user, on being told that ttabench measured TTA through a ranker fitted on
@@ -1805,11 +1870,13 @@ express itself on this domain.
   joint gate. (I told the user both arms would print 44b6 rows; they do not.)
   `hp44` / `hp44_ref` ran `MODEL_BIDIR` (pool D175, which held those 12 out)
   at the production configuration instead.
-- **zebrahub:** `zhpara` running. **This is now the whole decision.** With
-  6bba positive and 44b6 null, a zebrahub null leaves one positive domain out
-  of three, which under this record's own rule is a property of 6bba and not
-  a shippable change; a zebrahub positive makes it two of three with no
-  negative anywhere.
+- **zebrahub: DONE, and POSITIVE** -- score +0.0011, 90% [+0.0005, +0.0017],
+  P(>0) 0.998 on 38 of 41 crops, all three REF anchors exact. See the zhpara
+  entry above. That makes it **two positive domains, one null, none
+  negative**, which meets the three-domain rule. Two things still outstanding
+  before a submission: the 3 largest zebrahub crops (zhpara died at 39 of 41
+  and adj_J is weight-averaged), and the 44b6 re-read on 71 movies once
+  `hpara44` + `ephp44` land.
 - Three domains, or it does not count. One domain positive is a property of
   that domain.
 
