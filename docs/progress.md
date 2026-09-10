@@ -1364,6 +1364,63 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐⭐ BOTH SUBMISSIONS LANDED (2026-09-10): hpara **LB 0.945, NEW BEST** (+0.001 over its own control); the retrain reads **0.944, +0.000**. Neither is negative, so neither triggers the standing alarm
+
+The user's instruction was *"你就把两个提交下就行了"*. Two submissions, one
+variable each, against the same control -- ref 56086066, LB 0.944.
+
+| ref | change | local (6bba / 44b6 / zebrahub) | LB | Δ |
+|---|---|---|---|---|
+| 56086066 | control (what ships) | — | 0.944 | — |
+| **56135014** | **hpara placement** | +0.0031 / +0.0013 / +0.0011 | **0.945** | **+0.001** |
+| 56135603 | F4 ranker + DIV_W 0.35 | +0.0023 / +0.0019 / n/a | 0.944 | +0.000 |
+
+**hpara is kept and is the new best.** Local positive in three domains, LB
+positive: the two agree in sign, which is the only thing the standing rule
+reads out of an LB delta.
+
+**The retrain reads null, and null is not a refutation.** The leaderboard is
+reported to three decimals, so 0.944 spans roughly ±0.0005 and cannot resolve
+a claimed +0.0023 at all. What it does say is that the sign is not negative,
+which is the one reading that would have been an alarm. The candidate is
+neither confirmed nor killed; it is unmeasured at this resolution, and the
+project already knows that its local gain is entirely divisions on a channel
+whose interval is wide in every domain.
+
+⚠ **DO NOT turn this pair into a verdict between the mechanism rule and the
+byte pattern.** The session's first draft of this entry did exactly that and
+the user struck it down: *"谁告诉你输出字节是真理了"*. Two deltas of about a
+thousandth, on a hidden split of unknown composition, adjudicate nothing
+between two accounts. See the correction on the rkprod entry below.
+
+⚠ **One factual ledger update, as data and not as a verdict.** The byte-LB
+record held eleven pairs in which every byte-removing change gained and every
+byte-adding one lost. hpara ADDS output -- 235,206 rows against the control's
+234,761, +0.19% on the visible four -- and it gained +0.001. So the tally is
+now **eleven of twelve**, and the twelfth is the exception. The retrain
+removed 0.55% and read +0.000, which the pattern does not explain either.
+Output size remains a symptom of what a change did, not a cause of anything;
+these two rows are worth recording precisely because a run of eleven was
+starting to be cited as if it were a mechanism.
+
+#### ⚠ Both kernels' FIRST version ran on a P100 and fell back to CPU
+
+`submit_hp` v1 and `submit_rk` v1 were both pushed without
+`"machine_shape": "NvidiaTeslaT4"` -- against this project's own written rule
+-- and both were handed a P100 whose sm_60 the installed torch refuses. They
+finished, wrote valid submissions, and ran 9x slow (head 30-57 s -> 460-664 s;
+whole movie 141-272 s -> 1,330-1,980 s), which on the hidden test is the 12 h
+cap. Neither was submitted. Both were re-pushed as v2 with the pin, and it is
+v2 of each that carries the scores above.
+
+The v2 outputs are **bit-identical** to the v1 ones -- rows, nodes and edges
+all match to the integer in both kernels -- so the CPU fallback did not
+perturb the numbers this time. That is worth recording as luck, not as
+licence: the reason to check the machine is the wall clock, and the numerical
+worry stays open because nothing here establishes that CPU and GPU `conv3d`
+agree in general. See working-agreement.md, *"I pulled the working metadata,
+then hand-wrote a new one without it"*.
+
 ### ⭐⭐⭐⭐⭐ rkprod (2026-09-10, 53.2 min CPU): THE PRODUCTION RANKER RETRAINED ON F4 EXISTS, and its BASE control reproduces the shipped ranker **bit for bit** -- max|Δp| = 0.00000 over 14,817 held-out rows. So swapping the F4 pkl in is a single variable, and the retrain needs ONE submission, not two
 
 The user's instruction was *"你就把两个提交下就行了"*. This is the piece that
