@@ -1002,3 +1002,51 @@ death inside crop 39, and the single leftover prediction geff named the crop
 and proved the REF arm had already saved. Design the file layout so that a
 half-finished run says where it stopped — write per-unit artefacts, delete
 them when the unit completes, and the leftovers are the answer.
+
+## I pulled the working metadata, then hand-wrote a new one without it (2026-09-10)
+
+`kaggle-toolchain.md` section 9 already says, in bold: **every GPU kernel's
+metadata must pin `"machine_shape": "NvidiaTeslaT4"`.** Section 10 already
+says: **when an assembly reuses a script's code, reuse its metadata too.**
+
+Building `submit_hp` I ran
+
+```
+py kag.py kernels pull faustine649/biohub-submit-joint -p <tmp> -m
+```
+
+which returned the working metadata **with `"machine_shape":
+"NvidiaTeslaT4"` in it** — and then typed a fresh JSON from memory,
+keeping the sources and dropping the pin. Kaggle handed the kernel a
+**Tesla P100**, torch refused sm_60, and the whole detector ran on CPU:
+
+| | submit_joint (T4) | submit_hp v1 (P100 -> CPU) |
+|---|---|---|
+| head, per movie | 30–57 s | **504–664 s** |
+| whole movie | 141–272 s | **1,607–1,980 s** |
+
+9x slower. On the four visible movies that is an hour wasted. On the
+hidden test it is the **12-hour cap**: the shipped pipeline is already
+near 10.6 h there at T4 speed.
+
+**The second-order damage is worse than the wasted hour, and it is the
+part that would have gone unnoticed.** The run finished, wrote a valid
+`submission.csv`, and printed healthy-looking numbers. I was one step
+from comparing its node counts against the 0.944 kernel's and reading
+the difference as hpara's effect — but CPU and GPU `conv3d` do not
+produce bit-identical heatmaps, so **that comparison had two variables
+in it**, and the wrong one was invisible. The toolchain entry predicted
+exactly this: *"it does not die … and burns the wall clock while looking
+healthy."*
+
+**The rule, sharpened.** Pulling a working kernel's metadata and then
+retyping it is not reuse — it is reconstruction with an extra step that
+makes it feel verified. Either copy the pulled file and edit the four
+fields that change (`id`, `title`, `code_file`, `kernel_sources`), or
+diff what you wrote against what you pulled before pushing. A one-line
+diff would have caught this.
+
+**And check the machine before reading any timed or numeric result from a
+GPU kernel.** `grep -iE "P100|conv3d unusable"` on the log, every time,
+before the numbers are looked at — not because the run might die, but
+because it might not.
