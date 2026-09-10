@@ -1455,9 +1455,21 @@ candidates differ in exactly the way the 2026-08-28 rule cares about: hpara
 has a defect stated in a non-score unit (integer-voxel quantisation, median
 0.43 um), and the retrain has none -- four accounts of its mechanism have now
 died on measurement. The rule went 1 for 5 on mechanism and 0 for 4 on local
-magnitude. If it holds, **hpara transfers and the retrain does not.** That is
-the first genuine out-of-sample test this project has run on its own central
-hypothesis, and it costs two slots out of ninety-five.
+magnitude. If it holds, **hpara transfers and the retrain does not** -- a
+hypothesis worth writing down before the scores, and nothing more than that.
+
+⚠ **Corrected by the user the same day.** An earlier draft of this line
+called the pair "the first genuine out-of-sample test of this project's own
+central hypothesis", and the session's report to the user went further and
+set the mechanism rule against the byte pattern as two criteria that these
+two scores would decide between. Both are wrong. Output size is a SYMPTOM of
+what a change did, not a cause of anything and not an oracle that can win or
+lose; eleven sign-agreeing points do not make it one. And two LB deltas of
+about a thousandth, on a hidden split of unknown composition, cannot
+adjudicate between two accounts -- every cell of the 2x2 the report drew is
+equally well explained by noise. The standing rule already covers this and
+was ignored while being cited: **read the public score as a DIRECTION, sign
+only**, with alarm reserved for local-positive-everywhere going LB-negative.
 
 ### ⭐⭐⭐⭐⭐ fk44f4 + jointgate COMPLETE (2026-09-09, one CPU kernel + offline, `ANCHOR_D187` exact and the control reproduces divbench5 v2 exactly): THE COHERENCE HYPOTHESIS IS DEAD -- fixing it is worth **+0.0003** for hpara and **−0.0005** for the retrain. And the retrain now has a 71-movie 44b6 number: **+0.0019, P 0.906**, better supported there than hpara's +0.0013
 
