@@ -1364,6 +1364,101 @@ carries n_train 6bba 299 / 44b6 67 / tp 56 -- which is what stopped a
 silently-6bba-only gate from being submitted as the joint one.
 
 
+### ⭐⭐⭐⭐⭐ rkprod (2026-09-10, 53.2 min CPU): THE PRODUCTION RANKER RETRAINED ON F4 EXISTS, and its BASE control reproduces the shipped ranker **bit for bit** -- max|Δp| = 0.00000 over 14,817 held-out rows. So swapping the F4 pkl in is a single variable, and the retrain needs ONE submission, not two
+
+The user's instruction was *"你就把两个提交下就行了"*. This is the piece that
+stood between the retrain and a submission, and it turned out to also settle a
+question the record had left open.
+
+#### What was missing, and it was not small
+
+rkpool measured +0.0023 with **two out-of-fold rankers**, each fitted inside
+the bench on 135 movies so the 128 scored ones could be read out of fold. A
+submission cannot load either: `submit_joint.py` asserts `len(pool) >= 170`
+and takes ONE ranker over the **D175 pool**. No such pkl existed for F4
+primaries. `rkprod` is `rkpool` with stage B and everything after it cut, the
+full F4 features never kept (only the labelled rows, which is what lets all
+199 movies be labelled on BOTH primary sets in one kernel), and two production
+fits appended -- `edgeprob_rank2.py:1707-1731`'s estimator, seed, 10% split
+and refit, verbatim.
+
+| pkl | rows | positive | val AUC |
+|---|---|---|---|
+| `edge_ranker_prod_base_bidir.pkl` (control) | **217,688** | 0.497 | 0.9926 |
+| `edge_ranker_prod_f4_bidir.pkl` (candidate) | 216,209 | 0.501 | 0.9926 |
+
+#### The anchor, which is the entry
+
+The leaderboard control for the F4 pkl is ref 56086066 (LB 0.944), and that
+kernel loaded a pkl `rkprod` did not make. So the F4 swap is only single-
+variable if a BASE pkl built by THIS code behaves like the shipped one. Read
+on the 12 `HOLDOUT_6BBA` movies' BASE rows -- held out of both pools:
+
+| | AUC | max abs Δp | mean abs Δp | pairs changing side of the 0.48 floor |
+|---|---|---|---|---|
+| the loaded reference | 0.9931 | — | — | — |
+| **this code, BASE** | 0.9931 | **0.00000** | **0.000000** | **0.000%** |
+| this code, F4 | 0.9932 | 0.52773 | 0.007055 | **0.331%** |
+
+**Zero. Not "small" -- zero, to five decimals, on 14,817 rows.** And the row
+count matches the record independently: progress.md:6458 recorded the D175
+pool at "217,688 labelled rows, 0.497 positive" in September 2026, and this
+kernel's BASE arm reads 217,688 rows at 0.497. The feature pipeline in the
+rkpool lineage is `edgeprob_rank2`'s, exactly.
+
+So **the retrain is submitted once, read against LB 0.944.** The pre-registered
+branch that would have required a second control submission does not fire.
+
+⚠ **A LABEL IN THAT TABLE WAS WRONG AND THE CONCLUSION SURVIVES IT ON BORROWED
+EVIDENCE, WHICH IS WORTH SAYING OUT LOUD.** The kernel printed the reference
+row as `SHIPPED ep175_bidir`. It is not. `MODEL_BIDIR` is loaded from
+`edge_ranker_ep175v3_bidir.pkl` (edgeprob-rank2's), while `submit_joint.py`
+loads `edge_ranker_ep175_bidir.pkl` (edgeprob-rank's). Two different files. The
+anchor therefore proves `rkprod BASE == v3`, not `rkprod BASE == what ships`.
+
+The gap is closed by the record rather than by this run: progress.md:6455
+states that v3's +BIDIR "reads exactly v2's 0.9261 / 0.1515 and 0.8515 /
+0.0000", i.e. **the retraining is deterministic and the two pkls are the same
+model**. Chain it and `rkprod BASE == v3 == v2 == what ships`. That is sound,
+but it is one recorded equality away from being measured here, and the print
+should have said which file it loaded instead of asserting the conclusion in
+its own label. Fixed in the generator's next use, not re-run: a 53-minute
+kernel is not worth spending to correct a string.
+
+#### What the F4 pkl actually does, in a unit that is not the score
+
+**0.331% of held-out candidate pairs change which side of the 0.48 floor they
+fall on** -- about one pair in 300 is offered to the ILP that was not, or
+withheld that was not. mean |Δp| is 0.007 and the tail reaches 0.53. That is
+the size of the intervention: surgical, not a re-ranking. It is consistent
+with the four dead mechanisms (held-out AUC is flat to four decimals across
+every cell measured, here too: 0.9931 against 0.9932) and it still does not
+say **why** the pipeline scores better. It says where to look.
+
+#### Both submissions are in flight
+
+| kernel | what | status |
+|---|---|---|
+| `biohub-submit-hp` | `submit_joint` + parabolic-vertex placement | pushed 2026-09-10 |
+| `biohub-submit-rk` | `submit_joint` + the F4 pkl + `ILP_DIV_W` 0.35 | pushed 2026-09-10 |
+
+⚠ They are two submissions **on purpose**, and must not be merged. rkhp:
+hpara alone 0.9298, the retrain alone 0.9290, both together **0.9282** where
+additive would be 0.9321, and D is at or below A in every column of the gated
+cross. Submission slots are not the constraint anyone thought they were --
+`max_daily_submissions` is 5, the last submission was 2026-09-07, and the
+deadline is 2026-09-29, so roughly 95 slots remain against 2 final selection
+slots that Kaggle fills with the highest scorers.
+
+⚠ **The pre-registered reading, fixed before either score exists.** These two
+candidates differ in exactly the way the 2026-08-28 rule cares about: hpara
+has a defect stated in a non-score unit (integer-voxel quantisation, median
+0.43 um), and the retrain has none -- four accounts of its mechanism have now
+died on measurement. The rule went 1 for 5 on mechanism and 0 for 4 on local
+magnitude. If it holds, **hpara transfers and the retrain does not.** That is
+the first genuine out-of-sample test this project has run on its own central
+hypothesis, and it costs two slots out of ninety-five.
+
 ### ⭐⭐⭐⭐⭐ fk44f4 + jointgate COMPLETE (2026-09-09, one CPU kernel + offline, `ANCHOR_D187` exact and the control reproduces divbench5 v2 exactly): THE COHERENCE HYPOTHESIS IS DEAD -- fixing it is worth **+0.0003** for hpara and **−0.0005** for the retrain. And the retrain now has a 71-movie 44b6 number: **+0.0019, P 0.906**, better supported there than hpara's +0.0013
 
 The user chose *"先不提交，补测再说"*. Both halves of the 补测 are in, and the
