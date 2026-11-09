@@ -1,110 +1,124 @@
-# cell tracking — local working folder
+# Biohub – Cell Tracking During Development (Kaggle, 2026)
 
-Biohub Cell Tracking During Development (Kaggle). This folder holds the code;
-the data lives on Kaggle (199 train datasets, ~167 GB).
+My entry to the Kaggle competition
+[Biohub – Cell Tracking During Development](https://www.kaggle.com/competitions/biohub-cell-tracking-during-development)
+(29 June – 29 September 2026). The task: find every cell nucleus in 3D
+light-sheet movies of a developing zebrafish embryo, and link the detections
+across time into a tracking graph, cell divisions included.
 
-Written material lives in `docs/`, which is the master copy:
+## Result
 
-- `docs/strategy.md` — where we are, what to do next, and why
-- `docs/progress.md` — confirmed findings, experiment log, traps hit
-- `docs/public-solutions-recon.md` — what the public leaderboard actually
-  contains, read from the forum and the API
-- `docs/holdout-split.md` — the public weights' training split (largely
-  superseded)
-- `docs/competition-brief.md` — task, data format, metric
-- `docs/engineering-rules.md` — conventions every script follows
+- Final standing: **1552nd of 3,947 teams**, private score **0.9143**
+  (the selected submission, `submit_zsznf.py`).
+- Best public-leaderboard score: **0.9561** (`submit_nc35.py`).
+- Best private score among all my submissions: **0.9197** (`submit_vt.py`),
+  which was not selected.
 
-## Files
+<!-- TODO (me): why the public and private scores diverge, and why the best
+private submission was not the one selected. -->
 
-| File | Purpose |
-|---|---|
-| `viz_cells.py` | `inspect` / `viz` / `gif` / `survey`, plus all shared I/O |
-| `submit_baseline.py` | `predict` / `score` / `sweep` / `verify` — classical baseline **and the local scorer** |
-| `cell_count.py` | per-dataset density / cell-count estimation |
-| `check_weights.py` | inspect the published checkpoints for their training split |
-| `error_analysis.py` | classify every edge error: detection / dropped / confusion / spurious |
-| `division_features.py` | do geometry, intensity or elongation distinguish a dividing cell? |
-| `division_recovery.py` | add missed divisions back into an ILP graph, post-hoc |
-| `division_strip_cell.py` | static filmstrip of one GT division |
-| `sweep_edge_threshold.py` | sweep the linker threshold offline from one inference run |
-| `make_fake_data.py` | synthetic data for smoke tests (numbers meaningless) |
-| `run_cells.md` | ready-to-paste Kaggle cells, one fenced block per cell |
-| `read_gate.py` | read the DeepCenter tuning files (threshold sweep, history) |
+## How the pipeline evolved
 
-## State of play
+The starting point was a verbatim reproduction of a public notebook (LB 0.917,
+see Credits): a 3D U-Net detector and a frame-to-frame linker. From there, each
+submission changed one thing against the previous best. The main steps:
 
-| | LB | local, 12 held-out `6bba` |
-|---|---|---|
-| classical DoG pipeline, submitted 2026-08-17 | 0.681 (rank 1940/2470) | ~0.45 |
-| official pipeline, greedy linking | — | 0.8847 |
-| **official + ILP + app 0.0 / disapp 1.5, submitted 2026-08-19** | **0.876** (rank 1560/2560) | **0.9269** |
-| live public frontier, read from the LB 2026-08-20 | 0.957 #1 / 0.935 #20 | — |
+| Script | What it changed | Public | Private |
+|---|---|---|---|
+| `submit_ranker.py` | Replaced the linker with a learned edge ranker (gradient-boosted trees, 18 features) feeding an integer linear program (ILP) | 0.9213 | 0.8907 |
+| `submit_f4.py` | Detection from four heatmaps: the U-Net ensemble plus a retrained DeepCenter model | 0.9251 | 0.9038 |
+| `submit_ep.py` | The official edge model's forward and reverse probabilities as extra ranker features | 0.9328 | 0.9066 |
+| `submit_gate.py` | A classifier (the "fork gate") that decides which candidate cell divisions to keep | 0.9433 | 0.9103 |
+| `submit_img.py` | The fork gate retrained on two embryos, with raw-image features at every fork | 0.9519 | 0.9163 |
+| `submit_prop.py` | Orphaned track starts re-attached as division daughters, filtered by a gate fitted on them | 0.9545 | 0.9168 |
+| `submit_vt.py` | Extra detections where at least two of the four heatmaps agree | 0.9534 | **0.9197** |
+| `submit_nc35.py` | A per-node cost in a second ILP solve, which drops weakly supported detections | **0.9561** | 0.9137 |
+| `submit_zsznf.py` | Final selection: cell-size features in the fork gate, division variables in the ILP | 0.9550 | 0.9143 |
 
-The 0.9269 is the official repo plus pilkwang's public weights and two
-command-line flags — no DeepCenter, no second seed, none of the ~40 `BIOHUB_*`
-post-processing knobs. It improved 12 of 12 held-out datasets over greedy, and
-**it is what scored 0.876 on the public leaderboard**.
+`docs/HANDOFF.md` lists every submission, including the changes that did not
+help.
 
-Local is optimistic by 0.051, so use local scores for **paired deltas only**.
-
-The classical DoG pipeline is capped around 0.80–0.85 (node-recall ceiling
-0.921, and an edge needs both endpoints) and is no longer the main line.
-
-**The differentiator is the measurement loop, not the model.** Public LB is 29%
-of the test data and resolves about ±0.03; our local scorer covers 199 datasets
-and compares configurations *paired*, which is far more sensitive.
-
-## The local scorer
-
-`submit_baseline.run_score` / `run_verify` print:
+## Repository layout
 
 ```
-adj_edge_jaccard   the edge term
-division_jaccard   approximate; meaningless below ~50 datasets
-score_full         adj_J + 0.1*div_J  <- the leaderboard-comparable number
-detect_ceiling     GT edges with BOTH endpoints detected
-link_rate          of those, the fraction actually linked
-                   micro_J = detect_ceiling x link_rate   (exact when FP=0)
+submit_*.py            one self-contained Kaggle kernel per submission
+make_*.py,
+tools/bench/make_*.py  build a new script from its control by exact, asserted
+                       string replacements, so the two differ in one place
+other *.py             experiments and diagnostics, one entry each in docs/progress.md
+kag.py                 wrapper around the Kaggle CLI, used for every push
+kernel-metadata.json   Kaggle kernel settings for the next push
+docs/                  the project log (see "How this was built")
 ```
 
-That decomposition is the point: a single score cannot tell you whether to work
-on detection or linking. On the public pipeline it said 38% detection / 62%
-linking.
+The folder is flat on purpose: the Kaggle pushes and the imports between
+scripts depend on the paths.
 
-## Kaggle quickstart
+## Running it
 
-See `run_cells.md` — one fenced block per Kaggle cell. Always print
-`SCRIPT_VERSION` for all three modules first —
-Dataset caching serves stale code without raising.
-
-`--limit` is a **stride** in `score` mode, not the first N: names are sorted, so
-the first 71 are one imaging batch carrying only 15% of the score weight.
-
-## Local smoke test (no competition data needed)
+The competition data is not in this repository (it is released under CC0;
+download it from Kaggle). Every script runs as a Kaggle kernel on a T4 GPU:
 
 ```bash
+# set "code_file" in kernel-metadata.json to the script you want, then
+py kag.py kernels push -p .
+```
+
+`docs/kaggle-toolchain.md` covers the full workflow and its traps.
+
+A local smoke test needs no competition data, but it does need zarr 3 and
+blosc2. The synthetic data only proves the plumbing works; the numbers it
+prints are meaningless.
+
+<!-- TODO (me): run these three commands in a clean environment and pin the
+versions that work. -->
+
+```bash
+pip install "zarr>=3" blosc2
 python make_fake_data.py
 python viz_cells.py inspect --root ./fake_data
 python submit_baseline.py score --root ./fake_data --limit 8 --per-frame 30
 ```
 
-Synthetic data is 8 frames of 16x64x64 — **the numbers are meaningless**, it
-only proves the plumbing works. It uses the same blosc codec and
-one-chunk-per-frame layout as the real data, so it also exercises the zarr-free
-readers.
+## How this was built
 
-## Things that are easy to forget
+I built this with Claude (Anthropic's AI assistant) as the coding agent. Claude
+wrote the code and the documents in `docs/`. The documents are addressed to the
+next AI session, which is why they, and many commit messages, refer to "the
+user". My part was directing the work: deciding what to try next, contributing
+ideas, setting up the working process (`docs/working-agreement.md`), checking
+results, and choosing what to submit. Nearly every commit carries a
+`Co-Authored-By: Claude` line.
 
-1. **Over-detect.** The count penalty's coefficient is 0.1 and FP is
-   structurally ~0, so raw Jaccard climbs faster than the penalty takes away.
-   Measured optimum for the DoG detector: 2x the estimated count. Reasoning from
-   the formula alone gave the opposite, wrong answer.
-2. **Prune unlinked nodes.** They cost node-count penalty and can never make a
-   TP. Worth +0.015, and TP went *up* because one-to-one matching freed GT
-   nodes for linked predictions.
-3. **Scale distances physically**: Z=1.625 um, XY=0.40625 um, read per dataset.
-   The 7 um match radius is physical.
-4. **`node_recall` is a misleading target** — pruning lowered it while raising
-   the score. Watch TP.
-5. **Select on leave-one-group-out, never random CV** — train has two imaging
-   batches and random CV rewards memorizing which one.
+## Post-competition analysis
+
+<!-- TODO (me): what the top solutions did differently, where this pipeline
+lost, and what I would change. -->
+
+## Credits
+
+- The organisers' official baseline and its edge model:
+  [royerlab/kaggle-cell-tracking-competition](https://github.com/royerlab/kaggle-cell-tracking-competition).
+- The starting pipeline: the public notebook
+  [kunaldesale2408/biohub-cell-tracking](https://www.kaggle.com/code/kunaldesale2408/biohub-cell-tracking)
+  (LB 0.917), with 3D U-Net weights from
+  [xiaoleilian/biohub-unet3d-weights](https://www.kaggle.com/datasets/xiaoleilian/biohub-unet3d-weights).
+- The publicly released DeepCenter detector, retrained here on a different
+  split (`dctrain.py`).
+- pilkwang's public weights and offline support pack of Python wheels.
+- `cell-tracking-getting-started-w-nearest-neighbor.ipynb`: a copy of the
+  competition's starter notebook by
+  [inversion](https://www.kaggle.com/code/inversion/cell-tracking-getting-started-w-nearest-neighbor)
+  (Apache 2.0).
+- `biohub-medal-v1.backup.ipynb`: a copy of the public notebook
+  "Biohub medal v1" by Le Trong Hieu,
+  [backtracking/biohub-medal-v1](https://www.kaggle.com/code/backtracking/biohub-medal-v1)
+  (Apache 2.0).
+- Other public notebooks and forum posts read during the competition are listed
+  in `docs/public-solutions-recon.md`.
+- Data: Chan Zuckerberg Biohub and the Royer lab, released under CC0.
+
+## License
+
+<!-- TODO (me): pick a license for my own code, for example MIT. The two
+notebooks above stay under their authors' Apache 2.0 terms. -->
