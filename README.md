@@ -14,8 +14,8 @@ across time into a tracking graph, cell divisions included.
 - Best private score among all my submissions: **0.9197** (`submit_vt.py`),
   which was not selected.
 
-<!-- TODO (me): why the public and private scores diverge, and why the best
-private submission was not the one selected. -->
+Why the public and private scores diverge is covered under
+"Post-competition analysis" below.
 
 ## How the pipeline evolved
 
@@ -92,8 +92,55 @@ results, and choosing what to submit. Nearly every commit carries a
 
 ## Post-competition analysis
 
-<!-- TODO (me): what the top solutions did differently, where this pipeline
-lost, and what I would change. -->
+Cell tracking rewards continuity: a cell should stay one unbroken track from
+frame to frame. Late in the competition I followed the public leaderboard into
+more and more extreme settings, and two of the directions I pushed did not
+carry over to the private test set.
+
+**Removing cells.** The node-cost steps (`submit_nc`, `submit_nc35`) deleted
+1.7% and then 3.1% of the detections. Each gained about 0.001 on the public
+leaderboard and lost on the private one (0.9168 → 0.9155 → 0.9137).
+`submit_vt` went the other way and added detections: it was 0.001 lower on
+public, and the best of all my submissions on private (0.9197). The public
+split rewarded reporting fewer cells; the private split did not.
+
+**Division features.** Early on I assumed that a daughter cell is always one
+of the mother's high-scoring link candidates. The orphan-fork patch was built
+on that assumption: it picks an extra cell as the second daughter of a
+division. When I later rendered clips of real divisions, many daughters were
+not high-scoring candidates of the mother at all, because a division pushes the
+daughters apart. Up to that point the reasoning held. The mistake was the next
+step: I turned to morphological features such as cell size and shape. They are
+informative, but they transfer badly: in a different embryo, or under slightly
+different imaging conditions, cells look very different. The private test set
+appears to be such a case: the shape-based additions (`submit_sz`,
+`submit_zsznf`) did not move the private score. The first image-based fork
+gate (`submit_img`) did transfer (private 0.9113 → 0.9163), so the problem was
+the later shape features, not image features as such.
+
+**Comparison with the top solutions.** Most of the top solutions retrained
+the detector instead of using the public weights, so they are hard to compare
+with mine. One top competitor did use the public weights, and the clearest
+difference is in validation. The small models in their decision pipeline were
+always trained on one training embryo and validated on the other. I worried
+that there was not enough data, so I mixed the two embryos and split each of
+them into training and validation parts. With that split, the shape features
+scored positive in my own validation, which hid exactly the transfer problem
+that the private test set exposed.
+
+**What I would do differently.**
+
+- Validate every small model across embryos: train on one, validate on the
+  other, even if that leaves less data. A mixed split cannot show whether a
+  feature transfers.
+- Prefer features that stay the same across embryos (motion, geometry,
+  consistency over time) over features that describe how one batch of cells
+  looks.
+- Not let the public leaderboard push the pipeline toward extremes that break
+  continuity, such as deleting cells for a 0.001 gain.
+- Hedge the final selection: next to the public-leaderboard pick
+  (`submit_zsznf`), select a submission that went in a different direction,
+  such as `submit_vt`.
 
 ## Credits
 
@@ -120,5 +167,5 @@ lost, and what I would change. -->
 
 ## License
 
-<!-- TODO (me): pick a license for my own code, for example MIT. The two
-notebooks above stay under their authors' Apache 2.0 terms. -->
+MIT for my own code; see `LICENSE`. The two notebooks listed under Credits
+stay under their authors' Apache 2.0 terms.
