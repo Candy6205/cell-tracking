@@ -12,7 +12,8 @@ narrative that requires reading older entries first.
 | file | what it is |
 |---|---|
 | `working-agreement.md` | **read first**: how to talk to the user, the assembly pattern, and the rules that cost a run each |
-| `progress.md` | the log: events and measurements, strictly newest-first; **current state and to-do at the top** |
+| `HANDOFF.md` | **current state**: best submission, history, running kernels, assets, open lines. Read every session |
+| `progress.md` | the log: one six-field entry per experiment, newest first |
 | `reference.md` | stable lookup facts: metric, train-set survey, Zebrahub, submission mechanics, code map, traps |
 | `strategy.md` | direction: what to do next and what we decided NOT to do |
 | `kaggle-toolchain.md` | how to actually run things: CLI pushes, connector reads, and their traps |
@@ -21,7 +22,7 @@ narrative that requires reading older entries first.
 | `public-solutions-recon.md` | what the public leaderboard actually contains, read from the forum |
 | `holdout-split.md` | which datasets the public weights were trained on — mostly superseded |
 
-Cold start: `working-agreement.md` first, then the top of `progress.md`
+Cold start: `working-agreement.md` first, then `HANDOFF.md`
 (current state + to-do), then `strategy.md`, then grep `reference.md` as
 needed. `kaggle-toolchain.md` before running anything on Kaggle.
 

@@ -50,7 +50,7 @@ that caught a real 40% intensity discrepancy).
 name holds an older transcription and is **not**. Several sessions have
 edited this folder directly.
 
-Cold start: the top of `progress.md` (current state and to-do), then
+Cold start: `HANDOFF.md` (current state), then
 `strategy.md`, then `kaggle-toolchain.md` before running anything on
 Kaggle. Grep `reference.md` as needed.
 
@@ -1050,3 +1050,14 @@ diff would have caught this.
 GPU kernel.** `grep -iE "P100|conv3d unusable"` on the log, every time,
 before the numbers are looked at — not because the run might die, but
 because it might not.
+
+## Progress entries: six fields, nothing else (the user, 2026-09-10)
+
+Their words: "能不能保持进度文件的干净，只写什么时候：猜想是什么：局限于什么范围内：
+执行了什么实验文件：最后结果的数据是什么：结论是什么". An entry in
+`progress.md` is exactly: date, hypothesis, scope, experiment file(s) and
+kernel, result data, conclusion. No star ratings, no "pre-registered
+reading", no DEAD / KILLED / CLOSED headings, no narrative of what the
+session guessed and corrected, no quoting the user as evidence. Sixty-eight
+"pre-registered" readings in the file were written by sessions, never asked
+for by the user.

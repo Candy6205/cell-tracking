@@ -28,3 +28,4 @@ access_token
 # not sources: every file here is reproducible from the kernel that wrote it,
 # and the fork tables alone are 3 MB.
 bench_csv/
+focus3d_weights/

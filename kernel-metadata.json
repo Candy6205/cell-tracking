@@ -1,27 +1,26 @@
 {
-  "language": "python",
-  "kernel_type": "script",
-  "is_private": true,
-  "enable_gpu": true,
-  "enable_tpu": false,
-  "enable_internet": false,
-  "machine_shape": "NvidiaTeslaT4",
-  "id": "faustine649/biohub-submit-hp",
-  "title": "Biohub submit hp",
-  "code_file": "submit_hp.py",
-  "dataset_sources": [
-    "pilkwang/biohub-tracking-support-pack-50ep-v1",
-    "faustine649/biohub-dctrain-175-weights",
-    "xiaoleilian/biohub-unet3d-weights",
-    "xiaoleilian/biohub-unet3d-weights-v2models",
-    "faustine649/cell-tracking"
-  ],
-  "kernel_sources": [
-    "faustine649/biohub-edgeprob-rank",
-    "faustine649/biohub-divbench8"
-  ],
-  "competition_sources": [
-    "biohub-cell-tracking-during-development"
-  ],
-  "model_sources": []
+ "id": "faustine649/biohub-hrefine",
+ "title": "Biohub hrefine",
+ "code_file": "hrefine.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": false,
+ "keywords": [
+  "gpu"
+ ],
+ "dataset_sources": [
+  "faustine649/cell-tracking"
+ ],
+ "kernel_sources": [
+  "faustine649/biohub-hparacache",
+  "faustine649/biohub-hpara44"
+ ],
+ "competition_sources": [
+  "biohub-cell-tracking-during-development"
+ ],
+ "model_sources": [],
+ "machine_shape": "NvidiaTeslaT4"
 }

@@ -42,8 +42,16 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else "bench_csv/rkpool_BASE.csv"
 F4 = sys.argv[2] if len(sys.argv) > 2 else "bench_csv/rkpool_F4.csv"
 B = 4000
 
-ANCHOR = dict(edge_jaccard=0.9104, adj_edge_jaccard=0.9133,
-              division_jaccard=0.1337, score=0.9266)
+# The control's recorded aggregate, keyed by its CSV name. rkpool_BASE is
+# rkpool_ref's log (and divbench3); rkpool_F4 is rkpool's log (2026-09-09).
+RECORD = {
+    "rkpool_BASE.csv": (dict(edge_jaccard=0.9104, adj_edge_jaccard=0.9133,
+                             division_jaccard=0.1337, score=0.9266), (50, 249, 75)),
+    "rkpool_F4.csv": (dict(edge_jaccard=0.9109, adj_edge_jaccard=0.9141,
+                           division_jaccard=0.1486, score=0.9290), (52, 225, 73)),
+}
+import os  # noqa: E402
+ANCHOR, DIV_CELLS = RECORD[os.path.basename(BASE)]
 TOL = 0.0001
 
 
@@ -69,8 +77,8 @@ assert not fail, f"the control does not reproduce the record: {fail}"
 dtp = sum(A[n]["division_tp"] for n in NAMES)
 dfp = sum(A[n]["division_fp"] for n in NAMES)
 dfn = sum(A[n]["division_fn"] for n in NAMES)
-assert (dtp, dfp, dfn) == (50, 249, 75), (dtp, dfp, dfn)
-print("  division cells 50/249/75 OK -- the aggregation is the scorer's")
+assert (dtp, dfp, dfn) == DIV_CELLS, (dtp, dfp, dfn)
+print(f"  division cells {dtp}/{dfp}/{dfn} OK -- the aggregation is the scorer's")
 
 gH = agg([H[n] for n in NAMES])
 print(f"\n=== UNGATED aggregate, 128 movies, DIV_W 0.55, floor 0.48 ===")
@@ -129,16 +137,3 @@ print(f"  top 8 account for "
 print(f"  leave-one-out: the largest single mover flips the sign of the "
       f"weighted delta? "
       f"{'YES' if np.sign(np.sum(np.delete(d * w, o[0])) ) != np.sign(np.sum(d * w)) else 'no'}")
-
-print("""
-=== THE PRE-REGISTERED READING (progress.md, "Pre-registered reading") ===
-  1 F4 wins, interval excludes 0 -> the mismatch costs score; retrain the
-    production pkl, then re-check PROD_FLOOR / ILP_DISAPP / DIV_W / the gate,
-    all of which were tuned against the mismatched calibration.
-  2 flat -> HistGB absorbs the shift; the TTA retrain is unlikely to rescue
-    TTA either, and the peer-blend prior weakens with it.
-  3 BASE wins -> training on slightly noisier coordinates regularises.
-  4 (added after eprank3, because 1-3 were not exhaustive) score moves while
-    the held-out AUC does not -> the ranking is unchanged and the damage is
-    downstream, at constants tuned for the other calibration. Read the AUC
-    line from each arm's log before choosing between 1-3 and 4.""")

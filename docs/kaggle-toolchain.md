@@ -514,7 +514,7 @@ Measured by reading `time_used` around known events:
 | a session that STARTS, from container-up | **yes, all of it** |
 | **mounting data sources** | **yes** — and this is the trap |
 | a CPU kernel (`enable_gpu: false`) | **no** — separate pool |
-| **submitting to the competition** | **NO** (user, 2026-08-25) — see below |
+| **submitting to the competition** | **yes** — the session submits itself with `py kag.py competitions submit <comp> -k <kernel> -v <version> -f submission.csv -m <msg>` (the user, 2026-09-27: "你自己去提交"; the earlier NO of 2026-08-25 was about a specific submission, not a standing rule) |
 
 ### ⚠ A submission does NOT cost GPU quota. Stop saying it does.
 
@@ -592,6 +592,13 @@ satisfy an `assert ROOT is not None` inherited from `cache_train.py`'s preamble.
 **So: never attach a data source the script does not read.** The competition
 data alone is 87.6 GB across 21,494 files.
 
+### At zero quota a GPU push is refused outright (measured 2026-09-18)
+
+With the week at 162,258 s of 162,000, `kernels push` of a GPU kernel (`biohub-submit-prop`) returned
+`Kernel push error: Maximum weekly GPU quota of 45.00 hours reached.` and created NO version (status 404). So
+there is nothing to retry or cancel: wait for the refresh (Saturday 00:00 UTC) and push then. The run that
+overran the cap (submit_img, the last ~258 s) was not killed mid-way; only a new start is refused.
+
 ### Queue time is not free, it is just not quota
 
 Near the cap Kaggle deprioritises: the same day, GPU kernels queued **18 to 67
@@ -658,3 +665,67 @@ turned out to be a wholesale transplant nobody here had chosen either.
 ---
 
 *Last updated: 2026-08-24 (quota mechanics, section 9)*
+
+### 11. A pinned `docker_image` from a CPU kernel turns a GPU kernel into a CPU one
+
+`biohub-hsaddle` v1 (2026-09-12) carried `"enable_gpu": true` and
+`"machine_shape": "NvidiaTeslaT4"` and still printed `device: cpu`: its
+metadata had been derived from a CPU kernel's pulled metadata and kept that
+kernel's pinned `docker_image` (the CPU image, whose torch has no CUDA).
+Kaggle honoured the pin. When a metadata file is reused across kernels,
+delete `docker_image` for GPU runs; the submit_hp metadata that ran on a T4
+has no such field. Check the first log line `device:` before trusting a
+timed GPU run.
+
+### 12. A library that spawns worker processes re-runs a script kernel from the top
+
+`ultrackbench` v1 (2026-09-13): ultrack's `multiprocessing_apply` uses the
+`spawn` start method whenever `n_workers > 1`, and a spawned child re-imports
+the main module. A Kaggle *script* kernel has no `if __name__ == "__main__"`
+guard, so every child re-ran the whole file (pip install, git clone, the UNet
+pass) and died with "An attempt has been made to start a new process before the
+current process has finished its bootstrapping phase"; the log showed
+SCRIPT_VERSION 661 times. Fix: `n_workers = 1` in every ultrack config section
+(data, segmentation, linking), or guard the body. The same applies to any
+library that spawns (joblib loky, torch DataLoader workers on spawn).
+
+### 13. pip's version floors are not the library's real needs
+
+`ultrackbench` v2 (2026-09-14): ultrack 0.8 declares `scikit-image>=0.23` but
+calls `remove_small_objects(max_size=...)`, which exists only from 0.26; the
+Kaggle image ships 0.25, pip saw the floor satisfied and left it. Symptom: a
+TypeError deep inside the library on the first real call, after a clean install.
+When a freshly installed library fails on a keyword argument, pin the dependency
+above the image's version explicitly (`pip install "scikit-image>=0.26"`) rather
+than trusting the package's own floor.
+
+
+### 14. A status poll must name the terminal states
+
+`kag.py kernels status` prints `KernelWorkerStatus.RUNNING` (upper case) and,
+on a transient API hiccup, an error line. A poll that loops "while the line
+contains running/queued" exits on the first hiccup and on the case mismatch
+(skipilp / hypilp, 2026-09-14/15: three polls "finished" while the kernel was
+still running). Loop until the line contains COMPLETE, ERROR or CANCEL;
+treat everything else, including an empty or odd line, as "still running".
+
+### 15. Arms multiply the solve, and the budget guard drops the tail of the list
+
+A re-solving arm costs one full ILP per movie; with constraints that change
+the LP (hypilp's exclusivity) it costs 8x REF's solve. skipilp (4 arms) and
+hypilp (7 arms) both hit the 10 h guard, at 114 and 100 of 128 movies; the
+unattempted movies are the END of the sorted list, so the missing set is not
+random (the `6bba_c..f` names). Before pushing a multi-arm bench, read the
+per-solve seconds of the nearest finished kernel (dupsup: 4 solves in 136
+min) and size the arms to ~60% of the guard; when a run is cut, say so in
+the entry and pair every arm only with REF on the same movies.
+
+## Pushing a new version does not cancel the running one (2026-09-24)
+
+`kernels push` while an earlier version of the same kernel is still running starts the new version alongside it: both
+count against the concurrent-session limit and both finish. biohub-hypz v1 and v2 ran in parallel for 7 h. To replace a
+running version, cancel it first (the Kaggle page, or the connector's cancel_notebook_session with the session id).
+An older version's OUTPUT FILES stay reachable (the connector's download_notebook_output with versionNumber gives a
+signed URL per file; `kag.py kernels output owner/kernel/<version>` printed nothing), but its LOG is not: the log is not
+an output file, and `kernels output` fetches only the latest version's. So a report that lives only in stdout is lost
+for every version but the latest -- write the report's tables to files too.

@@ -25,6 +25,10 @@ comparison, or add 8 to the Kaggle time to get local.
 
 `score = adjusted_edge_jaccard + 0.1 * division_jaccard`
 
+The hidden validation / test set is a THIRD embryo, independent of 6bba and 44b6, imaged under similar
+conditions (the user, stated repeatedly; recorded 2026-09-25). It is not a 6bba / 44b6 mix. A feature that
+transfers 6bba -> 44b6 is expected to transfer there; Zebrahub's failures to transfer say nothing about it.
+
 - `N_true` = train geff metadata field `estimated_number_of_nodes`. Test has
   none.
 - Penalty `max(0, J * (1 - 0.1 * (N_pred - N_true) / N_true))`, no upper
@@ -278,6 +282,29 @@ split, and its own traps: `kaggle-toolchain.md`.
   "do not infer X from this" is not evidence for not-X.**
 - The primary U-Net-transformer's split is unknown (`split_0`
   checkpoint carries no file list). See `holdout-split.md`.
+- **The xl weights' supervision (read 2026-09-18 from xiaoleilian's public
+  training notebooks `biohub-cell-tracking-3d-u-net-training`,
+  `biohub-u-net-training-bright-seed1`, `biohub-unet3d-v2models-training-code`;
+  sources pulled to the session scratchpad `pubsrc/`).** `unet3d_bright.pt` and
+  `unet3d_traintophat.pt` are a 3D U-Net (base 24) on the 4x XY-pooled,
+  p50-p99.5-normalised frame; target = a Gaussian of sigma 1.0 pooled voxel
+  (~1.6 um) max-composited at every GT centre; loss = per-voxel
+  BCEWithLogits with weights **12** where the target exceeds 0.05 (a ~4 um
+  ball round each annotated centre), **1** where the INPUT voxel lies below
+  the frame's 40th brightness percentile ("confidently dark" = negative),
+  **0.05** everywhere else (bright but unlabelled = nearly ignored). 171 train
+  movies, 16 GT frames per movie per epoch, 40 epochs, batch 16, Adam 1e-3
+  cosine; XY flips; `bright` = whole-frame gain 0.5-1.3x + a smooth random
+  background (sigma 3-8 pooled voxels, 0.1-0.6) + pixel noise; `traintophat`
+  = grey-opening (1x7x7) background subtraction on the input. Model selection
+  on val peak-recall (threshold 0.3, 2 pooled voxels), ~0.65. The v2 / v4
+  models (Aug 14, base 32, all GT frames, 40-120 epochs, `BRIGHT_LO` knob)
+  keep the same target and weights. **DeepCenter's trainer uses the identical
+  constants** (pool 4, sigma 1.0, PU weights 12 / 1 / 0.05, the same
+  normalisation), so all four heatmaps of F4 share one supervision rule, and
+  in particular one blind spot: an unannotated cell darker than the frame's
+  40th percentile is trained as background with weight 1; a dim cell in a
+  bright region is ignored; only the ~3% annotated cells push toward 1.
 
 ## Historical: the classical DoG pipeline
 
