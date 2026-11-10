@@ -3,7 +3,7 @@
 Use this instead of `py -m kaggle`:
 
     py kag.py kernels status faustine649/biohub-div-train
-    py kag.py kernels push -p "D:/programming/cell tracking"
+    py kag.py kernels push -p .          (from inside src/)
 
     py kag.py --token-status     how long the stored token is good for (no network)
     py kag.py --refresh          force a refresh now

@@ -17,6 +17,21 @@ across time into a tracking graph, cell divisions included.
 Why the public and private scores diverge is covered under
 "Post-competition analysis" below.
 
+## Start here
+
+- [`src/submit_zsznf.py`](src/submit_zsznf.py): the final submission, the
+  whole pipeline in one Kaggle kernel.
+- [`src/edgeprob_rank.py`](src/edgeprob_rank.py): trains the edge ranker that
+  the final submission loads (`edge_ranker_ep175_bidir.pkl`): gradient-boosted
+  trees on 18 geometric pair features plus three columns from the official
+  edge model, scored by AUC.
+- [`src/ranker_fine.py`](src/ranker_fine.py): an earlier, shorter version of
+  the same training, with the 18 geometric features only. Easier to read
+  first; `pair_features()` builds the features.
+- [`src/viz_cells.py`](src/viz_cells.py) and
+  [`src/division_recovery.py`](src/division_recovery.py): the shared modules
+  that most scripts import.
+
 ## How the pipeline evolved
 
 The starting point was a verbatim reproduction of a public notebook (LB 0.917,
@@ -25,41 +40,54 @@ submission changed one thing against the previous best. The main steps:
 
 | Script | What it changed | Public | Private |
 |---|---|---|---|
-| `submit_ranker.py` | Replaced the linker with a learned edge ranker (gradient-boosted trees, 18 features) feeding an integer linear program (ILP) | 0.9213 | 0.8907 |
-| `submit_f4.py` | Detection from four heatmaps: the U-Net ensemble plus a retrained DeepCenter model | 0.9251 | 0.9038 |
-| `submit_ep.py` | The official edge model's forward and reverse probabilities as extra ranker features | 0.9328 | 0.9066 |
-| `submit_gate.py` | A classifier (the "fork gate") that decides which candidate cell divisions to keep | 0.9433 | 0.9103 |
-| `submit_img.py` | The fork gate retrained on two embryos, with raw-image features at every fork | 0.9519 | 0.9163 |
-| `submit_prop.py` | Orphaned track starts re-attached as division daughters, filtered by a gate fitted on them | 0.9545 | 0.9168 |
-| `submit_vt.py` | Extra detections where at least two of the four heatmaps agree | 0.9534 | **0.9197** |
-| `submit_nc35.py` | A per-node cost in a second ILP solve, which drops weakly supported detections | **0.9561** | 0.9137 |
-| `submit_zsznf.py` | Final selection: cell-size features in the fork gate, division variables in the ILP | 0.9550 | 0.9143 |
+| [`submit_ranker.py`](src/submit_ranker.py) | Replaced the linker with a learned edge ranker (gradient-boosted trees, 18 features) feeding an integer linear program (ILP) | 0.9213 | 0.8907 |
+| [`submit_f4.py`](src/submit_f4.py) | Detection from four heatmaps: the U-Net ensemble plus a retrained DeepCenter model | 0.9251 | 0.9038 |
+| [`submit_ep.py`](src/submit_ep.py) | The official edge model's forward and reverse probabilities as extra ranker features | 0.9328 | 0.9066 |
+| [`submit_gate.py`](src/submit_gate.py) | A classifier (the "fork gate") that decides which candidate cell divisions to keep | 0.9433 | 0.9103 |
+| [`submit_img.py`](src/submit_img.py) | The fork gate retrained on two embryos, with raw-image features at every fork | 0.9519 | 0.9163 |
+| [`submit_prop.py`](src/submit_prop.py) | Orphaned track starts re-attached as division daughters, filtered by a gate fitted on them | 0.9545 | 0.9168 |
+| [`submit_vt.py`](src/submit_vt.py) | Extra detections where at least two of the four heatmaps agree | 0.9534 | **0.9197** |
+| [`submit_nc35.py`](src/submit_nc35.py) | A per-node cost in a second ILP solve, which drops weakly supported detections | **0.9561** | 0.9137 |
+| [`submit_zsznf.py`](src/submit_zsznf.py) | Final selection: cell-size features in the fork gate, division variables in the ILP | 0.9550 | 0.9143 |
 
-`docs/HANDOFF.md` lists every submission, including the changes that did not
-help.
+[`docs/HANDOFF.md`](docs/HANDOFF.md) lists every submission, including the
+changes that did not help.
 
 ## Repository layout
 
 ```
-submit_*.py            one self-contained Kaggle kernel per submission
-make_*.py,
-tools/bench/make_*.py  build a new script from its control by exact, asserted
-                       string replacements, so the two differ in one place
-other *.py             experiments and diagnostics, one entry each in docs/progress.md
-kag.py                 wrapper around the Kaggle CLI, used for every push
-kernel-metadata.json   Kaggle kernel settings for the next push
-docs/                  the project log (see "How this was built")
+src/                     all the code, in one flat folder
+  submit_*.py            one Kaggle kernel per submission
+  make_*.py,
+  tools/bench/make_*.py  build a new script from its control by exact, asserted
+                         string replacements, so the two differ in one place
+  viz_cells.py,
+  division_recovery.py   shared modules, imported by most scripts
+  other *.py             experiments and diagnostics, one entry each in docs/progress.md
+  tools/                 local analysis scripts, tests and Colab helpers
+  kag.py                 wrapper around the Kaggle CLI, used for every push
+  kernel-metadata.json   Kaggle kernel settings for the next push
+docs/                    the project log (see "How this was built")
+docs/media/              two 6bba datasets rendered as video by src/render6.py
+third_party/             copies of two public notebooks (see Credits)
 ```
 
-The folder is flat on purpose: the Kaggle pushes and the imports between
-scripts depend on the paths.
+`src/` stays flat on purpose: the builders and tools find each other by
+relative paths, so run every command from inside `src/`. The documents in
+`docs/` were written while this code still sat at the top of the repository,
+so a script they name is now under `src/`.
 
 ## Running it
 
 The competition data is not in this repository (it is released under CC0;
-download it from Kaggle). Every script runs as a Kaggle kernel on a T4 GPU:
+download it from Kaggle). Every script runs as a Kaggle kernel, and
+`kernel-metadata.json` picks the script, its inputs and the accelerator. On
+Kaggle, the kernels import the shared modules from a code dataset uploaded
+from this folder, and load trained models from the outputs of earlier
+kernels.
 
 ```bash
+cd src
 # set "code_file" in kernel-metadata.json to the script you want, then
 py kag.py kernels push -p .
 ```
@@ -70,11 +98,12 @@ A local smoke test needs no competition data, but it does need zarr 3 and
 blosc2. The synthetic data only proves the plumbing works; the numbers it
 prints are meaningless.
 
-<!-- TODO (me): run these three commands in a clean environment and pin the
+<!-- TODO (me): run these commands in a clean environment and pin the
 versions that work. -->
 
 ```bash
 pip install "zarr>=3" blosc2
+cd src
 python make_fake_data.py
 python viz_cells.py inspect --root ./fake_data
 python submit_baseline.py score --root ./fake_data --limit 8 --per-frame 30
@@ -151,13 +180,13 @@ that the private test set exposed.
   (LB 0.917), with 3D U-Net weights from
   [xiaoleilian/biohub-unet3d-weights](https://www.kaggle.com/datasets/xiaoleilian/biohub-unet3d-weights).
 - The publicly released DeepCenter detector, retrained here on a different
-  split (`dctrain.py`).
+  split (`src/dctrain.py`).
 - pilkwang's public weights and offline support pack of Python wheels.
-- `cell-tracking-getting-started-w-nearest-neighbor.ipynb`: a copy of the
-  competition's starter notebook by
+- `third_party/cell-tracking-getting-started-w-nearest-neighbor.ipynb`: a copy
+  of the competition's starter notebook by
   [inversion](https://www.kaggle.com/code/inversion/cell-tracking-getting-started-w-nearest-neighbor)
   (Apache 2.0).
-- `biohub-medal-v1.backup.ipynb`: a copy of the public notebook
+- `third_party/biohub-medal-v1.backup.ipynb`: a copy of the public notebook
   "Biohub medal v1" by Le Trong Hieu,
   [backtracking/biohub-medal-v1](https://www.kaggle.com/code/backtracking/biohub-medal-v1)
   (Apache 2.0).
@@ -167,5 +196,5 @@ that the private test set exposed.
 
 ## License
 
-MIT for my own code; see `LICENSE`. The two notebooks listed under Credits
-stay under their authors' Apache 2.0 terms.
+MIT for my own code; see `LICENSE`. The two notebooks in `third_party/` stay
+under their authors' Apache 2.0 terms.

@@ -21,7 +21,7 @@ from collections import defaultdict
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 
-ROOT = pathlib.Path(r'D:\programming\cell tracking')
+ROOT = pathlib.Path(__file__).resolve().parents[1]   # src/
 SCALE = np.array([1.625, 0.40625, 0.40625], float)
 WANT = ('_frag_len', '_prim_tree', '_gap_close')
 

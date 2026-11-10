@@ -19,7 +19,7 @@ import sys
 import numpy as np
 from scipy.spatial import cKDTree
 
-ROOT = pathlib.Path(r'D:\programming\cell tracking')
+ROOT = pathlib.Path(__file__).resolve().parents[1]   # src/
 SCALE = np.array([1.625, 0.40625, 0.40625], float)
 
 src = (ROOT / 'dcmerge.py').read_text(encoding='utf-8')
