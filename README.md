@@ -180,9 +180,14 @@ that the private test set exposed.
   (LB 0.917), with 3D U-Net weights from
   [xiaoleilian/biohub-unet3d-weights](https://www.kaggle.com/datasets/xiaoleilian/biohub-unet3d-weights).
 - The edge ranker: the idea of re-scoring candidate edges with a trained
-  model, and the 18 pair features, adapted from the public notebook
+  model, the 18 pair features, and the official edge model's probability
+  as an extra input, adapted from the public notebook
   [yusuketogashi/no-hack-biohub-cell-another-approch-3rd](https://www.kaggle.com/code/yusuketogashi/no-hack-biohub-cell-another-approch-3rd)
   (LB 0.915).
+- Fusing that probability from the forward and the time-reversed movie by
+  their harmonic mean (`h_fused`): from the public notebook
+  [rishabhr0y/biohub-948-sew20](https://www.kaggle.com/code/rishabhr0y/biohub-948-sew20)
+  (LB 0.948).
 - The publicly released DeepCenter detector, retrained here on a different
   split (`src/dctrain.py`).
 - pilkwang's public weights and offline support pack of Python wheels.
