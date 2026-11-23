@@ -139,13 +139,33 @@ on that assumption: it picks an extra cell as the second daughter of a
 division. When I later rendered clips of real divisions, many daughters were
 not high-scoring candidates of the mother at all, because a division pushes the
 daughters apart. Up to that point the reasoning held. The mistake was the next
-step: I turned to morphological features such as cell size and shape. They are
-informative, but they transfer badly: in a different embryo, or under slightly
-different imaging conditions, cells look very different. The private test set
-appears to be such a case: the shape-based additions (`submit_sz`,
-`submit_zsznf`) did not move the private score. The first image-based fork
-gate (`submit_img`) did transfer (private 0.9113 → 0.9163), so the problem was
-the later shape features, not image features as such.
+step. Watching rendered divisions, I saw that true daughters were smaller than
+their mother and false ones about as big, so I added cell-size features to the
+fork gate (`submit_sz`, then the final `submit_zsznf`). The observation was
+right; the measurement behind the features was not.
+
+The competition provides no masks, so the size came from the raw intensity:
+the region around a nucleus that is brighter than halfway between the local
+background and the peak, converted to a radius. Nothing could confirm that this
+region is the nucleus, and the readings are hard to believe. Of the 66 true
+divisions among my pipeline's forks on the 6bba training embryo, the
+measurement made both daughters larger than their mother in 11, and the two
+daughters together more than twice her volume in 19; only 22 came out between
+0.7 and 1.3 times her volume. A nucleus does pack its chromatin differently
+around a division, so the volumes need not add up exactly, but a spread like
+this is hard to explain by biology alone, and without masks there was no way to
+tell how much of it came from the cell and how much from the measurement.
+
+On average the direction was right: the two daughters together came to a
+median 1.13 times the mother for true divisions and 2.10 for false forks, which
+usually join the mother's own track to a neighbour. So the features carried a
+weak signal under a large error for any single division. Their local gain
+was +0.0012 (90% interval −0.0010 to +0.0032), inside the noise, and five
+other ways of measuring size did no better. I shipped them anyway, and they
+did not move the private score. The image-based gate before them
+(`submit_img`), whose useful signal was contrast, did carry over (private
+0.9113 → 0.9163), so the problem was the size measurement, not image features
+as such.
 
 **Comparison with the top solutions.** Most of the top solutions retrained
 the detector instead of using the public weights, so they are hard to compare
@@ -153,9 +173,12 @@ with mine. One top competitor did use the public weights, and the clearest
 difference is in validation. The small models in their decision pipeline were
 always trained on one training embryo and validated on the other. I worried
 that there was not enough data, so I mixed the two embryos and split each of
-them into training and validation parts. With that split, the shape features
-scored positive in my own validation, which hid exactly the transfer problem
-that the private test set exposed.
+them into training and validation parts. A mixed split cannot show whether a
+feature transfers to a new embryo. It is not what hid the size problem,
+though: when I later trained the size gate on one embryo and tested it on the
+other, it passed, because the measurement behaves the same in both training
+embryos. The flaw was in the measurement itself, and no split of those two
+embryos could have shown it.
 
 **What I would do differently.**
 
@@ -165,6 +188,9 @@ that the private test set exposed.
 - Prefer features that stay the same across embryos (motion, geometry,
   consistency over time) over features that describe how one batch of cells
   looks.
+- Check a measurement I built myself against something it must satisfy before
+  using it. A size measure should put two daughters together near their
+  mother; mine often did not, and that was visible on the training data.
 - Not let the public leaderboard push the pipeline toward extremes that break
   continuity, such as deleting cells for a 0.001 gain.
 - Hedge the final selection: next to the public-leaderboard pick
