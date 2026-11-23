@@ -177,8 +177,11 @@ them into training and validation parts. A mixed split cannot show whether a
 feature transfers to a new embryo. It is not what hid the size problem,
 though: when I later trained the size gate on one embryo and tested it on the
 other, it passed, because the measurement behaves the same in both training
-embryos. The flaw was in the measurement itself, and no split of those two
-embryos could have shown it.
+embryos. On a different dataset it does not: on Zebrahub, another zebrafish
+dataset, the same measurement put a true daughter at 4.6 µm against 3.1 µm on
+6bba, and the daughter-to-mother ratio no longer separated true from false
+forks (AUC 0.50), while contrast still did (AUC 0.72). The flaw was in the
+measurement itself, and no split of those two embryos could have shown it.
 
 **What I would do differently.**
 
